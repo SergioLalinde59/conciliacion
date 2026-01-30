@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { apiService } from '../services/api'
-import { Download, Search, FileSpreadsheet, ArrowLeft, X } from 'lucide-react'
+import { Download, Search, FileSpreadsheet, ArrowLeft, X, LayoutList, TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 import { useReporteClasificacion, useConfiguracionExclusion } from '../hooks/useReportes'
 import { useSessionStorage } from '../hooks/useSessionStorage'
 import { getMesActual, getPreviousPeriod } from '../utils/dateUtils'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
-import { EstadisticasTotales } from '../components/organisms/EstadisticasTotales'
+
 import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
 import { DataTable } from '../components/molecules/DataTable'
 import * as XLSX from 'xlsx'
@@ -27,6 +27,8 @@ interface DrilldownLevel {
     parentName?: string
     grandParentId?: number
     grandParentName?: string
+    grandGrandParentId?: number
+    grandGrandParentName?: string
     data: ItemDesglose[]
     isOpen: boolean
     sortAsc: boolean
@@ -69,13 +71,13 @@ export const ReporteClasificacionesPage = () => {
     })
     const [detallesModal, setDetallesModal] = useState<{
         isOpen: boolean; title: string; data: Movimiento[]; loading: boolean;
-        terceroId?: number; centroCostoId?: number; conceptoId?: number;
-        terceroNombre?: string; centroCostoNombre?: string; conceptoNombre?: string;
+        clasificacionId?: number; terceroId?: number; centroCostoId?: number; conceptoId?: number;
+        clasificacionNombre?: string; terceroNombre?: string; centroCostoNombre?: string; conceptoNombre?: string;
     }>({ isOpen: false, title: '', data: [], loading: false })
 
     // ---- Data Fetching ----
     const paramsMain = useMemo(() => ({
-        tipo: 'totales', desde, hasta,
+        tipo: 'centro_costo', desde, hasta,
         cuenta_id: cuentaId ? Number(cuentaId) : undefined,
         tercero_id: terceroId ? Number(terceroId) : undefined,
         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
@@ -91,7 +93,7 @@ export const ReporteClasificacionesPage = () => {
     // Comparativa
     const prevPeriod = useMemo(() => getPreviousPeriod(desde, hasta), [desde, hasta])
     const paramsAnterior = useMemo(() => ({
-        tipo: 'totales', desde: prevPeriod.inicio, hasta: prevPeriod.fin,
+        tipo: 'centro_costo', desde: prevPeriod.inicio, hasta: prevPeriod.fin,
         cuenta_id: cuentaId ? Number(cuentaId) : undefined,
         tercero_id: terceroId ? Number(terceroId) : undefined,
         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
@@ -107,13 +109,24 @@ export const ReporteClasificacionesPage = () => {
     }, [datosAnteriorRaw])
 
     // ---- Handlers ----
-    const handleTerceroClick = async (item: ItemDesglose) => {
-        setTerceroModal({ level: 'tercero', title: `Terceros: ${item.nombre}`, parentId: item.id, parentName: item.nombre, data: [], isOpen: true, sortAsc: false, sortField: 'egresos' })
+    // Nivel 1: Click en Centro de Costo (Antes Grupo) -> Abre Terceros
+    const handleGrupoClick = async (item: ItemDesglose) => {
+        setTerceroModal({
+            level: 'tercero',
+            title: `Terceros: ${item.nombre}`,
+            parentId: item.id,
+            parentName: item.nombre,
+            data: [],
+            isOpen: true,
+            sortAsc: false,
+            sortField: 'egresos'
+        })
         const data = await apiService.movimientos.reporteDesgloseGastos({
             nivel: 'tercero', fecha_inicio: desde, fecha_fin: hasta,
             cuenta_id: cuentaId ? Number(cuentaId) : undefined,
+            centro_costo_id: item.id, // CORE FIX: Refactor Clasificacion -> Centro Costo
             tercero_id: terceroId ? Number(terceroId) : undefined,
-            centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
+            // centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined, // Removed duplicate/conflicting param since item.id is the CC
             concepto_id: conceptoId ? Number(conceptoId) : undefined,
             centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
             ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos
@@ -121,21 +134,25 @@ export const ReporteClasificacionesPage = () => {
         setTerceroModal(prev => ({ ...prev, data: (data as ItemDesglose[]) || [] }))
     }
 
-    const handleCentroCostoClick = async (item: ItemDesglose) => {
-        setCentroCostoModal({ level: 'centro_costo', title: `Centros de Costo: ${item.nombre}`, parentId: item.id, parentName: item.nombre, grandParentId: terceroModal.parentId, grandParentName: terceroModal.parentName, data: [], isOpen: true, sortAsc: false, sortField: 'egresos' })
+    // Nivel 2: Click en Tercero -> Abre Conceptos
+    const handleTerceroClick = async (item: ItemDesglose) => {
+        setConceptoModal({
+            level: 'concepto',
+            title: `Conceptos: ${item.nombre}`,
+            parentId: item.id, // This is the Tercero ID
+            parentName: item.nombre, // This is the Tercero Name
+            grandParentId: terceroModal.parentId, // This is the L1 Centro Costo ID
+            grandParentName: terceroModal.parentName, // This is the L1 Centro Costo Name
+            data: [],
+            isOpen: true,
+            sortAsc: false,
+            sortField: 'egresos'
+        })
         const data = await apiService.movimientos.reporteDesgloseGastos({
-            nivel: 'centro_costo', tercero_id: item.id, fecha_inicio: desde, fecha_fin: hasta,
-            cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-            ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos
-        } as any)
-        setCentroCostoModal(prev => ({ ...prev, data: (data as ItemDesglose[]) || [] }))
-    }
-
-    const handleConceptoClick = async (item: ItemDesglose) => {
-        setConceptoModal({ level: 'concepto', title: `Conceptos: ${item.nombre}`, parentId: item.id, parentName: item.nombre, grandParentId: centroCostoModal.parentId, grandParentName: centroCostoModal.parentName, data: [], isOpen: true, sortAsc: false, sortField: 'egresos' })
-        const data = await apiService.movimientos.reporteDesgloseGastos({
-            nivel: 'concepto', tercero_id: centroCostoModal.parentId, centro_costo_id: item.id, fecha_inicio: desde, fecha_fin: hasta,
+            nivel: 'concepto',
+            tercero_id: item.id,
+            centro_costo_id: terceroModal.parentId, // CORE FIX: Use the L1 CC ID
+            fecha_inicio: desde, fecha_fin: hasta,
             cuenta_id: cuentaId ? Number(cuentaId) : undefined,
             centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
             ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos
@@ -143,10 +160,26 @@ export const ReporteClasificacionesPage = () => {
         setConceptoModal(prev => ({ ...prev, data: (data as ItemDesglose[]) || [] }))
     }
 
-    const handleDetallesClick = (item: ItemDesglose) => {
-        setDetallesModal({ isOpen: true, title: `Movimientos: ${item.nombre}`, data: [], loading: true, terceroId: conceptoModal.grandParentId!, centroCostoId: conceptoModal.parentId!, conceptoId: item.id, terceroNombre: conceptoModal.grandParentName, centroCostoNombre: conceptoModal.parentName, conceptoNombre: item.nombre })
+    // handleCentroCostoClick removed as per new 3-level hierarchy: Centro Costo -> Tercero -> Concepto
+
+    // Nivel 3 (Leaf): Click en Concepto -> Abre Movimientos
+    const handleConceptoClick = (item: ItemDesglose) => {
+        setDetallesModal({
+            isOpen: true,
+            title: `Movimientos: ${item.nombre}`,
+            data: [],
+            loading: true,
+            centroCostoId: conceptoModal.grandParentId!, // L1 Centro Costo ID
+            terceroId: conceptoModal.parentId!, // L2 Tercero ID
+            conceptoId: item.id, // L3 Concepto ID
+            centroCostoNombre: conceptoModal.grandParentName,
+            terceroNombre: conceptoModal.parentName,
+            conceptoNombre: item.nombre
+        })
         apiService.movimientos.listar({
-            tercero_id: conceptoModal.grandParentId!, centro_costo_id: conceptoModal.parentId!, concepto_id: item.id,
+            centro_costo_id: conceptoModal.grandParentId!,
+            tercero_id: conceptoModal.parentId!,
+            concepto_id: item.id,
             desde, hasta, limit: 1000,
             ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos,
             centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined
@@ -164,13 +197,32 @@ export const ReporteClasificacionesPage = () => {
     }
 
     const filteredGrupos = useMemo(() => {
-        if (!gruposData || !Array.isArray(gruposData) || gruposData.length === 0) return []
-        const data = (gruposData[0] as any).grupos || []
+        if (!gruposData || !Array.isArray(gruposData)) return []
+        const data = gruposData || []
         if (!busqueda) return data
         return data.filter((g: any) => g.nombre.toLowerCase().includes(busqueda.toLowerCase()))
     }, [gruposData, busqueda])
 
-    const totalActual = gruposData[0] as any
+    // Calcular total actual sumando los items (ya que no viene un objeto resumen 'totalActual')
+    const totalActual = useMemo(() => {
+        const data = filteredGrupos as any[]
+        return {
+            ingresos: data.reduce((acc, curr) => acc + (curr.ingresos || 0), 0),
+            egresos: data.reduce((acc, curr) => acc + (curr.egresos || 0), 0),
+            saldo: data.reduce((acc, curr) => acc + (curr.saldo || 0), 0),
+            grupos: data // Mantener referencia para conteo
+        }
+    }, [filteredGrupos])
+
+    const totalesAnteriorResumen = useMemo(() => {
+        if (!datosAnteriorRaw || !Array.isArray(datosAnteriorRaw)) return { ingresos: 0, egresos: 0, saldo: 0 }
+        const data = datosAnteriorRaw as any[]
+        return {
+            ingresos: data.reduce((acc, curr) => acc + (curr.ingresos || 0), 0),
+            egresos: data.reduce((acc, curr) => acc + (curr.egresos || 0), 0),
+            saldo: data.reduce((acc, curr) => acc + (curr.saldo || 0), 0)
+        }
+    }, [datosAnteriorRaw])
 
     const plotData = useMemo(() => {
         return [...filteredGrupos].sort((a: any, b: any) => {
@@ -193,12 +245,25 @@ export const ReporteClasificacionesPage = () => {
     const getChartTitle = () => {
         if (conceptoId) return "Distribución (Concepto Filtrado)"
         if (centroCostoId) return "Distribución por Concepto (Filtrado)"
-        if (terceroId) return "Distribución por Centro de Costo (Filtrado)"
-        return "Distribución por Grupo"
+        if (terceroId) return "Distribución por Tercero (Filtrado)"
+        return "Distribución por Centro de Costo"
+    }
+
+    const calculateTrend = (current: number, previous?: number) => {
+        if (previous === undefined || previous === null || previous === 0) return null
+        return ((current - previous) / Math.abs(previous)) * 100
     }
 
     return (
         <div className="flex flex-col h-full bg-slate-50/50">
+            {/* Dashboard Header */}
+            <div className="px-6 pt-6 pb-2 bg-white flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900">Reporte de Clasificación</h1>
+                    <p className="text-slate-500 text-sm mt-1">Drilldown interactivo de egresos</p>
+                </div>
+            </div>
+
             <FiltrosReporte
                 desde={desde} setDesde={setDesde}
                 hasta={hasta} setHasta={setHasta}
@@ -206,6 +271,7 @@ export const ReporteClasificacionesPage = () => {
                 terceroId={terceroId} setTerceroId={setTerceroId}
                 centroCostoId={centroCostoId} setCentroCostoId={setCentroCostoId}
                 conceptoId={conceptoId} setConceptoId={setConceptoId}
+                configuracionExclusion={configExclusion}
                 centrosCostosExcluidos={actualCentrosCostosExcluidos}
                 setCentrosCostosExcluidos={setCentrosCostosExcluidos}
                 mostrarIngresos={mostrarIngresos}
@@ -217,12 +283,49 @@ export const ReporteClasificacionesPage = () => {
             />
 
             <div className="flex-1 overflow-auto p-4 space-y-4">
-                <EstadisticasTotales
-                    ingresos={totalActual?.ingresos || 0}
-                    egresos={totalActual?.egresos || 0}
-                    saldo={totalActual?.saldo || 0}
-                    comparativaAnterior={totalesAnterior}
-                />
+                {/* Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+                    {/* Card: Registros */}
+                    <StatCard
+                        label="Registros"
+                        value={filteredGrupos.length}
+                        secondaryValue={totalActual?.grupos?.length || 0}
+                        icon={<LayoutList className="w-5 h-5" />}
+                        colorClass="text-slate-600"
+                        bgColorClass="bg-slate-50"
+                        borderColor="group-hover:border-slate-300"
+                        isCurrency={false}
+                    />
+
+                    <StatCard
+                        label="Total Ingresos"
+                        value={totalActual.ingresos}
+                        trend={calculateTrend(totalActual.ingresos, totalesAnteriorResumen.ingresos)}
+                        icon={<TrendingUp className="w-5 h-5" />}
+                        colorClass="text-emerald-600"
+                        bgColorClass="bg-emerald-50"
+                        borderColor="group-hover:border-emerald-200"
+                    />
+                    <StatCard
+                        label="Total Egresos"
+                        value={totalActual.egresos}
+                        trend={calculateTrend(totalActual.egresos, totalesAnteriorResumen.egresos)}
+                        isEgreso
+                        icon={<TrendingDown className="w-5 h-5" />}
+                        colorClass="text-rose-600"
+                        bgColorClass="bg-rose-50"
+                        borderColor="group-hover:border-rose-200"
+                    />
+                    <StatCard
+                        label="Saldo Neto"
+                        value={totalActual.saldo}
+                        trend={calculateTrend(totalActual.saldo, totalesAnteriorResumen.saldo)}
+                        icon={<Wallet className="w-5 h-5" />}
+                        colorClass={(totalActual.saldo || 0) >= 0 ? "text-indigo-600" : "text-rose-600"}
+                        bgColorClass="bg-indigo-50"
+                        borderColor="group-hover:border-indigo-200"
+                    />
+                </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {/* Visualización de Tendencia */}
@@ -237,7 +340,8 @@ export const ReporteClasificacionesPage = () => {
                                     data={plotData}
                                     layout="vertical"
                                     margin={{ left: 20, right: 30 }}
-                                    onClick={(d) => (d as any)?.activePayload && handleTerceroClick((d as any).activePayload[0].payload)}
+                                    margin={{ left: 20, right: 30 }}
+                                    onClick={(d) => (d as any)?.activePayload && handleGrupoClick((d as any).activePayload[0].payload)}
                                 >
                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                                     <XAxis type="number" hide />
@@ -262,7 +366,7 @@ export const ReporteClasificacionesPage = () => {
                                         fill="#6366f1"
                                         radius={[0, 4, 4, 0]}
                                         barSize={20}
-                                        onDoubleClick={(d) => (d as any)?.payload && handleTerceroClick((d as any).payload)}
+                                        onDoubleClick={(d) => (d as any)?.payload && handleGrupoClick((d as any).payload)}
                                         style={{ cursor: 'pointer' }}
                                     >
                                         {plotData.map((_, index) => <Cell key={`c-${index}`} fill={index === 0 ? '#4f46e5' : '#6366f1'} opacity={1 - index * 0.05} />)}
@@ -290,11 +394,11 @@ export const ReporteClasificacionesPage = () => {
                                 stickyHeader
                                 columns={[
                                     {
-                                        header: 'Grupo / Clasificación',
+                                        header: 'Centro de Costo',
                                         key: 'nombre',
                                         sortable: true,
                                         render: (row) => (
-                                            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => handleTerceroClick(row)}>
+                                            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => handleGrupoClick(row)}>
                                                 <div className="w-6 h-6 rounded bg-indigo-50 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-all"><Search className="w-3 h-3" /></div>
                                                 <span className="font-bold text-slate-700 group-hover:text-indigo-600 truncate max-w-[180px] text-[11px] uppercase tracking-tighter">{row.nombre}</span>
                                             </div>
@@ -309,9 +413,8 @@ export const ReporteClasificacionesPage = () => {
                 </div>
             </div>
 
-            <DrilldownModal level={terceroModal} onClose={() => setTerceroModal(p => ({ ...p, isOpen: false }))} onNext={handleCentroCostoClick} />
-            <DrilldownModal level={centroCostoModal} onClose={() => setCentroCostoModal(p => ({ ...p, isOpen: false }))} onNext={handleConceptoClick} />
-            <DrilldownModal level={conceptoModal} onClose={() => setConceptoModal(p => ({ ...p, isOpen: false }))} onNext={handleDetallesClick} />
+            <DrilldownModal level={terceroModal} onClose={() => setTerceroModal(p => ({ ...p, isOpen: false }))} onNext={handleTerceroClick} />
+            <DrilldownModal level={conceptoModal} onClose={() => setConceptoModal(p => ({ ...p, isOpen: false }))} onNext={handleConceptoClick} />
             <MovimientosModal state={detallesModal} onClose={() => setDetallesModal(p => ({ ...p, isOpen: false }))} />
         </div>
     )
@@ -336,7 +439,10 @@ const DrilldownModal = ({ level, onClose, onNext }: { level: DrilldownLevel, onC
                         <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><ArrowLeft className="w-5 h-5" /></button>
                         <div>
                             <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1">
-                                <span>Reporte</span>{level.grandParentName && <><span className="mx-1 opacity-30">/</span><span className="text-slate-500">{level.grandParentName}</span></>}<span className="mx-1 opacity-30">/</span><span className="text-indigo-600">{level.parentName}</span>
+                                <span>Reporte</span>
+                                {level.grandGrandParentName && <><span className="mx-1 opacity-30">/</span><span className="text-slate-500">{level.grandGrandParentName}</span></>}
+                                {level.grandParentName && <><span className="mx-1 opacity-30">/</span><span className="text-slate-500">{level.grandParentName}</span></>}
+                                <span className="mx-1 opacity-30">/</span><span className="text-indigo-600">{level.parentName}</span>
                             </div>
                             <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">{level.title}</h2>
                         </div>
@@ -387,7 +493,7 @@ const MovimientosModal = ({ state, onClose }: { state: any, onClose: () => void 
                         <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-transform hover:rotate-90"><X className="w-6 h-6" /></button>
                         <div>
                             <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">
-                                <span>Operaciones</span><span className="opacity-30">/</span><span>{state.terceroNombre}</span><span className="opacity-30">/</span><span>{state.centroCostoNombre}</span>
+                                <span>Operaciones</span><span className="opacity-30">/</span><span>{state.clasificacionNombre}</span><span className="opacity-30">/</span><span>{state.terceroNombre}</span><span className="opacity-30">/</span><span>{state.centroCostoNombre}</span>
                             </div>
                             <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-3"><FileSpreadsheet className="w-6 h-6 text-indigo-500" />{state.conceptoNombre}</h2>
                         </div>
@@ -407,6 +513,49 @@ const MovimientosModal = ({ state, onClose }: { state: any, onClose: () => void 
                         }
                     ]} />
                 </div>
+            </div>
+        </div>
+    )
+}
+
+const StatCard = ({ label, value, trend, icon, colorClass, bgColorClass, borderColor, isEgreso = false, secondaryValue = null, isCurrency = true }: any) => {
+    const isPositive = trend > 0
+    const isNearZero = Math.abs(trend ?? 0) < 0.1
+
+    let trendColor = ""
+    if (isEgreso) {
+        trendColor = isPositive ? "text-rose-500 bg-rose-50" : "text-emerald-500 bg-emerald-50"
+    } else {
+        trendColor = isPositive ? "text-emerald-500 bg-emerald-50" : "text-rose-500 bg-rose-50"
+    }
+
+    if (isNearZero || trend === null) trendColor = "text-slate-400 bg-slate-50"
+
+    return (
+        <div className={`group bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 flex items-center justify-between transition-all duration-300 hover:shadow-md ${borderColor}`}>
+            <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+                    {typeof trend === 'number' && (
+                        <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${trendColor}`}>
+                            {isNearZero ? <Minus size={8} /> : isPositive ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+                            {Math.abs(trend).toFixed(1)}%
+                        </div>
+                    )}
+                </div>
+                <div className={`text-2xl font-black tracking-tight ${colorClass} flex items-baseline`}>
+                    {isCurrency && typeof value === 'number' ? <CurrencyDisplay value={value} colorize={false} /> : <span>{value}</span>}
+                    {secondaryValue !== null && (
+                        <span className="text-sm opacity-40 font-medium text-slate-400 ml-2">/ {secondaryValue}</span>
+                    )}
+                </div>
+                <div className="flex items-center gap-1 text-[9px] text-slate-400 font-medium">
+                    <span className="w-1 h-1 rounded-full bg-slate-200" />
+                    {secondaryValue !== null ? 'Visible / Total en Periodo' : 'Periodo Actual'}
+                </div>
+            </div>
+            <div className={`p-3.5 ${bgColorClass} ${colorClass} rounded-2xl group-hover:scale-110 transition-transform duration-300 shadow-sm shadow-inner`}>
+                {icon}
             </div>
         </div>
     )

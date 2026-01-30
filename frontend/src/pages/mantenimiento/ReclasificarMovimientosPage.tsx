@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-
     CheckCircle2,
     XCircle,
     BarChart3,
@@ -10,7 +9,7 @@ import {
     Unlink
 } from 'lucide-react';
 import { mantenimientoService } from '../../api/mantenimientoService';
-import type { DesvinculacionStats } from '../../api/mantenimientoService';
+import type { ReclasificacionStats } from '../../api/mantenimientoService';
 import { apiService } from '../../services/api';
 import type { Movimiento } from '../../types';
 import { getMesActual } from '../../utils/dateUtils';
@@ -20,7 +19,7 @@ import { Button } from '../../components/atoms/Button';
 import { ClassificationDisplay } from '../../components/molecules/entities/ClassificationDisplay';
 import { FiltrosReporte } from '../../components/organisms/FiltrosReporte';
 
-export const DesvincularMovimientosPage = () => {
+export const ReclasificarMovimientosPage = () => {
     // Estado principal
     const [fecha, setFecha] = useState<string>(getMesActual().inicio);
     const [fechaFin, setFechaFin] = useState<string>(getMesActual().fin);
@@ -50,10 +49,13 @@ export const DesvincularMovimientosPage = () => {
     const [success, setSuccess] = useState<string | null>(null);
 
     // Data State
-    const [stats, setStats] = useState<DesvinculacionStats[] | null>(null);
+    const [stats, setStats] = useState<ReclasificacionStats[] | null>(null);
     const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
     const [loadingMovimientos, setLoadingMovimientos] = useState(false);
 
+    // Advanced Filters State
+    const [mostrarIngresos, setMostrarIngresos] = useState(true);
+    const [mostrarEgresos, setMostrarEgresos] = useState(true);
 
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -79,7 +81,7 @@ export const DesvincularMovimientosPage = () => {
 
             try {
                 // 1. Obtener estadísticas
-                const statsData = await mantenimientoService.analizarDesvinculacion(
+                const statsData = await mantenimientoService.analizarReclasificacion(
                     fecha,
                     fechaFin,
                     selectedCuentaId ? Number(selectedCuentaId) : undefined,
@@ -92,7 +94,7 @@ export const DesvincularMovimientosPage = () => {
                 setStats(statsData);
 
                 // 2. Obtener total absoluto del periodo (sin filtros extra) para el denominador
-                const totalStats = await mantenimientoService.analizarDesvinculacion(
+                const totalStats = await mantenimientoService.analizarReclasificacion(
                     fecha,
                     fechaFin,
                     selectedCuentaId ? Number(selectedCuentaId) : undefined,
@@ -132,13 +134,29 @@ export const DesvincularMovimientosPage = () => {
 
     }, [fecha, fechaFin, selectedCuentaId, terceroId, centroCostoId, conceptoId, centrosCostosExcluidos, soloClasificados, refreshTrigger]);
 
-    // Eliminated handleDesvincularMasivo as per user request
+    // Apply client-side filtering for Ingresos/Egresos
+    // We filter on the client side because the backend endpoint for listing might not support these specific flags directly 
+    // or we want to reuse the same fetched data without refetching.
+    const filteredMovimientos = useMemo(() => {
+        return movimientos.filter(m => {
+            if (mostrarIngresos && mostrarEgresos) return true;
+            if (!mostrarIngresos && !mostrarEgresos) return false;
 
-    const handleDesvincularUno = async (row: Movimiento) => {
-        if (!confirm("¿Estás seguro de desvincular este movimiento? Se reseteará a estado pendiente.")) return;
+            const isIngreso = m.valor > 0;
+            if (mostrarIngresos && isIngreso) return true;
+            if (mostrarEgresos && !isIngreso) return true;
+
+            return false;
+        });
+    }, [movimientos, mostrarIngresos, mostrarEgresos]);
+
+    // Eliminated handleReclasificarMasivo as per user request
+
+    const handleReclasificarUno = async (row: Movimiento) => {
+        if (!confirm("¿Estás seguro de reclasificar este movimiento? Se reseteará a estado pendiente.")) return;
         setLoading(true);
         try {
-            const result = await mantenimientoService.desvincularLote([row.id], backup);
+            const result = await mantenimientoService.reclasificarLote([row.id], backup);
             setSuccess(result.mensaje);
             // Re-analizar para actualizar lista y stats
             setRefreshTrigger(p => p + 1);
@@ -149,14 +167,14 @@ export const DesvincularMovimientosPage = () => {
         }
     };
 
-    const handleDesvincularSeleccion = async () => {
+    const handleReclasificarSeleccion = async () => {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
-        if (!confirm(`¿Estás seguro de desvincular los ${ids.length} movimientos seleccionados?`)) return;
+        if (!confirm(`¿Estás seguro de reclasificar los ${ids.length} movimientos seleccionados?`)) return;
 
         setLoading(true);
         try {
-            const result = await mantenimientoService.desvincularLote(ids, backup);
+            const result = await mantenimientoService.reclasificarLote(ids, backup);
             setSuccess(result.mensaje);
             setSelectedIds(new Set());
             setRefreshTrigger(p => p + 1);
@@ -360,9 +378,9 @@ export const DesvincularMovimientosPage = () => {
                 <Button
                     variant="ghost-warning"
                     size="sm"
-                    onClick={() => handleDesvincularUno(row)}
+                    onClick={() => handleReclasificarUno(row)}
                     className="!p-1"
-                    title="Desvincular Individualmente"
+                    title="Reclasificar Individualmente"
                 >
                     <Unlink size={14} />
                 </Button>
@@ -373,17 +391,17 @@ export const DesvincularMovimientosPage = () => {
     return (
         <div className="max-w-full mx-auto p-6 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex items-center gap-4 mb-8">
+            <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 bg-amber-100 text-amber-600 rounded-xl">
                     <Unlink size={32} />
                 </div>
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Desvincular Movimientos por Rango</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">Reclasificar Movimientos por Rango</h1>
                     <p className="text-gray-500">Herramienta para reiniciar masivamente movimientos a estado pendiente (sin eliminar)</p>
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-4">
 
                 {/* Filters Board */}
                 <FiltrosReporte
@@ -400,7 +418,11 @@ export const DesvincularMovimientosPage = () => {
                     conceptoId={conceptoId}
                     onConceptoChange={setConceptoId}
                     showClasificacionFilters={true}
-                    showIngresosEgresos={false}
+                    showIngresosEgresos={true}
+                    mostrarIngresos={mostrarIngresos}
+                    onMostrarIngresosChange={setMostrarIngresos}
+                    mostrarEgresos={mostrarEgresos}
+                    onMostrarEgresosChange={setMostrarEgresos}
                     soloConciliables={false}
                     onLimpiar={() => {
                         const actual = getMesActual();
@@ -410,6 +432,9 @@ export const DesvincularMovimientosPage = () => {
                         setTerceroId('');
                         setCentroCostoId('');
                         setConceptoId('');
+
+                        setMostrarIngresos(true);
+                        setMostrarEgresos(true);
 
                         // Reset exclusions to defaults
                         if (configExclusion.length > 0) {
@@ -444,7 +469,7 @@ export const DesvincularMovimientosPage = () => {
 
                 {/* Main Content Area */}
                 {stats && (
-                    <div className="space-y-6 animate-fade-in border-t border-gray-100 pt-6">
+                    <div className="space-y-4 animate-fade-in border-t border-gray-100 pt-3">
 
                         {/* Stats Ribbon */}
                         <div className="grid grid-cols-2 ml-4 gap-4 lg:grid-cols-4">
@@ -515,17 +540,17 @@ export const DesvincularMovimientosPage = () => {
 
                                 {selectedIds.size > 0 ? (
                                     <button
-                                        onClick={handleDesvincularSeleccion}
+                                        onClick={handleReclasificarSeleccion}
                                         disabled={loading || hasBlockedAccounts}
                                         className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-sm flex items-center gap-2 transition-transform active:scale-95"
-                                        title={hasBlockedAccounts ? "No se puede desvincular: Periodo conciliado/cerrado" : "Desvincular seleccionados"}
+                                        title={hasBlockedAccounts ? "No se puede reclasificar: Periodo conciliado/cerrado" : "Reclasificar seleccionados"}
                                     >
                                         <Unlink size={16} />
-                                        Desvincular Selección ({selectedIds.size})
+                                        Reclasificar Selección ({selectedIds.size})
                                     </button>
                                 ) : (
                                     <span className="text-xs text-slate-400 italic px-2">
-                                        Seleccione movimientos para desvincular
+                                        Seleccione movimientos para reclasificar
                                     </span>
                                 )}
                             </div>
@@ -534,14 +559,15 @@ export const DesvincularMovimientosPage = () => {
                         {/* Data Table */}
                         <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
                             <DataTable
-                                data={movimientos}
+                                data={filteredMovimientos}
                                 columns={columns}
                                 getRowKey={(row) => row.id}
                                 loading={loadingMovimientos}
                                 showActions={false} // We handle actions manually in columns
                                 emptyMessage="No hay movimientos para mostrar en este rango."
-                                className="border-none"
+                                className="border-none h-[800px] overflow-y-auto"
                                 rounded={false}
+                                stickyHeader={true}
                             />
                         </div>
                     </div>
@@ -572,7 +598,7 @@ const StatCard = ({ label, value, secondaryValue, icon: Icon, color, isCurrency 
     }
 
     return (
-        <div className={`p-6 rounded-2xl border flex flex-col justify-between shadow-sm transition-all hover:shadow-md ${colors[color] || colors.slate}`}>
+        <div className={`p-4 rounded-2xl border flex flex-col justify-between shadow-sm transition-all hover:shadow-md ${colors[color] || colors.slate}`}>
             <div className="flex items-center gap-3 mb-2">
                 <div className={`p-2 rounded-lg ${iconColors[color] || iconColors.slate}`}><Icon className="w-5 h-5" /></div>
                 <span className={`text-xs font-bold uppercase tracking-wider ${color === 'slate' ? 'text-slate-400' : 'opacity-80'}`}>{label}</span>

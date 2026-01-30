@@ -73,14 +73,13 @@ export const Sidebar = () => {
         { name: 'Cargar Movimiento', path: '/movimientos/cargar', icon: UploadCloud },
         { name: 'Cargar Extractos', path: '/conciliacion/cargar-extracto', icon: FileText },
         { name: 'Procesar Matching', path: '/conciliacion/matching', icon: GitCompare },
-        { name: 'Desvincular Movimientos', path: '/herramientas/mantenimiento/desvincular-movimientos', icon: Unlink },
+        { name: 'Reclasificar Movimientos', path: '/herramientas/mantenimiento/reclasificar-movimientos', icon: Unlink },
         { name: 'Por Clasificar', path: '/movimientos/clasificar', icon: ListTodo },
         { name: 'Movimientos', path: '/movimientos', icon: Receipt },
         { name: 'Sugerencias Reclasif.', path: '/movimientos/sugerencias', icon: Sparkles },
     ];
 
     const menuReportes = [
-        { name: 'Reporte Clasificación', path: '/movimientos/reporte', icon: BarChart3 },
         { name: 'Egresos por Tercero', path: '/reportes/egresos-tercero', icon: PieChart },
         { name: 'Egresos por Centro Costo', path: '/reportes/egresos-centro-costo', icon: Layers },
         { name: 'Ingresos y Gastos', path: '/reportes/ingresos-gastos', icon: TrendingUp },

@@ -210,6 +210,10 @@ export const ReporteIngresosGastosMesPage = () => {
 
     return (
         <div className="flex flex-col h-full bg-slate-50/50">
+            <div className="px-6 pt-6 pb-2 bg-white">
+                <h1 className="text-2xl font-bold text-slate-900">Ingresos y Gastos</h1>
+                <p className="text-slate-500 text-sm mt-1">Comparativo y evolución mensual de movimientos</p>
+            </div>
             <FiltrosReporte
                 desde={desde} setDesde={setDesde}
                 hasta={hasta} setHasta={setHasta}
@@ -217,6 +221,7 @@ export const ReporteIngresosGastosMesPage = () => {
                 terceroId={terceroId} setTerceroId={setTerceroId}
                 centroCostoId={centroCostoId} setCentroCostoId={setCentroCostoId}
                 conceptoId={conceptoId} setConceptoId={setConceptoId}
+                configuracionExclusion={configuracionExclusion}
                 centrosCostosExcluidos={actualCentrosCostosExcluidos}
                 setCentrosCostosExcluidos={setCentrosCostosExcluidos}
                 mostrarIngresos={mostrarIngresos}
@@ -224,6 +229,7 @@ export const ReporteIngresosGastosMesPage = () => {
                 mostrarEgresos={mostrarEgresos}
                 setMostrarEgresos={setMostrarEgresos}
                 onLimpiar={handleLimpiar}
+                showIngresosEgresos={true}
             />
 
             <div className="flex-1 overflow-auto p-4 space-y-4">

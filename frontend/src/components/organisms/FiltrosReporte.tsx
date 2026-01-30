@@ -83,14 +83,14 @@ export const FiltrosReporte = ({
     const finalConceptos = conceptos.length > 0 ? conceptos : catConceptos
 
     return (
-        <div className="bg-white/90 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-30 px-6 py-4 shadow-sm flex flex-col gap-5">
+        <div className="bg-white/90 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-30 px-6 py-3 shadow-sm flex flex-col">
             {/* Fila 1: Botones de Rango */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-1.5">
                 <DateRangeButtons onDesdeChange={_onDesde} onHastaChange={_onHasta} />
             </div>
 
             {/* Fila 2: Fechas y Cuenta */}
-            <div className="flex flex-wrap items-end gap-6">
+            <div className="flex flex-wrap items-end gap-6 mb-3">
                 <div className="flex-1 min-w-[400px]">
                     <DateRangeInputs
                         desde={desde} hasta={hasta}
@@ -111,7 +111,7 @@ export const FiltrosReporte = ({
             </div>
 
             {/* Fila 3: Clasificación y Reiniciar */}
-            <div className="flex items-end gap-6">
+            <div className="flex items-end gap-6 mb-3">
                 <div className="flex-1">
                     {showClasificacionFilters && (
                         <ClassificationFilters

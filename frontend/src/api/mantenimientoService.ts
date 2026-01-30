@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '../config';
 
-export interface DesvinculacionStats {
+export interface ReclasificacionStats {
     cuenta_id: number;
     cuenta_nombre: string;
     conteo: number;
@@ -10,13 +10,13 @@ export interface DesvinculacionStats {
     bloqueado: boolean;
 }
 
-export interface DesvinculacionResult {
+export interface ReclasificacionResult {
     mensaje: string;
-    registros_desvinculados: number;
+    registros_reclasificados: number;
 }
 
 export const mantenimientoService = {
-    analizarDesvinculacion: async (
+    analizarReclasificacion: async (
         fecha: string,
         fechaFin?: string,
         cuentaId?: number,
@@ -26,7 +26,7 @@ export const mantenimientoService = {
             concepto_id?: number;
             centros_costos_excluidos?: number[];
         }
-    ): Promise<DesvinculacionStats[]> => {
+    ): Promise<ReclasificacionStats[]> => {
         let url = `${API_BASE_URL}/api/mantenimiento/analizar-desvinculacion?fecha=${fecha}`;
         if (fechaFin) {
             url += `&fecha_fin=${fechaFin}`;
@@ -51,12 +51,12 @@ export const mantenimientoService = {
         const response = await fetch(url);
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Error al analizar desvinculación');
+            throw new Error(error.detail || 'Error al analizar reclasificación');
         }
         return response.json();
     },
 
-    desvincularMovimientos: async (fecha: string, backup: boolean, cuentaId?: number, fechaFin?: string): Promise<DesvinculacionResult> => {
+    reclasificarMovimientos: async (fecha: string, backup: boolean, cuentaId?: number, fechaFin?: string): Promise<ReclasificacionResult> => {
         let url = `${API_BASE_URL}/api/mantenimiento/desvincular-movimientos?fecha=${fecha}&backup=${backup}`;
         if (fechaFin) {
             url += `&fecha_fin=${fechaFin}`;
@@ -70,12 +70,12 @@ export const mantenimientoService = {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Error al desvincular movimientos');
+            throw new Error(error.detail || 'Error al reclasificar movimientos');
         }
         return response.json();
     },
 
-    desvincularLote: async (ids: number[], backup: boolean = true): Promise<DesvinculacionResult> => {
+    reclasificarLote: async (ids: number[], backup: boolean = true): Promise<ReclasificacionResult> => {
         let url = `${API_BASE_URL}/api/mantenimiento/desvincular-lote?backup=${backup}`;
         ids.forEach(id => {
             url += `&ids=${id}`;
@@ -87,7 +87,7 @@ export const mantenimientoService = {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'Error al desvincular movimientos en lote');
+            throw new Error(error.detail || 'Error al reclasificar movimientos en lote');
         }
         return response.json();
     }
