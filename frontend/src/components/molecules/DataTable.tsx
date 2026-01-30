@@ -1,0 +1,384 @@
+import { Pencil, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Button } from '../atoms/Button'
+
+/**
+ * Definición de una columna para DataTable
+ */
+export interface Column<T> {
+    /** Clave única de la columna (opcional si hay render/accessor) */
+    key?: string
+    /** Título que se muestra en el header */
+    header: React.ReactNode
+    /** Función para extraer el valor a mostrar */
+    accessor?: (row: T, index?: number) => React.ReactNode
+    /** Alias para accessor */
+    render?: (row: T, index?: number) => React.ReactNode
+    /** Campo del objeto para ordenar (si es diferente de key) */
+    sortKey?: keyof T
+    /** Si la columna es ordenable */
+    sortable?: boolean
+    /** Ancho de la columna (ej: 'w-20', '120px') */
+    width?: string
+    /** Alineación del texto */
+    align?: 'left' | 'center' | 'right'
+    /** Clases CSS adicionales para la celda (alias) */
+    className?: string
+    /** Clases CSS adicionales para la celda */
+    cellClassName?: string
+    /** Clases CSS adicionales para el header */
+    headerClassName?: string
+}
+
+/**
+ * Definición de un grupo de encabezados
+ */
+export interface HeaderGroup {
+    /** Título del grupo */
+    title: React.ReactNode
+    /** Cuantas columnas abarca */
+    colSpan: number
+    /** Clases CSS adicionales */
+    className?: string
+}
+
+/**
+ * Props para DataTable
+ */
+export interface DataTableProps<T> {
+    /** Datos a mostrar */
+    data: T[]
+    /** Definición de columnas */
+    columns: Column<T>[]
+    /** Grupos de encabezados (opcional) */
+    headerGroups?: HeaderGroup[]
+    /** Si está cargando los datos */
+    loading?: boolean
+    /** Mensaje cuando está cargando */
+    loadingMessage?: string
+    /** Mensaje cuando no hay datos */
+    emptyMessage?: string
+    /** Función para obtener la key única de cada fila */
+    getRowKey: (row: T, index: number) => string | number
+    /** Callback al hacer clic en editar */
+    onEdit?: (row: T) => void
+    /** Callback al hacer clic en eliminar */
+    onDelete?: (row: T) => void
+    /** Mensaje de confirmación para eliminar */
+    deleteConfirmMessage?: string | ((row: T) => string)
+    /** Si mostrar la columna de acciones */
+    showActions?: boolean
+    /** Columna por la que ordenar inicialmente */
+    defaultSortKey?: string
+    /** Dirección inicial de ordenamiento */
+    defaultSortDirection?: 'asc' | 'desc'
+    /** Clases CSS adicionales para el contenedor */
+    className?: string
+    /** Si la tabla tiene bordes redondeados */
+    rounded?: boolean
+    /** Si el header debe ser sticky */
+    stickyHeader?: boolean
+    /** Claves de ordenamiento controlado (opcional) */
+    sortKey?: string | null
+    /** Dirección de ordenamiento controlado (opcional) */
+    sortDirection?: SortDirection
+    /** Callback para cambio de ordenamiento controlado */
+    onSort?: (key: string, direction: SortDirection) => void
+    /** Padding vertical de las filas (default: py-3) */
+    rowPy?: string
+    /** Referencia al contenedor principal (para scroll infinito, etc) */
+    containerRef?: React.RefObject<HTMLDivElement | null>
+    /** Callback de scroll */
+    /** Callback de scroll */
+    onScroll?: React.UIEventHandler<HTMLDivElement>
+    /** Estilos en línea opcionales */
+    style?: React.CSSProperties
+}
+
+type SortDirection = 'asc' | 'desc' | null
+
+/**
+ * Componente DataTable genérico y reutilizable
+ * 
+ * @example
+ * <DataTable
+ *   data={grupos}
+ *   loading={loading}
+ *   columns={[
+ *     { key: 'id', header: 'ID', width: 'w-20' },
+ *     { key: 'nombre', header: 'Nombre', sortable: true },
+ *   ]}
+ *   getRowKey={(g) => g.id}
+ *   onEdit={handleEdit}
+ *   onDelete={handleDelete}
+ * />
+ */
+export function DataTable<T extends Record<string, any>>({
+    data,
+    columns,
+    headerGroups,
+    loading = false,
+    loadingMessage = 'Cargando...',
+    emptyMessage = 'No hay datos para mostrar.',
+    getRowKey,
+    onEdit,
+    onDelete,
+    deleteConfirmMessage = '¿Estás seguro de eliminar este registro?',
+    showActions = true,
+    defaultSortKey,
+    defaultSortDirection = 'asc',
+    className = '',
+    rounded = true,
+    stickyHeader = false,
+    sortKey: controlledSortKey,
+    sortDirection: controlledSortDirection,
+    onSort,
+    rowPy = 'py-3',
+    containerRef,
+    onScroll,
+    style,
+}: DataTableProps<T>) {
+    // Estado interno solo si no se controla externamente
+    const [internalSortKey, setInternalSortKey] = useState<string | null>(defaultSortKey ?? null)
+    const [internalSortDirection, setInternalSortDirection] = useState<SortDirection>(defaultSortKey ? defaultSortDirection : null)
+
+    // Determinar qué estado usar
+    const isControlled = controlledSortKey !== undefined
+    const currentSortKey = isControlled ? controlledSortKey : internalSortKey
+    const currentSortDirection = isControlled ? controlledSortDirection : internalSortDirection
+
+    // Ordenar datos (solo si no es controlado)
+    const sortedData = useMemo(() => {
+        // Si es controlado, asumimos que la data ya viene ordenada o se ordenará arriba
+        if (isControlled) return data
+
+        if (!currentSortKey || !currentSortDirection) return data
+
+        const column = columns.find(c => c.key === currentSortKey)
+        if (!column) return data
+
+        const key = column.sortKey ?? column.key
+
+        return [...data].sort((a, b) => {
+            const aVal = a[key as keyof T]
+            const bVal = b[key as keyof T]
+
+            // Manejo de nulls
+            if (aVal == null && bVal == null) return 0
+            if (aVal == null) return currentSortDirection === 'asc' ? 1 : -1
+            if (bVal == null) return currentSortDirection === 'asc' ? -1 : 1
+
+            // Comparación
+            if (typeof aVal === 'string' && typeof bVal === 'string') {
+                return currentSortDirection === 'asc'
+                    ? aVal.localeCompare(bVal)
+                    : bVal.localeCompare(aVal)
+            }
+
+            if (typeof aVal === 'number' && typeof bVal === 'number') {
+                return currentSortDirection === 'asc' ? aVal - bVal : bVal - aVal
+            }
+
+            return 0
+        })
+    }, [data, currentSortKey, currentSortDirection, columns, isControlled])
+
+    // Toggle ordenamiento
+    const handleSort = (columnKey: string) => {
+        const column = columns.find(c => c.key === columnKey)
+        if (!column?.sortable) return
+
+        let newDirection: SortDirection = 'asc'
+        let newKey: string | null = columnKey
+
+        if (currentSortKey === columnKey) {
+            // Ciclar: asc -> desc -> null
+            if (currentSortDirection === 'asc') {
+                newDirection = 'desc'
+            } else if (currentSortDirection === 'desc') {
+                newKey = null
+                newDirection = null
+            }
+        }
+
+        if (isControlled && onSort) {
+            onSort(newKey || '', newDirection) // enviamos '' si es null para compatibilidad, o ajustar logica
+        } else {
+            setInternalSortKey(newKey)
+            setInternalSortDirection(newDirection)
+        }
+    }
+
+    // Manejar eliminación con confirmación
+    const handleDelete = (row: T) => {
+        const message = typeof deleteConfirmMessage === 'function'
+            ? deleteConfirmMessage(row)
+            : deleteConfirmMessage
+
+        if (confirm(message)) {
+            onDelete?.(row)
+        }
+    }
+
+    // Renderizar celda
+    const renderCell = (row: T, column: Column<T>, index: number) => {
+        const renderer = column.render || column.accessor
+        if (renderer) {
+            return renderer(row, index)
+        }
+        return column.key ? row[column.key as keyof T] : null
+    }
+
+    // Estado loading
+    if (loading) {
+        return (
+            <div className="p-8 text-center text-gray-500">
+                <div className="inline-block w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin mr-2" />
+                {loadingMessage}
+            </div>
+        )
+    }
+
+    // Estado vacío
+    if (data.length === 0) {
+        return (
+            <div className="p-8 text-center text-gray-500">
+                {emptyMessage}
+            </div>
+        )
+    }
+
+    const showActionsColumn = showActions && (onEdit || onDelete)
+
+    return (
+        <div
+            ref={containerRef}
+            onScroll={onScroll}
+            style={style}
+            className={`overflow-x-auto ${rounded ? 'rounded-lg' : ''} ${className}`}
+        >
+            <table className="w-full text-left border-collapse">
+                <thead>
+                    {headerGroups && (
+                        <tr className={`bg-gray-50 border-b border-gray-200 ${stickyHeader ? 'sticky top-0 z-10' : ''}`}>
+                            {headerGroups.map((group, index) => (
+                                <th
+                                    key={index}
+                                    colSpan={group.colSpan}
+                                    className={`py-2 px-4 text-xs font-bold uppercase tracking-wider ${group.className ?? ''}`}
+                                >
+                                    {group.title}
+                                </th>
+                            ))}
+                        </tr>
+                    )}
+                    <tr className={`border-b border-gray-200 bg-gray-50 ${stickyHeader ? (headerGroups ? 'sticky top-[25px] z-10' : 'sticky top-0 z-10') : ''}`}>
+                        {columns.map((column) => (
+                            <th
+                                key={column.key}
+                                className={`
+                                    py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider
+                                    ${column.width ?? ''}
+                                    ${column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left'}
+                                    ${column.sortable ? 'cursor-pointer select-none hover:bg-gray-100 transition-colors' : ''}
+                                    ${column.headerClassName ?? ''}
+                                `}
+                                onClick={() => column.sortable && column.key && handleSort(column.key)}
+
+                            >
+                                <div className={`flex items-center gap-1 ${column.align === 'right' ? 'justify-end' : column.align === 'center' ? 'justify-center' : ''}`}>
+                                    {column.header}
+                                    {column.sortable && currentSortKey === column.key && (
+                                        currentSortDirection === 'asc'
+                                            ? <ChevronUp size={14} className="text-blue-600" />
+                                            : <ChevronDown size={14} className="text-blue-600" />
+                                    )}
+                                </div>
+                            </th>
+                        ))}
+                        {showActionsColumn && (
+                            <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-32">
+                                Acciones
+                            </th>
+                        )}
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {sortedData.map((row, index) => (
+                        <tr key={getRowKey(row, index)} className="hover:bg-gray-50 transition-colors">
+                            {columns.map((column) => (
+                                <td
+                                    key={column.key}
+                                    className={`
+                                        ${rowPy} px-4 text-sm
+                                        ${column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left'}
+                                        ${column.className ?? ''}
+                                        ${column.cellClassName ?? ''}
+                                    `}
+                                >
+                                    {renderCell(row, column, index)}
+                                </td>
+                            ))}
+                            {showActionsColumn && (
+                                <td className={`${rowPy} px-4 text-right`}>
+                                    <div className="flex justify-end gap-2">
+                                        {onEdit && (
+                                            <Button
+                                                variant="ghost-warning"
+                                                size="sm"
+                                                onClick={() => onEdit(row)}
+                                                className="!p-1.5"
+                                                title="Editar"
+                                            >
+                                                <Pencil size={15} />
+                                            </Button>
+                                        )}
+                                        {onDelete && (
+                                            <Button
+                                                variant="ghost-danger"
+                                                size="sm"
+                                                onClick={() => handleDelete(row)}
+                                                className="!p-1.5"
+                                                title="Eliminar"
+                                            >
+                                                <Trash2 size={15} />
+                                            </Button>
+                                        )}
+                                    </div>
+                                </td>
+                            )}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
+/**
+ * Helper para crear columnas fácilmente
+ */
+export const createColumn = <T,>(column: Column<T>): Column<T> => column
+
+/**
+ * Columna de ID preconfigurada
+ */
+export const idColumn = <T extends { id: number }>(overrides?: Partial<Column<T>>): Column<T> => ({
+    key: 'id',
+    header: 'ID',
+    width: 'w-20',
+    accessor: (row) => <span className="font-mono text-gray-600">#{row.id}</span>,
+    sortable: true,
+    ...overrides,
+})
+
+/**
+ * Columna de nombre preconfigurada
+ */
+export const nombreColumn = <T extends { nombre: string }>(overrides?: Partial<Column<T>>): Column<T> => ({
+    key: 'nombre',
+    header: 'Nombre',
+    accessor: (row) => <span className="font-medium text-gray-900">{row.nombre}</span>,
+    sortable: true,
+    ...overrides,
+})
