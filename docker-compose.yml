@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: mvtos_db
+    environment:
+      TZ: "America/Bogota"
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-Mvtos}
+    volumes:
+      - mvtos_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-Mvtos}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./Backend
+    container_name: mvtos_backend
+    environment:
+      - TZ=America/Bogota
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5433
+      - DB_NAME=${DB_NAME:-Mvtos}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=SLB
+      - ENVIRONMENT=production
+      - DIRECTORIO_MOVIMIENTOS=/app/media/movimientos
+      - DIRECTORIO_EXTRACTOS=/app/media/extractos
+      - BACKUP_PATH=/app/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Backend:/app
+      - ${HOST_MOVIMIENTOS}:/app/media/movimientos
+      - ${HOST_EXTRACTOS}:/app/media/extractos
+      - ${HOST_BACKUPS}:/app/backups
+
+  frontend:
+    build:
+      context: ./frontend
+      target: build
+    container_name: mvtos_frontend
+    environment:
+      - VITE_API_URL=http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  mvtos_postgres_data:
