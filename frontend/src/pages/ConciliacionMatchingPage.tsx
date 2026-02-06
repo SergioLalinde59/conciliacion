@@ -15,10 +15,18 @@ import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 import { useCatalogo } from '../hooks/useCatalogo'
 
 export const ConciliacionMatchingPage = () => {
-    // State para filtros principales
+    // State para filtros principales - Por defecto mes anterior
     const [cuentaId, setCuentaId] = useState<number | null>(null)
-    const [year, setYear] = useState(new Date().getFullYear())
-    const [month, setMonth] = useState(new Date().getMonth() + 1)
+    const [year, setYear] = useState(() => {
+        const today = new Date()
+        // Si estamos en enero, el mes anterior es diciembre del año pasado
+        return today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear()
+    })
+    const [month, setMonth] = useState(() => {
+        const today = new Date()
+        // Mes anterior (si enero, devuelve 12 para diciembre)
+        return today.getMonth() === 0 ? 12 : today.getMonth()
+    })
 
     // State para filtros de matches
     const [selectedEstados, setSelectedEstados] = useState<MatchEstado[]>([MatchEstado.SIN_MATCH])
@@ -37,6 +45,16 @@ export const ConciliacionMatchingPage = () => {
     const reconcilableCuentas = useMemo(() => {
         return (cuentas as Cuenta[] || []).filter((c: Cuenta) => c.permite_conciliar)
     }, [cuentas])
+
+    // Obtener cuenta seleccionada con su configuración
+    const cuentaSeleccionada = useMemo(() => {
+        if (!cuentaId) return null
+        return (cuentas as Cuenta[] || []).find((c: Cuenta) => c.id === cuentaId) || null
+    }, [cuentas, cuentaId])
+
+    // Permisos de la cuenta seleccionada
+    const permiteEditar = cuentaSeleccionada?.configuracion?.permite_editar ?? false
+    const permiteBorrar = cuentaSeleccionada?.configuracion?.permite_borrar ?? false
 
     // Seleccionar primera cuenta por defecto
     useEffect(() => {
@@ -548,6 +566,8 @@ export const ConciliacionMatchingPage = () => {
                                         setEditingSystemMov(mov as any)
                                         setShowEditSystemModal(true)
                                     }}
+                                    permiteEditar={permiteEditar}
+                                    permiteBorrar={permiteBorrar}
                                 />
                             </div>
                         )}

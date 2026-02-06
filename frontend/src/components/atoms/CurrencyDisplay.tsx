@@ -24,6 +24,8 @@ interface CurrencyDisplayProps {
     showPlusSign?: boolean
     /** Número de decimales a mostrar. Si se omite, usa el valor por defecto de la moneda. */
     decimals?: number
+    /** Justificar a la derecha. Por defecto true cuando colorize es true */
+    alignRight?: boolean
 }
 
 /**
@@ -124,7 +126,8 @@ export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
     showCurrency, // deprecated alias for showSymbol
     colorize = true,
     showPlusSign = false,
-    decimals
+    decimals,
+    alignRight
 }) => {
     const { showDecimals } = useSettings();
 
@@ -133,6 +136,10 @@ export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
 
     // Determinar el color basado en el valor
     const colorClass = colorize ? getAmountColorClass(value) : ''
+
+    // Alinear a la derecha por defecto cuando colorize está activo
+    const shouldAlignRight = alignRight ?? colorize
+    const alignClass = shouldAlignRight ? 'block w-full text-right' : ''
 
     // Determine decimal places
     // If decimals is explicitly provided, use it.
@@ -174,7 +181,7 @@ export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
         : formattedValue
 
     return (
-        <span className={`${colorClass} ${className}`}>
+        <span className={`${colorClass} ${alignClass} ${className}`.trim()}>
             {displayValue}
         </span>
     )

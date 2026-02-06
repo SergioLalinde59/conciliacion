@@ -27,7 +27,7 @@ export const BatchClassificationPreviewTable: React.FC<Props> = ({
     const columns = [
         idColumn<Movimiento>(
             'id',
-            <TableHeaderCell>ID</TableHeaderCell>,
+            <TableHeaderCell>Id</TableHeaderCell>,
             (m) => m.id,
             { width: 'w-16' }
         ),
@@ -36,6 +36,12 @@ export const BatchClassificationPreviewTable: React.FC<Props> = ({
             <TableHeaderCell>Fecha</TableHeaderCell>,
             (m) => m.fecha,
             { width: 'w-24' }
+        ),
+        textoColumn<Movimiento>(
+            'referencia',
+            <TableHeaderCell>Referencia</TableHeaderCell>,
+            (m) => m.referencia || '-',
+            { width: 'w-28', cellClassName: 'font-medium text-gray-700' }
         ),
         textoColumn<Movimiento>(
             'descripcion',

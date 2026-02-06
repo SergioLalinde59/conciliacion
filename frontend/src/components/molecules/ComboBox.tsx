@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { X, ChevronDown } from 'lucide-react'
 import { Input } from '../atoms/Input'
 import { EntityDisplay } from './entities/EntityDisplay'
@@ -38,8 +39,22 @@ export const ComboBox = ({
     const [searchTerm, setSearchTerm] = useState('')
     const [showDropdown, setShowDropdown] = useState(false)
     const [filteredOptions, setFilteredOptions] = useState<ComboBoxOption[]>(options)
+    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
     const inputRef = useRef<HTMLInputElement>(null)
     const dropdownRef = useRef<HTMLDivElement>(null)
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    // Calcular posición del dropdown
+    const updateDropdownPosition = useCallback(() => {
+        if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect()
+            setDropdownPosition({
+                top: rect.bottom + window.scrollY + 4,
+                left: rect.left + window.scrollX,
+                width: rect.width
+            })
+        }
+    }, [])
 
     // Actualizar el texto mostrado cuando cambia el valor
     useEffect(() => {
@@ -76,13 +91,29 @@ export const ComboBox = ({
     // Cerrar dropdown al hacer clic fuera
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            const target = event.target as Node
+            const isInsideContainer = containerRef.current?.contains(target)
+            const isInsideDropdown = dropdownRef.current?.contains(target)
+            if (!isInsideContainer && !isInsideDropdown) {
                 setShowDropdown(false)
             }
         }
         document.addEventListener('mousedown', handleClickOutside)
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
+
+    // Actualizar posición del dropdown cuando se abre o cambia el tamaño
+    useEffect(() => {
+        if (showDropdown) {
+            updateDropdownPosition()
+            window.addEventListener('resize', updateDropdownPosition)
+            window.addEventListener('scroll', updateDropdownPosition, true)
+            return () => {
+                window.removeEventListener('resize', updateDropdownPosition)
+                window.removeEventListener('scroll', updateDropdownPosition, true)
+            }
+        }
+    }, [showDropdown, updateDropdownPosition])
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newValue = e.target.value
@@ -162,8 +193,54 @@ export const ComboBox = ({
         }
     }
 
+    // Renderizar dropdown usando Portal para evitar problemas de overflow
+    const renderDropdown = () => {
+        if (!showDropdown || disabled) return null
+
+        const dropdownContent = (
+            <div
+                ref={dropdownRef}
+                style={{
+                    position: 'absolute',
+                    top: dropdownPosition.top,
+                    left: dropdownPosition.left,
+                    width: dropdownPosition.width,
+                    zIndex: 9999
+                }}
+                className="bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200"
+            >
+                {filteredOptions.length > 0 ? (
+                    filteredOptions.map((option) => (
+                        <div
+                            key={option.id}
+                            onMouseDown={(e) => {
+                                e.preventDefault()
+                                selectOption(option)
+                            }}
+                            className={`px-3 py-2.5 hover:bg-blue-50 cursor-pointer text-sm transition-colors border-b border-gray-50 last:border-0 flex items-center gap-2 ${value === option.id.toString() ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'
+                                }`}
+                        >
+                            <EntityDisplay
+                                id={option.id}
+                                nombre={option.nombre}
+                                className="w-full"
+                                idClassName="bg-gray-100 text-gray-500 min-w-[30px] text-center"
+                            />
+                        </div>
+                    ))
+                ) : (
+                    <div className="px-4 py-4 text-center">
+                        <p className="text-sm text-gray-400 italic">No se encontraron resultados</p>
+                    </div>
+                )}
+            </div>
+        )
+
+        return createPortal(dropdownContent, document.body)
+    }
+
     return (
-        <div className={`relative ${className}`} ref={dropdownRef}>
+        <div className={`relative ${className}`} ref={containerRef}>
             {label && (
                 <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2 mb-1.5">
                     {Icon && <Icon size={14} />}
@@ -187,7 +264,6 @@ export const ComboBox = ({
                 />
 
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                    {/* ... existing buttons ... */}
                     {searchTerm && !disabled && (
                         <button
                             type="button"
@@ -210,34 +286,7 @@ export const ComboBox = ({
                 </div>
             </div>
 
-            {showDropdown && !disabled && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    {filteredOptions.length > 0 ? (
-                        filteredOptions.map((option) => (
-                            <div
-                                key={option.id}
-                                onMouseDown={(e) => {
-                                    e.preventDefault() // Prevent blur before click
-                                    selectOption(option)
-                                }}
-                                className={`px-3 py-2.5 hover:bg-blue-50 cursor-pointer text-sm transition-colors border-b border-gray-50 last:border-0 flex items-center gap-2 ${value === option.id.toString() ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'
-                                    }`}
-                            >
-                                <EntityDisplay
-                                    id={option.id}
-                                    nombre={option.nombre}
-                                    className="w-full"
-                                    idClassName="bg-gray-100 text-gray-500 min-w-[30px] text-center"
-                                />
-                            </div>
-                        ))
-                    ) : (
-                        <div className="px-4 py-4 text-center">
-                            <p className="text-sm text-gray-400 italic">No se encontraron resultados</p>
-                        </div>
-                    )}
-                </div>
-            )}
+            {renderDropdown()}
             {error && <span className="text-xs text-rose-500 ml-0.5 font-medium animate-fadeIn mt-1 block">{error}</span>}
         </div>
     )

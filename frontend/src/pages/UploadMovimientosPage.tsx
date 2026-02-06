@@ -1,10 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { apiService } from '../services/api'
-import type { Cuenta } from '../types'
-import { UploadCloud, FileText, AlertCircle, FolderOpen } from 'lucide-react'
+import { UploadCloud, FileText, AlertCircle, FolderOpen, Database } from 'lucide-react'
 import { Modal } from '../components/molecules/Modal'
 import { Button } from '../components/atoms/Button'
 import { LoadResultSummary } from '../components/molecules/LoadResultSummary'
+import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
+import { useCatalogo } from '../hooks/useCatalogo'
+
+type ExtractoRegistro = {
+    id: number
+    cuenta_id: number
+    fecha: string
+    descripcion: string
+    referencia: string
+    valor: number
+    usd: number | null
+    year: number
+    month: number
+}
+
+type ExtractosPorCuenta = Record<number, {
+    cuenta_nombre: string
+    total: number
+    ingresos: number
+    egresos: number
+    ingresos_usd: number | null
+    egresos_usd: number | null
+    registros: ExtractoRegistro[]
+}>
 
 // Subcomponent for Stats - Premium Style
 const StatCard = ({ label, value, secondaryValue, icon, colorClass, bgColorClass, borderColor, isCurrency = true }: any) => {
@@ -32,7 +55,9 @@ export const UploadMovimientosPage: React.FC = () => {
     const [file, setFile] = useState<File | null>(null)
     const [tipoCuenta, setTipoCuenta] = useState('')
     const [cuentaId, setCuentaId] = useState<number | null>(null)
-    const [cuentas, setCuentas] = useState<Cuenta[]>([])
+
+    // Cuentas desde catálogo centralizado
+    const { cuentas } = useCatalogo()
 
     // Status
     const [loading, setLoading] = useState(false)
@@ -48,15 +73,34 @@ export const UploadMovimientosPage: React.FC = () => {
     // Modal Success State
     const [showSuccessModal, setShowSuccessModal] = useState(false)
 
+    // Extractos existentes por cuenta (cargados al inicio)
+    const [extractosPorCuenta, setExtractosPorCuenta] = useState<ExtractosPorCuenta>({})
+    const [loadingExtractos, setLoadingExtractos] = useState(false)
+
     // Ref for file input
     const fileInputRef = useRef<HTMLInputElement>(null)
 
+    // Cargar extractos de todas las cuentas al montar
     useEffect(() => {
-        // Load accounts
-        apiService.cuentas.listar()
-            .then(setCuentas)
-            .catch(err => console.error(err))
+        const cargarExtractos = async () => {
+            setLoadingExtractos(true)
+            try {
+                const data = await apiService.archivos.obtenerExtractosTodasCuentas(50)
+                setExtractosPorCuenta(data)
+            } catch (err) {
+                console.error('Error cargando extractos existentes:', err)
+            } finally {
+                setLoadingExtractos(false)
+            }
+        }
+        cargarExtractos()
     }, [])
+
+    // Extractos de la cuenta seleccionada
+    const extractosCuentaActual = useMemo(() => {
+        if (!cuentaId || !extractosPorCuenta[cuentaId]) return null
+        return extractosPorCuenta[cuentaId]
+    }, [cuentaId, extractosPorCuenta])
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -96,6 +140,7 @@ export const UploadMovimientosPage: React.FC = () => {
     const [analyzed, setAnalyzed] = useState(false)
     const [stats, setStats] = useState<{ leidos: number, duplicados: number, nuevos: number, actualizables?: number } | null>(null)
     const [movimientosPreview, setMovimientosPreview] = useState<any[]>([])
+    const [filtroEstado, setFiltroEstado] = useState<'todos' | 'duplicados' | 'actualizables' | 'nuevos' | ''>('todos')
     const [updateExisting, setUpdateExisting] = useState(false)
 
     const handleAnalizar = async (e: React.FormEvent) => {
@@ -187,7 +232,34 @@ export const UploadMovimientosPage: React.FC = () => {
         setAnalyzed(false)
         setStats(null)
         setUpdateExisting(false)
+        setFiltroEstado('todos')
     }, [file, tipoCuenta])
+
+    const conteoFiltros = useMemo(() => ({
+        todos: movimientosPreview.length,
+        duplicados: movimientosPreview.filter((m: any) => m.es_duplicado).length,
+        actualizables: movimientosPreview.filter((m: any) => m.es_actualizable).length,
+        nuevos: movimientosPreview.filter((m: any) => !m.es_duplicado && !m.es_actualizable).length,
+    }), [movimientosPreview])
+
+    const movimientosFiltrados = useMemo(() => {
+        switch (filtroEstado) {
+            case 'duplicados': return movimientosPreview.filter((m: any) => m.es_duplicado);
+            case 'actualizables': return movimientosPreview.filter((m: any) => m.es_actualizable);
+            case 'nuevos': return movimientosPreview.filter((m: any) => !m.es_duplicado && !m.es_actualizable);
+            default: return movimientosPreview;
+        }
+    }, [filtroEstado, movimientosPreview])
+
+    useEffect(() => {
+        if (conteoFiltros.nuevos > 0) {
+            setFiltroEstado('nuevos')
+        } else if (conteoFiltros.actualizables > 0) {
+            setFiltroEstado('actualizables')
+        } else {
+            setFiltroEstado('')
+        }
+    }, [conteoFiltros])
 
     const handleCloseSuccessModal = () => {
         setShowSuccessModal(false)
@@ -215,11 +287,10 @@ export const UploadMovimientosPage: React.FC = () => {
                     <form onSubmit={handleAnalizar} className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Cuenta Asociada</label>
-                                <select
+                                <SelectorCuenta
                                     value={cuentaId || ''}
-                                    onChange={(e) => {
-                                        const id = Number(e.target.value)
+                                    onChange={(value) => {
+                                        const id = Number(value)
                                         setCuentaId(id)
                                         setFile(null)
                                         setLocalFilename(null)
@@ -234,15 +305,94 @@ export const UploadMovimientosPage: React.FC = () => {
                                             setTipoCuenta(cuenta.nombre)
                                         }
                                     }}
-                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-2.5"
-                                >
-                                    <option value="">Seleccione una cuenta...</option>
-                                    {cuentas.filter(c => c.permite_carga).map(c => (
-                                        <option key={c.id} value={c.id}>{c.nombre}</option>
-                                    ))}
-                                </select>
+                                    label="Cuenta Asociada"
+                                    soloPermiteCarga={true}
+                                    soloConciliables={false}
+                                />
                             </div>
                         </div>
+
+                        {/* Registros existentes de la cuenta */}
+                        {cuentaId && extractosCuentaActual && extractosCuentaActual.total > 0 && (
+                            <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-4">
+                                {/* Estadísticas resumen */}
+                                <div className="grid grid-cols-3 gap-3 mb-4">
+                                    <div className="bg-white rounded-lg p-3 border border-amber-100 text-center">
+                                        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wide">Registros</p>
+                                        <p className="text-lg font-black text-amber-800">{extractosCuentaActual.total}</p>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-3 border border-emerald-100 text-center">
+                                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Ingresos</p>
+                                        <p className="text-lg font-black text-emerald-600">
+                                            {extractosCuentaActual.ingresos_usd !== null
+                                                ? `US$ ${extractosCuentaActual.ingresos_usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                                                : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(extractosCuentaActual.ingresos)
+                                            }
+                                        </p>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-3 border border-rose-100 text-center">
+                                        <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wide">Egresos</p>
+                                        <p className="text-lg font-black text-rose-600">
+                                            {extractosCuentaActual.egresos_usd !== null
+                                                ? `US$ ${extractosCuentaActual.egresos_usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                                                : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(extractosCuentaActual.egresos)
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Database size={14} className="text-amber-500" />
+                                    <span className="font-medium text-amber-700 text-xs">
+                                        Últimos movimientos
+                                        {extractosCuentaActual.total > extractosCuentaActual.registros.length && (
+                                            <span className="text-amber-500 ml-1">
+                                                ({extractosCuentaActual.registros.length} de {extractosCuentaActual.total})
+                                            </span>
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="max-h-40 overflow-y-auto bg-white rounded-lg border border-amber-100">
+                                    <table className="min-w-full text-xs">
+                                        <thead className="bg-amber-50 sticky top-0">
+                                            <tr>
+                                                <th className="px-3 py-2 text-left font-bold text-amber-700">Fecha</th>
+                                                <th className="px-3 py-2 text-left font-bold text-amber-700">Descripción</th>
+                                                <th className="px-3 py-2 text-right font-bold text-amber-700">Valor</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-amber-50">
+                                            {extractosCuentaActual.registros.map((r) => (
+                                                <tr key={r.id} className="hover:bg-amber-50/30">
+                                                    <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{r.fecha}</td>
+                                                    <td className="px-3 py-1.5 text-slate-700 truncate max-w-[200px]" title={r.descripcion}>{r.descripcion}</td>
+                                                    <td className={`px-3 py-1.5 text-right font-medium ${r.valor >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                        {r.usd !== null
+                                                            ? `US$ ${r.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                                                            : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(r.valor)
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p className="text-[10px] text-amber-600 mt-2 font-medium">
+                                    Estos registros serán reemplazados al cargar un nuevo extracto del mismo período.
+                                </p>
+                            </div>
+                        )}
+
+                        {cuentaId && loadingExtractos && (
+                            <div className="text-center py-2 text-slate-400 text-sm">Cargando registros existentes...</div>
+                        )}
+
+                        {cuentaId && !loadingExtractos && extractosCuentaActual && extractosCuentaActual.total === 0 && (
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
+                                <Database size={24} className="mx-auto text-slate-300 mb-2" />
+                                <p className="text-slate-500 text-sm">No hay registros de extracto para esta cuenta</p>
+                            </div>
+                        )}
 
                         <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors">
                             <input
@@ -342,7 +492,8 @@ export const UploadMovimientosPage: React.FC = () => {
                                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
                                 Previsualización de Datos Extraídos
                                 <span className="ml-1 bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                                    {movimientosPreview.length}
+                                    {movimientosFiltrados.length}
+                                    {filtroEstado !== 'todos' && filtroEstado !== '' && <span className="opacity-60"> / {movimientosPreview.length}</span>}
                                 </span>
                             </h3>
                         </div>
@@ -350,6 +501,31 @@ export const UploadMovimientosPage: React.FC = () => {
                         <div className="flex-1 overflow-auto relative">
                             <table className="min-w-full divide-y divide-gray-200 border-separate border-spacing-0">
                                 <thead className="bg-slate-50 sticky top-0 z-10">
+                                    <tr className="bg-white">
+                                        <th colSpan={6} className="px-4 py-2.5 border-b border-slate-100 text-left">
+                                            <div className="flex gap-1.5 flex-wrap">
+                                                {[
+                                                    { key: 'todos', label: 'Todos', active: 'bg-slate-700 text-white' },
+                                                    { key: 'duplicados', label: 'Duplicados', active: 'bg-orange-100 text-orange-700' },
+                                                    { key: 'actualizables', label: 'Actualizables', active: 'bg-blue-100 text-blue-700' },
+                                                    { key: 'nuevos', label: 'A Cargar', active: 'bg-emerald-100 text-emerald-700' },
+                                                ].map(f => (
+                                                    <button
+                                                        key={f.key}
+                                                        onClick={() => setFiltroEstado(f.key as typeof filtroEstado)}
+                                                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-200 ${
+                                                            filtroEstado === f.key
+                                                                ? f.active
+                                                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                                        }`}
+                                                    >
+                                                        {f.label}
+                                                        <span className="ml-1.5 opacity-70">({conteoFiltros[f.key as keyof typeof conteoFiltros]})</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </th>
+                                    </tr>
                                     <tr>
                                         <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Estado</th>
                                         <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Fecha</th>
@@ -360,7 +536,7 @@ export const UploadMovimientosPage: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-slate-100 text-sm">
-                                    {movimientosPreview.map((mov, idx) => (
+                                    {movimientosFiltrados.map((mov, idx) => (
                                         <tr key={idx} className={`${mov.es_duplicado ? "bg-orange-50/30 text-slate-500" : mov.es_actualizable ? "bg-blue-50/30 text-slate-700" : "hover:bg-slate-50"} transition-colors`}>
                                             <td className="px-4 py-2.5 whitespace-nowrap">
                                                 {mov.es_duplicado ? (

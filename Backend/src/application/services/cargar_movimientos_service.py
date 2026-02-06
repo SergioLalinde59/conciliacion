@@ -154,12 +154,21 @@ class CargarMovimientosService:
         """Carga formal de los movimientos a la base de datos."""
         raw_movs = self._extraer_movimientos(file_obj, tipo_cuenta, cuenta_id)
         insertados, actualizados, duplicados, errores = 0, 0, 0, 0
-        
-        # Financial stats
-        total_ingresos = 0
-        total_egresos = 0
-        total_ingresos_usd = 0
-        total_egresos_usd = 0
+        detalle_errores = []
+
+        # Financial stats por categoría
+        ingresos_cargados = 0
+        egresos_cargados = 0
+        ingresos_duplicados = 0
+        egresos_duplicados = 0
+        ingresos_errores = 0
+        egresos_errores = 0
+        ingresos_cargados_usd = 0
+        egresos_cargados_usd = 0
+        ingresos_duplicados_usd = 0
+        egresos_duplicados_usd = 0
+        ingresos_errores_usd = 0
+        egresos_errores_usd = 0
         
         for raw in raw_movs:
             try:
@@ -168,19 +177,7 @@ class CargarMovimientosService:
                 valor_para_check = 0 if es_usd else raw['valor']
                 usd_val = raw['valor'] if es_usd else None
                 moneda_id = 1 if es_usd else self._obtener_id_moneda(raw.get('moneda', 'COP'))
-                
-                # Accumulate stats
                 valor = float(raw['valor'])
-                if es_usd:
-                    if valor > 0:
-                        total_ingresos_usd += valor
-                    else:
-                        total_egresos_usd += valor
-                else:
-                    if valor > 0:
-                        total_ingresos += valor
-                    else:
-                        total_egresos += valor
 
                 existe = self.movimiento_repo.existe_movimiento(
                     fecha=raw['fecha'], valor=valor_para_check,
@@ -197,6 +194,16 @@ class CargarMovimientosService:
                 
                 if existe:
                     duplicados += 1
+                    if es_usd:
+                        if valor > 0:
+                            ingresos_duplicados_usd += valor
+                        else:
+                            egresos_duplicados_usd += valor
+                    else:
+                        if valor > 0:
+                            ingresos_duplicados += valor
+                        else:
+                            egresos_duplicados += valor
                     continue
                 
                 if actualizar_descripciones:
@@ -209,6 +216,17 @@ class CargarMovimientosService:
                         if raw.get('referencia'): soft_match.referencia = raw['referencia']
                         self.movimiento_repo.guardar(soft_match)
                         actualizados += 1
+                        # Los actualizados se cuentan como cargados para stats financieras
+                        if es_usd:
+                            if valor > 0:
+                                ingresos_cargados_usd += valor
+                            else:
+                                egresos_cargados_usd += valor
+                        else:
+                            if valor > 0:
+                                ingresos_cargados += valor
+                            else:
+                                egresos_cargados += valor
                         continue
 
                 fecha_obj = date.fromisoformat(raw['fecha'])
@@ -220,18 +238,65 @@ class CargarMovimientosService:
                 )
                 self.movimiento_repo.guardar(nuevo_mov)
                 insertados += 1
+                if es_usd:
+                    if valor > 0:
+                        ingresos_cargados_usd += valor
+                    else:
+                        egresos_cargados_usd += valor
+                else:
+                    if valor > 0:
+                        ingresos_cargados += valor
+                    else:
+                        egresos_cargados += valor
             except Exception as e:
                 logger.error(f"ERROR procesando movimiento: {e}")
                 logger.error(traceback.format_exc())
                 errores += 1
+                # Acumular stats de errores
+                try:
+                    valor_err = float(raw.get('valor', 0))
+                    es_usd_err = raw.get('moneda') == 'USD'
+                    if es_usd_err:
+                        if valor_err > 0:
+                            ingresos_errores_usd += valor_err
+                        else:
+                            egresos_errores_usd += valor_err
+                    else:
+                        if valor_err > 0:
+                            ingresos_errores += valor_err
+                        else:
+                            egresos_errores += valor_err
+                except:
+                    pass
+                detalle_errores.append({
+                    "fecha": raw.get('fecha', '?'),
+                    "descripcion": raw.get('descripcion', '?'),
+                    "valor": str(raw.get('valor', '?')),
+                    "error": str(e)
+                })
                 
         return {
             "archivo": filename, "total_extraidos": len(raw_movs),
             "nuevos_insertados": insertados, "actualizados": actualizados,
-            "duplicados": duplicados, "errores": errores,
+            "duplicados": duplicados, "errores": errores, "detalle_errores": detalle_errores,
             "periodo": extraer_periodo_de_movimientos(raw_movs),
-            "total_ingresos": total_ingresos,
-            "total_egresos": total_egresos,
-            "total_ingresos_usd": total_ingresos_usd,
-            "total_egresos_usd": total_egresos_usd
+            # Totales (para compatibilidad)
+            "total_ingresos": ingresos_cargados + ingresos_duplicados + ingresos_errores,
+            "total_egresos": egresos_cargados + egresos_duplicados + egresos_errores,
+            "total_ingresos_usd": ingresos_cargados_usd + ingresos_duplicados_usd + ingresos_errores_usd,
+            "total_egresos_usd": egresos_cargados_usd + egresos_duplicados_usd + egresos_errores_usd,
+            # Desglose por categoría COP
+            "ingresos_cargados": ingresos_cargados,
+            "egresos_cargados": egresos_cargados,
+            "ingresos_duplicados": ingresos_duplicados,
+            "egresos_duplicados": egresos_duplicados,
+            "ingresos_errores": ingresos_errores,
+            "egresos_errores": egresos_errores,
+            # Desglose por categoría USD
+            "ingresos_cargados_usd": ingresos_cargados_usd,
+            "egresos_cargados_usd": egresos_cargados_usd,
+            "ingresos_duplicados_usd": ingresos_duplicados_usd,
+            "egresos_duplicados_usd": egresos_duplicados_usd,
+            "ingresos_errores_usd": ingresos_errores_usd,
+            "egresos_errores_usd": egresos_errores_usd
         }

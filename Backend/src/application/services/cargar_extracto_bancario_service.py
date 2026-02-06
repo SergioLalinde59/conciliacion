@@ -210,7 +210,8 @@ class CargarExtractoBancarioService:
                     # Simulación de duplicados (simple para conteo)
                     if self.movimiento_extracto_repo:
                         # Verificar si ya existe en extractos previos
-                         usd_val = raw['valor'] if raw.get('moneda') == 'USD' else None
+                        # Para cuentas USD: comparar contra campo usd, no valor
+                         usd_val = raw.get('usd') if raw.get('moneda') == 'USD' else None
                          check_val = 0 if raw.get('moneda') == 'USD' else raw['valor']
                          
                          existe = self.movimiento_extracto_repo.existe_movimiento(
@@ -366,28 +367,47 @@ class CargarExtractoBancarioService:
 
         # 3. Guardar Movimientos Extracto
         movimientos_extracto_objs = []
+        total_duplicados = 0
+        total_errores = 0
+
         for mov_data in movimientos_data:
-            f_mov = mov_data['fecha']
-            if isinstance(f_mov, str):
-                try: f_mov = datetime.strptime(f_mov, "%Y-%m-%d").date()
-                except: pass
-            
-            movimientos_extracto_objs.append(MovimientoExtracto(
-                id=None, cuenta_id=cuenta_id, year=year, month=month, fecha=f_mov,
-                descripcion=mov_data['descripcion'], referencia=mov_data.get('referencia'),
-                valor=Decimal(str(mov_data['valor'])),
-                usd=Decimal(str(mov_data['usd'])) if mov_data.get('usd') else None,
-                trm=Decimal(str(mov_data['trm'])) if mov_data.get('trm') else None,
-                numero_linea=mov_data.get('numero_linea'),
-                raw_text=mov_data.get('raw_text')
-            ))
-            
+            try:
+                f_mov = mov_data['fecha']
+                if isinstance(f_mov, str):
+                    try: f_mov = datetime.strptime(f_mov, "%Y-%m-%d").date()
+                    except: pass
+
+                # Contar duplicados (marcados previamente en análisis)
+                if mov_data.get('es_duplicado'):
+                    total_duplicados += 1
+
+                movimientos_extracto_objs.append(MovimientoExtracto(
+                    id=None, cuenta_id=cuenta_id, year=year, month=month, fecha=f_mov,
+                    descripcion=mov_data['descripcion'], referencia=mov_data.get('referencia'),
+                    valor=Decimal(str(mov_data['valor'])),
+                    usd=Decimal(str(mov_data['usd'])) if mov_data.get('usd') else None,
+                    trm=Decimal(str(mov_data['trm'])) if mov_data.get('trm') else None,
+                    numero_linea=mov_data.get('numero_linea'),
+                    raw_text=mov_data.get('raw_text')
+                ))
+            except Exception as e:
+                logger.warning(f"Error procesando movimiento: {e}")
+                total_errores += 1
+
         if self.movimiento_extracto_repo:
             self.movimiento_extracto_repo.eliminar_por_periodo(cuenta_id, year, month)
             self.movimiento_extracto_repo.guardar_lote(movimientos_extracto_objs)
-            
+
+        total_leidos = len(movimientos_data)
+        total_nuevos = len(movimientos_extracto_objs)
+
         return {
-            "id_conciliacion": guardado.id, 
-            "nuevos": len(movimientos_extracto_objs),
-            "periodo": f"{year}-{obtener_nombre_mes(month)}"
+            "id_conciliacion": guardado.id,
+            "periodo": f"{year}-{obtener_nombre_mes(month)}",
+            "stats": {
+                "leidos": total_leidos,
+                "nuevos": total_nuevos,
+                "duplicados": total_duplicados,
+                "errores": total_errores
+            }
         }

@@ -16,6 +16,7 @@ export type {
     Concepto,
     Movimiento,
     SugerenciaClasificacion,
+    ContextoItem,
     ContextoClasificacionResponse,
     ClasificacionLoteDTO,
     ReglaClasificacion,

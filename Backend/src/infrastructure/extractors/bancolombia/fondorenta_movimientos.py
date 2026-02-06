@@ -73,7 +73,8 @@ def _procesar_movimientos(movimientos_raw: List[Dict]) -> List[Dict]:
         # "Traslado hacia cuenta" -> Salida (negativo)
         # "Traslado desde cuenta" -> Entrada (positivo)
         if valor is not None:
-            if any(x in descripcion for x in ['HACIA', 'RETIRO', 'RETEFTE', 'RETENCION', 'COMISION', 'GMF']):
+            # Incluir variantes con y sin acentos para mayor robustez
+            if any(x in descripcion for x in ['HACIA', 'RETIRO', 'RETEFTE', 'RETENCION', 'RETENCIÓN', 'COMISION', 'COMISIÓN', 'GMF']):
                 valor = abs(valor) * -1
             else:
                 valor = abs(valor)
@@ -116,42 +117,44 @@ def _extraer_movimientos_desde_texto(texto: str) -> List[Dict]:
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        
-        # Buscar líneas que empiezan con "Traslado"
-        if line.startswith("Traslado"):
+
+        # Buscar líneas que empiezan con "Traslado" o "Retención"
+        if line.startswith("Traslado") or line.lower().startswith("retención") or line.lower().startswith("retencion"):
             descripcion_parte1 = line
-            
+
             # La siguiente línea debe tener la fecha y valores
             if i + 1 < len(lines):
                 fecha_line = lines[i + 1].strip()
-                
+
                 # Regex para línea de fecha: "13 Ene 2026 ... $ 5.000.000,00 ..."
-                # Buscar patrón: DD Mmm YYYY seguido de valor monetario
                 fecha_match = re.match(r'(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})\s+.*?(-?\$\s*[\d.]+,\d{2})', fecha_line)
-                
+
                 if fecha_match:
-                    fecha_str = fecha_match.group(1)  # "13 Ene 2026"
-                    valor_str = fecha_match.group(2)    # "-$ 500.000,00" o "$ 5.000.000,00"
-                    
-                    # Descripción parte 2 (siguiente línea)
+                    fecha_str = fecha_match.group(1)
+                    valor_str = fecha_match.group(2)
+
+                    # Descripción parte 2 solo para Traslados (tienen "de ahorros")
                     descripcion_parte2 = ""
-                    if i + 2 < len(lines):
-                        descripcion_parte2 = lines[i + 2].strip()
-                    
-                    # Combinar descripción
+                    lineas_avanzar = 2
+
+                    if line.startswith("Traslado") and i + 2 < len(lines):
+                        siguiente = lines[i + 2].strip()
+                        if siguiente.lower() == "de ahorros":
+                            descripcion_parte2 = siguiente
+                            lineas_avanzar = 3
+
                     descripcion = f"{descripcion_parte1} {descripcion_parte2}".strip()
-                    
+
                     movimientos.append({
                         'fecha_str': fecha_str,
                         'descripcion': descripcion,
                         'referencia': "",
                         'valor_str': valor_str
                     })
-                    
-                    # Avanzar 3 líneas (descripción1 + fecha + descripción2)
-                    i += 3
+
+                    i += lineas_avanzar
                     continue
-        
+
         i += 1
     
     logger.error(f"DEBUG: Extrajimos {len(movimientos)} movimientos")

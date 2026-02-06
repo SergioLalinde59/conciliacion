@@ -19,7 +19,7 @@ interface MovimientosTableProps {
     onDelete?: (mov: Movimiento) => void;
 }
 
-export const MovimientosTable = ({ movimientos, loading, onEdit, onView, onDelete }: MovimientosTableProps) => {
+export const MovimientosTable = ({ movimientos, loading, onView }: MovimientosTableProps) => {
     // Infinite scroll state
     const [visibleLimit, setVisibleLimit] = useState(15);
     const scrollContainerRef = useRef<HTMLDivElement>(null);

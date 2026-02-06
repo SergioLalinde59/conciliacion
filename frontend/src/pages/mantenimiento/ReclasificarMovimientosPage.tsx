@@ -243,6 +243,25 @@ export const ReclasificarMovimientosPage = () => {
             )
         },
         {
+            key: 'actions',
+            header: '',
+            align: 'center',
+            width: 'w-10',
+            headerClassName: '!py-2.5 !px-0.5',
+            cellClassName: '!py-0.5 !px-0.5',
+            accessor: (row) => (
+                <Button
+                    variant="ghost-warning"
+                    size="sm"
+                    onClick={() => handleReclasificarUno(row)}
+                    className="!p-1"
+                    title="Reclasificar Individualmente"
+                >
+                    <Unlink size={14} />
+                </Button>
+            )
+        },
+        {
             key: 'fecha',
             header: <TableHeaderCell>Fecha</TableHeaderCell>,
             sortable: true,
@@ -363,25 +382,6 @@ export const ReclasificarMovimientosPage = () => {
             headerClassName: '!py-2.5 !px-0.5 text-[10px] font-bold text-gray-400 tracking-wide',
             cellClassName: '!py-0.5 !px-0.5',
             accessor: (row) => <span className="text-[10px] bg-gray-100 text-gray-600 px-1 rounded">{row.moneda_nombre || 'COP'}</span>
-        },
-        {
-            key: 'actions',
-            header: '',
-            align: 'right',
-            width: 'w-10',
-            headerClassName: '!py-2.5 !px-0.5',
-            cellClassName: '!py-0.5 !px-0.5',
-            accessor: (row) => (
-                <Button
-                    variant="ghost-warning"
-                    size="sm"
-                    onClick={() => handleReclasificarUno(row)}
-                    className="!p-1"
-                    title="Reclasificar Individualmente"
-                >
-                    <Unlink size={14} />
-                </Button>
-            )
         }
     ], [selectedIds, movimientos]);
 

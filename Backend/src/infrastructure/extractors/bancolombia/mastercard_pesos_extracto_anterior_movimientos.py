@@ -44,12 +44,23 @@ def extraer_movimientos(file_obj: Any) -> List[Dict[str, Any]]:
                 if page_num == 1:
                     logger.info(f"DEBUG HEADER: Texto normalizado inicio: {texto_normalizado[:100]}")
 
-                if "ESTADODECUENTAPESOS" not in texto_normalizado:
-                    logger.info(f"Página {page_num}: No se encontró 'EST ADO DE CUENTA PESOS' (Normalizado). Buscando alternativas...")
-                    # Fallback eventual por si el header es ligeramente distinto
-                    if "ESTADODECUENTA" not in texto_normalizado or "PESOS" not in texto_normalizado:
-                         logger.info(f"Página {page_num}: Definitivamente no es seccion PESOS. Saltando.")
-                         continue
+                # Detectar sección PESOS - múltiples variantes:
+                # 1. "ESTADO DE CUENTA PESOS" (sin EN:)
+                # 2. "ESTADO DE CUENTA EN: PESOS" (con EN:)
+                # 3. "Moneda: PESOS" (en resumen, con posibles caracteres triplicados)
+                es_seccion_pesos = (
+                    "ESTADODECUENTAPESOS" in texto_normalizado or
+                    "ESTADODECUENTAEN:PESOS" in texto_normalizado or
+                    "CUENTAEN:PESOS" in texto_normalizado or
+                    ("ESTADODECUENTA" in texto_normalizado and "PESOS" in texto_normalizado)
+                )
+
+                # Evitar páginas de DOLARES
+                es_seccion_dolares = "DOLARES" in texto_normalizado or "DDDOOOLLLAAARRREEESSS" in texto_normalizado
+
+                if not es_seccion_pesos or es_seccion_dolares:
+                    logger.debug(f"Página {page_num}: No es sección PESOS o es DOLARES. Saltando.")
+                    continue
                 
                 logger.info(f"Página {page_num}: Sección PESOS detectada. Procesando movimientos...")
                 
@@ -69,68 +80,94 @@ def extraer_movimientos(file_obj: Any) -> List[Dict[str, Any]]:
 def _extraer_movimientos_desde_texto(texto: str, offset_linea: int) -> List[Dict[str, Any]]:
     """
     Extrae movimientos desde el texto de una página del PDF.
+
+    Estrategia mejorada para evitar que números al final de descripciones
+    se confundan con valores:
+    1. Identificar líneas que empiezan con (opcional código) + fecha
+    2. Buscar el valor monetario desde el final de la línea
+    3. Todo lo que está entre fecha y valor es descripción
     """
     movimientos = []
     lineas = texto.split('\n')
-    
-    # Regex ajustado al formato antiguo MasterCard Pesos
-    # Columnas esperadas: [Autorización] Fecha Transacción Descripción Valor Original ...
-    # Ejemplo esperado: R09435 31/08/2025 INTERESES CORRIENTES 3,532.89
-    # Grupo 1: Fecha (DD/MM/YYYY) - Flexibilizado espacios
-    # Grupo 2: Descripción
-    # Grupo 3: Valor (Soporta signo menos al inicio O al final)s
-    
-    patron_movimiento = re.compile(
-        # InicioLinea + (Opcional Auth) + Fecha + Espacios + Desc + Espacios + Valor + (Opcional Menos final)
-        r'^\s*(?:[A-Z0-9]+\s+)?(\d{2}\s*/\s*\d{2}\s*/\s*\d{4})\s+(.+?)\s+([-]?\$?\s*[-]?[\d.,]+(?:\s*-)?)',
-        re.MULTILINE
+
+    # Dos patrones explícitos para mayor robustez:
+    # Patrón 1: CON código de autorización (ej: T00661 27/01/2026 APPLE.COM/BILL $ 3,55)
+    # Patrón 2: SIN código, fecha directa (ej: 31/01/2026 INTERESES CORRIENTES $ 33,175.52)
+    patron_con_codigo = re.compile(
+        r'^\s*([A-Z][A-Z0-9]*)\s+(\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})\s+(.+)$'
     )
-    
+    patron_sin_codigo = re.compile(
+        r'^\s*(\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})\s+(.+)$'
+    )
+
+    # Regex para encontrar valor monetario (puede tener $ o no, puede tener - al final)
+    # Busca el ÚLTIMO número con formato monetario en la línea
+    patron_valor = re.compile(r'([-]?\$?\s*[-]?[\d]+[,.][\d.,]+(?:\s*-)?)(?:\s|$)')
+
     for i, linea in enumerate(lineas):
         linea = linea.strip()
         if not linea:
             continue
-            
-        match = patron_movimiento.search(linea)
-        if match:
-            fecha_str = match.group(1).replace(" ", "") # Eliminar espacios internos en fecha
-            descripcion = match.group(2).strip()
-            valor_str = match.group(3)
-            
-            # Filtros adicionales para evitar falsos positivos (como encabezados repetidos)
-            if "Fecha" in fecha_str or "Transacción" in descripcion:
-                continue
 
-            try:
-                # Formato DD/MM/YYYY
-                fecha = datetime.strptime(fecha_str, '%d/%m/%Y').date()
-                
-                # Parsear valor
-                # Lógica de signo:
-                # Si es Abono (tiene menos al final o es negativo), debería sumar saldo (positivo).
-                # Si es Compra (positivo), debería restar saldo (negativo).
-                # PERO la lógica solicitada para este extractor fue: "Multiplicar por -1".
-                # Asumimos que el PDF muestra Compras como Positivo y Abonos como Negativo (con - al final).
-                # Si PDF: 3,532.89 (Compra) -> * -1 -> -3,532.89 (Resta saldo). CORRECTO.
-                # Si PDF: 7,600,000- (Abono) -> * -1 -> ?? 
-                # Necesitamos parsear el negativo correctamente primero.
-                
-                valor_raw = _parsear_valor_formato_col(valor_str)
-                
-                # Aplicar inversión de signo global requrida para este extracto
-                valor = valor_raw * Decimal(-1)
-                
-                movimientos.append({
-                    'fecha': fecha,
-                    'descripcion': descripcion,
-                    'referencia': '', 
-                    'valor': valor,
-                    'numero_linea': offset_linea + len(movimientos) + 1,
-                    'raw_text': linea
-                })
-            except Exception as e:
-                logger.warning(f"Error parseando linea '{linea}': {e}")
+        # Intentar primero con código, luego sin código
+        inicio_match = patron_con_codigo.search(linea)
+        if inicio_match:
+            # Con código: group(1)=código, group(2)=fecha, group(3)=resto
+            fecha_str = inicio_match.group(2).replace(" ", "")
+            resto = inicio_match.group(3)
+        else:
+            inicio_match = patron_sin_codigo.search(linea)
+            if not inicio_match:
                 continue
+            # Sin código: group(1)=fecha, group(2)=resto
+            fecha_str = inicio_match.group(1).replace(" ", "")
+            resto = inicio_match.group(2)
+
+        # Buscar todos los valores en el resto y tomar el primero (el valor original)
+        valor_matches = list(patron_valor.finditer(resto))
+        if not valor_matches:
+            continue
+
+        # Tomar el primer match (valor original, no el saldo)
+        valor_match = valor_matches[0]
+        valor_str = valor_match.group(1)
+        # Todo lo que está ANTES del valor es la descripción
+        descripcion = resto[:valor_match.start()].strip()
+
+        # Filtros adicionales para evitar falsos positivos (como encabezados repetidos)
+        if "Fecha" in fecha_str or "Transacción" in descripcion:
+            continue
+
+        try:
+            # Formato DD/MM/YYYY
+            fecha = datetime.strptime(fecha_str, '%d/%m/%Y').date()
+
+            # Parsear valor
+            # Lógica de signo:
+            # Si es Abono (tiene menos al final o es negativo), debería sumar saldo (positivo).
+            # Si es Compra (positivo), debería restar saldo (negativo).
+            # PERO la lógica solicitada para este extractor fue: "Multiplicar por -1".
+            # Asumimos que el PDF muestra Compras como Positivo y Abonos como Negativo (con - al final).
+            # Si PDF: 3,532.89 (Compra) -> * -1 -> -3,532.89 (Resta saldo). CORRECTO.
+            # Si PDF: 7,600,000- (Abono) -> * -1 -> ??
+            # Necesitamos parsear el negativo correctamente primero.
+
+            valor_raw = _parsear_valor_formato_col(valor_str)
+
+            # Aplicar inversión de signo global requrida para este extracto
+            valor = valor_raw * Decimal(-1)
+
+            movimientos.append({
+                'fecha': fecha,
+                'descripcion': descripcion,
+                'referencia': '',
+                'valor': valor,
+                'numero_linea': offset_linea + len(movimientos) + 1,
+                'raw_text': linea
+            })
+        except Exception as e:
+            logger.warning(f"Error parseando linea '{linea}': {e}")
+            continue
         else:
             # DEBUG: Logear líneas que NO matchean pero parecen tener fecha, para diagnosticar
             if "/" in linea and len(linea) > 20 and i < 20: # Solo primeras lineas para no spam

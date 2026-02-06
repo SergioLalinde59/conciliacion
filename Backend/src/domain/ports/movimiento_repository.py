@@ -75,8 +75,8 @@ class MovimientoRepository(ABC):
         pass
 
     @abstractmethod
-    def buscar_avanzado(self, 
-                       fecha_inicio: Optional[date] = None, 
+    def buscar_avanzado(self,
+                       fecha_inicio: Optional[date] = None,
                        fecha_fin: Optional[date] = None,
                        cuenta_id: Optional[int] = None,
                        tercero_id: Optional[int] = None,
@@ -86,6 +86,7 @@ class MovimientoRepository(ABC):
                        solo_pendientes: bool = False,
                        tipo_movimiento: Optional[str] = None,
                        descripcion_contiene: Optional[str] = None,
+                       referencia: Optional[str] = None,
                        skip: int = 0,
                        limit: Optional[int] = None
     ) -> tuple[List[Movimiento], int]:

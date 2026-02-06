@@ -3,9 +3,9 @@ import { apiService, conciliacionService } from '../services/api'
 import { toast } from 'react-hot-toast'
 import { AlertTriangle, RefreshCw, BarChart3, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
 import type { Conciliacion } from '../types/Conciliacion'
+import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 
 export const ReconciliationResetPage: React.FC = () => {
-    const [cuentas, setCuentas] = useState<any[]>([])
     const [selectedCuenta, setSelectedCuenta] = useState<number | ''>('')
     const [year, setYear] = useState<number>(new Date().getFullYear())
     const [month, setMonth] = useState<number>(new Date().getMonth() + 1)
@@ -20,10 +20,6 @@ export const ReconciliationResetPage: React.FC = () => {
     const [showConfirm, setShowConfirm] = useState(false)
 
     useEffect(() => {
-        cargarCuentas()
-    }, [])
-
-    useEffect(() => {
         if (selectedCuenta && year && month) {
             fetchStatistics()
         } else {
@@ -31,20 +27,6 @@ export const ReconciliationResetPage: React.FC = () => {
             setStatsData(null)
         }
     }, [selectedCuenta, year, month])
-
-    const cargarCuentas = async () => {
-        try {
-            const data = await apiService.cuentas.listar()
-            setCuentas(data)
-            if (data.length > 0) {
-                // El servicio catalogosService.cuentas.listar retorna Cuenta[] con campo 'id'
-                setSelectedCuenta(data[0].id)
-            }
-        } catch (error) {
-            console.error('Error cargando cuentas', error)
-            toast.error('Error cargando cuentas')
-        }
-    }
 
     const fetchStatistics = async () => {
         if (!selectedCuenta) return
@@ -135,19 +117,13 @@ export const ReconciliationResetPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     {/* Cuenta Select */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Cuenta</label>
-                        <select
+                        <SelectorCuenta
                             value={selectedCuenta}
-                            onChange={(e) => setSelectedCuenta(Number(e.target.value))}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
-                        >
-                            <option value="">Seleccione Cuenta</option>
-                            {cuentas.filter(c => c.permite_carga).map(c => (
-                                <option key={c.id} value={c.id}>
-                                    {c.nombre}
-                                </option>
-                            ))}
-                        </select>
+                            onChange={(value) => setSelectedCuenta(Number(value))}
+                            label="Cuenta"
+                            soloPermiteCarga={true}
+                            soloConciliables={false}
+                        />
                     </div>
 
                     {/* Year Select */}

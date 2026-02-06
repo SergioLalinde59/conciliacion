@@ -57,8 +57,32 @@ def obtener_todos_catalogos(conn = Depends(get_db_connection)):
     for t in repo_ter.obtener_todos():
         terceros.append({"id": t.terceroid, "nombre": t.tercero})
 
+    # Construir respuesta de cuentas con configuración completa
+    cuentas_response = []
+    for c in repo_cue.obtener_todos():
+        cuentas_response.append({
+            "id": c.cuentaid,
+            "nombre": c.cuenta,
+            "permite_carga": c.permite_carga,
+            "permite_conciliar": c.permite_conciliar,
+            "tipo_cuenta_id": c.tipo_cuenta_id,
+            "tipo_cuenta_nombre": c.tipo_cuenta_nombre,
+            "configuracion": {
+                "tipo_cuenta_id": c.tipo_cuenta_id,
+                "tipo_cuenta_nombre": c.tipo_cuenta_nombre,
+                "permite_crear_manual": c.permite_crear_manual,
+                "permite_editar": c.permite_editar,
+                "permite_modificar": c.permite_modificar,
+                "permite_borrar": c.permite_borrar,
+                "permite_clasificar": c.permite_clasificar,
+                "requiere_descripcion": c.requiere_descripcion,
+                "valor_minimo": float(c.valor_minimo) if c.valor_minimo else None,
+                "responde_enter": c.responde_enter
+            }
+        })
+
     return {
-        "cuentas": [{"id": c.cuentaid, "nombre": c.cuenta, "permite_carga": c.permite_carga, "permite_conciliar": c.permite_conciliar} for c in repo_cue.obtener_todos()],
+        "cuentas": cuentas_response,
         "monedas": [{"id": m.monedaid, "nombre": m.moneda, "isocode": m.isocode} for m in repo_mon.obtener_todos()],
         "terceros": terceros,
         "centros_costos": [{"id": g.centro_costo_id, "nombre": g.centro_costo} for g in repo_cc.obtener_todos()],

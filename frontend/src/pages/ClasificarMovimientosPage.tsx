@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react'
-import type { Movimiento, SugerenciaClasificacion, ContextoClasificacionResponse } from '../types'
+import React, { useState, useEffect, useMemo } from 'react'
+import type { Movimiento, SugerenciaClasificacion, ContextoClasificacionResponse, Cuenta } from '../types'
 import { apiService } from '../services/api'
 import { EntitySelector } from '../components/molecules/entities/EntitySelector'
 import { TerceroModal } from '../components/organisms/modals/TerceroModal'
 import { MovimientoModal } from '../components/organisms/modals/MovimientoModal'
 
 import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
-import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split } from 'lucide-react'
+import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split, Trash2 } from 'lucide-react'
 import { DataTable } from '../components/molecules/DataTable'
 import { TableHeaderCell } from '../components/atoms/TableHeaderCell'
 import { fechaColumn, textoColumn, monedaColumn } from '../components/atoms/columnHelpers'
 import { BatchClassificationPreviewTable } from '../components/organisms/BatchClassificationPreviewTable'
 import { Button } from '../components/atoms/Button'
+import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 
 export const ClasificarMovimientosPage: React.FC = () => {
     // --- State ---
@@ -27,6 +28,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
     const [terceroId, setTerceroId] = useState<number | null>(null)
     const [centroCostoId, setCentroCostoId] = useState<number | null>(null)
     const [conceptoId, setConceptoId] = useState<number | null>(null)
+    const [detalle, setDetalle] = useState<string>('')
     const [descripcion, setDescripcion] = useState<string>('')
     const [referencia, setReferencia] = useState<string>('')
 
@@ -41,6 +43,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
     const [batchPatron, setBatchPatron] = useState('')
     const [loadingBatch, setLoadingBatch] = useState(false)
     const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set())
+    const [similaresPendientes, setSimilaresPendientes] = useState<number>(0)
 
     // Modal Clasificar Similares
 
@@ -49,6 +52,14 @@ export const ClasificarMovimientosPage: React.FC = () => {
     const [centrosCostos, setCentrosCostos] = useState<{ id: number, nombre: string }[]>([])
     const [conceptos, setConceptos] = useState<{ id: number, nombre: string, centro_costo_id?: number }[]>([])
     const [terceros, setTerceros] = useState<{ id: number, nombre: string }[]>([])
+    const [cuentas, setCuentas] = useState<Cuenta[]>([])
+
+    // Filtro por cuenta
+    const [filtroCuentaId, setFiltroCuentaId] = useState<string>('')
+
+    // Modal de confirmación de eliminación
+    const [showDeleteModal, setShowDeleteModal] = useState(false)
+    const [deleting, setDeleting] = useState(false)
 
     // --- Effects ---
 
@@ -60,14 +71,17 @@ export const ClasificarMovimientosPage: React.FC = () => {
     const cargarDatosIniciales = async () => {
         setLoading(true)
         try {
-            const [pends, cats] = await Promise.all([
+            const [pends, cats, ctas] = await Promise.all([
                 apiService.movimientos.obtenerPendientes(),
-                apiService.catalogos.obtenerTodos()
+                apiService.catalogos.obtenerTodos(),
+                apiService.cuentas.listar()
             ])
-            setPendientes(pends)
+            // Ordenar de más antiguo a más nuevo
+            setPendientes(pends.sort((a, b) => a.fecha.localeCompare(b.fecha)))
             setCentrosCostos(cats.centros_costos)
             setConceptos(cats.conceptos)
             setTerceros(cats.terceros)
+            setCuentas(ctas)
         } catch (error) {
             console.error("Error cargando datos:", error)
         } finally {
@@ -79,6 +93,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
     useEffect(() => {
         if (!movimientoActual) {
             setSugerenciaData(null)
+            setSimilaresPendientes(0)
             limpiarFormulario()
             return
         }
@@ -89,6 +104,20 @@ export const ClasificarMovimientosPage: React.FC = () => {
                 const data = await apiService.clasificacion.obtenerSugerencia(movimientoActual.id) as ContextoClasificacionResponse
                 setSugerenciaData(data)
                 aplicarSugerencia(data.sugerencia)
+
+                // Cargar conteo de similares para el botón de lote
+                if (data.sugerencia.razon) {
+                    const palabras = movimientoActual.descripcion.split(' ')
+                    const patronDefault = palabras.slice(0, 2).join(' ')
+                    try {
+                        const preview = await apiService.clasificacion.previewLote(patronDefault) as Movimiento[]
+                        setSimilaresPendientes(preview.length)
+                    } catch {
+                        setSimilaresPendientes(0)
+                    }
+                } else {
+                    setSimilaresPendientes(0)
+                }
             } catch (error) {
                 console.error("Error cargando sugerencia:", error)
             } finally {
@@ -104,6 +133,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
         setTerceroId(null)
         setCentroCostoId(null)
         setConceptoId(null)
+        setDetalle('')
         setDescripcion('')
         setReferencia('')
     }
@@ -113,8 +143,9 @@ export const ClasificarMovimientosPage: React.FC = () => {
         setTerceroId(sug.tercero_id ?? null)
         setCentroCostoId(sug.centro_costo_id ?? null)
         setConceptoId(sug.concepto_id ?? null)
-        // Keep current descripcion and referencia from movimientoActual
+        // Keep current detalle, descripcion and referencia from movimientoActual
         if (movimientoActual) {
+            setDetalle(movimientoActual.detalle || '')
             setDescripcion(movimientoActual.descripcion || '')
             setReferencia(movimientoActual.referencia || '')
         }
@@ -122,8 +153,41 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
     const seleccionarMovimiento = (mov: Movimiento) => {
         setMovimientoActual(mov)
+        setDetalle(mov.detalle || '')
         setDescripcion(mov.descripcion || '')
         setReferencia(mov.referencia || '')
+    }
+
+    // Filtrar pendientes por cuenta seleccionada
+    const pendientesFiltrados = useMemo(() => {
+        if (!filtroCuentaId) return pendientes
+        const cuentaId = parseInt(filtroCuentaId)
+        return pendientes.filter(m => m.cuenta_id === cuentaId)
+    }, [pendientes, filtroCuentaId])
+
+    // Determinar si el movimiento actual permite ser eliminado (solo cuentas de efectivo)
+    const permiteBorrar = useMemo(() => {
+        if (!movimientoActual) return false
+        const cuenta = cuentas.find(c => c.id === movimientoActual.cuenta_id)
+        return cuenta?.configuracion?.permite_borrar ?? false
+    }, [movimientoActual, cuentas])
+
+    const eliminarMovimiento = async () => {
+        if (!movimientoActual) return
+
+        setDeleting(true)
+        try {
+            await apiService.movimientos.eliminar(movimientoActual.id)
+            // Éxito: Remover de pendientes y cerrar modal
+            setPendientes(prev => prev.filter(m => m.id !== movimientoActual.id))
+            setMovimientoActual(null)
+            setShowDeleteModal(false)
+        } catch (error) {
+            console.error("Error eliminando:", error)
+            alert("Error al eliminar: " + error)
+        } finally {
+            setDeleting(false)
+        }
     }
 
     const guardarClasificacion = async () => {
@@ -139,6 +203,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                 tercero_id: terceroId,
                 centro_costo_id: centroCostoId,
                 concepto_id: conceptoId,
+                detalle: detalle,
                 descripcion: descripcion,
                 referencia: referencia,
             }
@@ -264,47 +329,57 @@ export const ClasificarMovimientosPage: React.FC = () => {
                 <div className="p-4 border-b bg-gray-50">
                     <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                         <Layers className="h-5 w-5 text-blue-600" />
-                        Pendientes ({pendientes.length})
+                        Por Clasificar ({pendientesFiltrados.length})
                     </h2>
+                    <div className="mt-3">
+                        <SelectorCuenta
+                            value={filtroCuentaId}
+                            onChange={setFiltroCuentaId}
+                            soloConciliables={true}
+                            showTodas={true}
+                            label=""
+                        />
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
                     {loading ? (
                         <div className="p-8 text-center text-gray-500">Cargando...</div>
-                    ) : pendientes.length === 0 ? (
+                    ) : pendientesFiltrados.length === 0 ? (
                         <div className="p-8 text-center text-green-600">
                             <CheckCircle className="h-12 w-12 mx-auto mb-2" />
-                            <p>¡Todo clasificado!</p>
+                            <p>{filtroCuentaId ? 'Sin movimientos en esta cuenta' : '¡Todo clasificado!'}</p>
                         </div>
                     ) : (
                         <div className="divide-y">
-                            {pendientes.map(mov => (
+                            {pendientesFiltrados.map(mov => (
                                 <div
                                     key={mov.id}
                                     onClick={() => seleccionarMovimiento(mov)}
                                     className={`p-4 cursor-pointer hover:bg-blue-50 transition-colors ${movimientoActual?.id === mov.id ? 'bg-blue-100 border-l-4 border-blue-600' : ''
                                         }`}
                                 >
-                                    <div className="flex justify-between items-start mb-1">
-                                        <div className="flex items-center gap-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <div className="flex items-center gap-1.5 flex-nowrap">
                                             {mov.cuenta_display && (
-                                                <span className="text-xs text-blue-600 font-medium truncate max-w-[120px]" title={mov.cuenta_display}>
+                                                <span className="text-xs text-blue-600 font-medium whitespace-nowrap">
                                                     {mov.cuenta_display}
                                                 </span>
                                             )}
                                             {/* USD indicator for MasterCard account */}
                                             {mov.cuenta_display?.toLowerCase().includes('mc') &&
                                                 (mov.usd || mov.descripcion?.toLowerCase().includes('usd')) && (
-                                                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-semibold">
+                                                    <span className="text-xs bg-green-100 text-green-700 px-1 py-0.5 rounded font-semibold shrink-0">
                                                         USD
                                                     </span>
                                                 )}
-                                            <span className="text-xs font-semibold text-gray-500">{mov.fecha}</span>
+                                            <span className="text-xs font-semibold text-gray-500 whitespace-nowrap shrink-0">{mov.fecha}</span>
                                         </div>
                                         <CurrencyDisplay
                                             value={mov.cuenta_display?.toLowerCase().includes('usd') || (mov.usd && mov.usd !== 0) ? (mov.usd || 0) : mov.valor}
                                             currency={mov.cuenta_display?.toLowerCase().includes('usd') || (mov.usd && mov.usd !== 0) ? 'USD' : 'COP'}
-                                            className="text-sm font-bold"
+                                            className="text-sm font-bold shrink-0 ml-2"
+                                            alignRight={false}
                                         />
                                     </div>
                                     <div className="flex items-start gap-2">
@@ -334,7 +409,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h1 className="text-2xl font-bold text-gray-900 mb-1">Editor de Clasificación</h1>
-                                    <p className="text-gray-500 text-sm">ID: {movimientoActual.id}</p>
+                                    <p className="text-gray-500 text-sm">ID: {movimientoActual.id} | {movimientoActual.fecha ? new Date(movimientoActual.fecha).toLocaleDateString('es-CO') : '-'}</p>
                                 </div>
                                 <div className="text-right">
                                     <CurrencyDisplay
@@ -429,6 +504,18 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                     </div>
                                 </div>
 
+                                {/* Detalle (notas adicionales) */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Detalle / Notas</label>
+                                    <input
+                                        type="text"
+                                        value={detalle}
+                                        onChange={(e) => setDetalle(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Notas adicionales del movimiento..."
+                                    />
+                                </div>
+
                                 {/* Descripción y Referencia */}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
@@ -466,11 +553,12 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                     {sugerenciaData?.sugerencia.razon && (
                                         <button
                                             onClick={abrirModalLote}
-                                            disabled={loadingBatch}
+                                            disabled={loadingBatch || similaresPendientes < 2}
                                             className="flex-1 flex items-center justify-center gap-2 bg-white text-purple-700 border border-purple-200 py-3 px-4 rounded-lg hover:bg-purple-50 transition font-medium disabled:opacity-50"
+                                            title={similaresPendientes < 2 ? 'Se requieren al menos 2 movimientos similares' : `Aplicar clasificación a ${similaresPendientes} movimientos similares`}
                                         >
                                             <Layers className="h-5 w-5" />
-                                            {loadingBatch ? 'Cargando...' : 'Aplicar a Todos (Lote)'}
+                                            {loadingBatch ? 'Cargando...' : `Aplicar a Todos (${similaresPendientes} similares)`}
                                         </button>
                                     )}
 
@@ -481,6 +569,16 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                     >
                                         <Split className="h-5 w-5" />
                                     </button>
+
+                                    {permiteBorrar && (
+                                        <button
+                                            onClick={() => setShowDeleteModal(true)}
+                                            className="flex items-center justify-center gap-2 text-red-500 hover:text-red-700 py-3 px-4 font-medium transition-colors"
+                                            title="Eliminar movimiento"
+                                        >
+                                            <Trash2 className="h-5 w-5" />
+                                        </button>
+                                    )}
 
                                     <button
                                         onClick={() => setMovimientoActual(null)}
@@ -527,11 +625,10 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                                             className="!p-1"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                if (ctx.tercero_id) setTerceroId(ctx.tercero_id)
-                                                                if (ctx.centro_costo_id) setCentroCostoId(ctx.centro_costo_id)
-                                                                if (ctx.concepto_id) setConceptoId(ctx.concepto_id)
-                                                                if (ctx.descripcion) setDescripcion(ctx.descripcion)
-                                                                if (ctx.referencia) setReferencia(ctx.referencia)
+                                                                const mov = ctx.movimiento;
+                                                                if (mov.tercero_id) setTerceroId(mov.tercero_id)
+                                                                if (mov.centro_costo_id) setCentroCostoId(mov.centro_costo_id)
+                                                                if (mov.concepto_id) setConceptoId(mov.concepto_id)
                                                             }}
                                                             title="Copiar clasificación"
                                                         >
@@ -539,48 +636,65 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                                         </Button>
                                                     )
                                                 },
+                                                {
+                                                    key: 'score',
+                                                    header: <TableHeaderCell>%</TableHeaderCell>,
+                                                    width: 'w-14',
+                                                    align: 'center',
+                                                    accessor: (ctx: any) => (
+                                                        <span className={`font-semibold text-sm ${
+                                                            ctx.score >= 80 ? 'text-green-600' :
+                                                            ctx.score >= 50 ? 'text-yellow-600' : 'text-gray-400'
+                                                        }`}>
+                                                            {ctx.score}%
+                                                        </span>
+                                                    )
+                                                },
                                                 fechaColumn<any>(
                                                     'fecha',
                                                     <TableHeaderCell>Fecha</TableHeaderCell>,
-                                                    (ctx: any) => ctx.fecha,
-                                                    { width: 'w-24' }
+                                                    (ctx: any) => ctx.movimiento.fecha,
+                                                    { width: 'w-24', sortable: false }
+                                                ),
+                                                {
+                                                    key: 'tercero',
+                                                    header: <TableHeaderCell>Tercero</TableHeaderCell>,
+                                                    accessor: (ctx: any) => <div className="text-gray-900 font-medium">{ctx.movimiento.tercero_display?.split('-')[1] || '-'}</div>
+                                                },
+                                                {
+                                                    key: 'clasificacion',
+                                                    header: <TableHeaderCell>Clasificación</TableHeaderCell>,
+                                                    accessor: (ctx: any) => <div className="text-xs text-gray-500">{ctx.movimiento.centro_costo_display?.split('-')[1]} / {ctx.movimiento.concepto_display?.split('-')[1]}</div>
+                                                },
+                                                monedaColumn<any>(
+                                                    'valor',
+                                                    <TableHeaderCell>Valor</TableHeaderCell>,
+                                                    (ctx: any) => {
+                                                        const mov = ctx.movimiento;
+                                                        const isUsd = mov.cuenta_display?.toLowerCase().includes('usd') || (mov.usd && mov.usd !== 0);
+                                                        return isUsd ? (mov.usd || 0) : mov.valor;
+                                                    },
+                                                    (ctx: any) => {
+                                                        const mov = ctx.movimiento;
+                                                        const isUsd = mov.cuenta_display?.toLowerCase().includes('usd') || (mov.usd && mov.usd !== 0);
+                                                        return isUsd ? 'USD' : 'COP';
+                                                    },
+                                                    { sortable: false }
                                                 ),
                                                 {
                                                     key: 'referencia',
                                                     header: <TableHeaderCell>Referencia</TableHeaderCell>,
                                                     width: 'w-28',
-                                                    accessor: (ctx: any) => <span className="font-medium text-gray-900">{ctx.referencia || '-'}</span>
+                                                    accessor: (ctx: any) => <span className="font-medium text-gray-900">{ctx.movimiento.referencia || '-'}</span>
                                                 },
                                                 textoColumn<any>(
                                                     'descripcion',
                                                     <TableHeaderCell>Descripción</TableHeaderCell>,
-                                                    (ctx: any) => ctx.descripcion,
-                                                    { cellClassName: 'text-xs text-gray-500 max-w-xs line-clamp-3' }
-                                                ),
-                                                monedaColumn<any>(
-                                                    'valor',
-                                                    <TableHeaderCell>Valor</TableHeaderCell>,
-                                                    (ctx: any) => {
-                                                        const isUsd = ctx.cuenta_display?.toLowerCase().includes('usd') || (ctx.usd && ctx.usd !== 0);
-                                                        return isUsd ? (ctx.usd || 0) : ctx.valor;
-                                                    },
-                                                    (ctx: any) => {
-                                                        const isUsd = ctx.cuenta_display?.toLowerCase().includes('usd') || (ctx.usd && ctx.usd !== 0);
-                                                        return isUsd ? 'USD' : 'COP';
-                                                    }
-                                                ),
-                                                {
-                                                    key: 'tercero',
-                                                    header: <TableHeaderCell>Tercero</TableHeaderCell>,
-                                                    accessor: (ctx: any) => <div className="text-gray-900 font-medium">{ctx.tercero_display?.split('-')[1] || '-'}</div>
-                                                },
-                                                {
-                                                    key: 'clasificacion',
-                                                    header: <TableHeaderCell>Clasificación</TableHeaderCell>,
-                                                    accessor: (ctx: any) => <div className="text-xs text-gray-500">{ctx.centro_costo_display?.split('-')[1]} / {ctx.concepto_display?.split('-')[1]}</div>
-                                                }
+                                                    (ctx: any) => ctx.movimiento.descripcion,
+                                                    { cellClassName: 'text-xs text-gray-500 max-w-xs line-clamp-3', sortable: false }
+                                                )
                                             ]}
-                                            getRowKey={(ctx: any) => ctx.id}
+                                            getRowKey={(ctx: any) => ctx.movimiento.id}
                                             showActions={false}
                                             className="border-none"
                                             emptyMessage="Sin historial"
@@ -611,15 +725,94 @@ export const ClasificarMovimientosPage: React.FC = () => {
             <MovimientoModal
                 isOpen={showAdvancedModal}
                 onClose={() => setShowAdvancedModal(false)}
-                movimiento={movimientoActual}
+                movimiento={movimientoActual ? {
+                    ...movimientoActual,
+                    // Pasar clasificación actual del editor al modal
+                    tercero_id: terceroId ?? movimientoActual.tercero_id,
+                    centro_costo_id: centroCostoId ?? movimientoActual.centro_costo_id,
+                    concepto_id: conceptoId ?? movimientoActual.concepto_id,
+                    detalle: detalle || movimientoActual.detalle
+                } : null}
                 onSave={handleGuardarAvanzado}
                 mode="edit"
             />
 
+            {/* Modal de Confirmación de Eliminación */}
+            {showDeleteModal && movimientoActual && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+                        {/* Header */}
+                        <div className="bg-red-600 text-white px-6 py-4">
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                <Trash2 className="h-6 w-6" />
+                                Confirmar Eliminación
+                            </h2>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6">
+                            <p className="text-gray-700 mb-4">
+                                ¿Está seguro que desea eliminar este movimiento?
+                            </p>
+                            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                                <p className="text-sm text-gray-600 mb-1">
+                                    <strong>ID:</strong> {movimientoActual.id}
+                                </p>
+                                <p className="text-sm text-gray-600 mb-1">
+                                    <strong>Fecha:</strong> {new Date(movimientoActual.fecha).toLocaleDateString('es-CO')}
+                                </p>
+                                <p className="text-sm text-gray-600 mb-1">
+                                    <strong>Descripción:</strong> {movimientoActual.descripcion}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                    <strong>Valor:</strong>{' '}
+                                    <CurrencyDisplay
+                                        value={movimientoActual.valor}
+                                        currency="COP"
+                                        alignRight={false}
+                                    />
+                                </p>
+                            </div>
+                            <p className="text-red-600 text-sm font-medium">
+                                Esta acción no se puede deshacer.
+                            </p>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowDeleteModal(false)}
+                                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                                disabled={deleting}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={eliminarMovimiento}
+                                disabled={deleting}
+                                className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {deleting ? (
+                                    <>
+                                        <RefreshCw className="h-4 w-4 animate-spin" />
+                                        Eliminando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 className="h-4 w-4" />
+                                        Eliminar
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Modal de Confirmación de Lote */}
             {showBatchModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
                         {/* Header */}
                         <div className="bg-purple-600 text-white px-6 py-4">
                             <h2 className="text-xl font-bold flex items-center gap-2">

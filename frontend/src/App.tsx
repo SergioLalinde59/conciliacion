@@ -28,9 +28,11 @@ import { ConciliacionPage } from './pages/ConciliacionPage'
 import { ConciliacionMatchingPage } from './pages/ConciliacionMatchingPage'
 import { CentroControlDatosPage } from './pages/CentroControlDatosPage'
 import { MatchingConfigPage } from './pages/MatchingConfigPage'
+import { TiposCuentaPage } from './pages/TiposCuentaPage'
 
 import { ReconciliationResetPage } from './pages/ReconciliationResetPage'
 import { ReclasificarMovimientosPage } from './pages/mantenimiento/ReclasificarMovimientosPage'
+import { ResetDemoPage } from './pages/ResetDemoPage'
 
 
 function App() {
@@ -52,6 +54,7 @@ function App() {
                     <Route path="/maestros/alias" element={<ReglasNormalizacionPage />} />
                     <Route path="/maestros/extractores" element={<CuentaExtractoresPage />} />
                     <Route path="/maestros/matching" element={<MatchingConfigPage />} />
+                    <Route path="/maestros/tipos-cuenta" element={<TiposCuentaPage />} />
                     <Route path="/movimientos" element={<MovimientosPage />} />
                     <Route path="/movimientos/cargar" element={<UploadMovimientosPage />} />
                     <Route path="/conciliacion/cargar-extracto" element={<UploadExtractoPage />} />
@@ -69,6 +72,7 @@ function App() {
                     <Route path="/herramientas/control-datos" element={<CentroControlDatosPage />} />
                     <Route path="/herramientas/mantenimiento/reset-periodo" element={<ReconciliationResetPage />} />
                     <Route path="/herramientas/mantenimiento/reclasificar-movimientos" element={<ReclasificarMovimientosPage />} />
+                    <Route path="/admin/reset-demo" element={<ResetDemoPage />} />
                     <Route path="/herramientas/mantenimiento/:categoria" element={<CentroControlDatosPage />} />
                     <Route path="/mvtos/*" element={
                         <div className="p-8">

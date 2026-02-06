@@ -30,3 +30,7 @@ logs/
 
 # Nombres reservados de Windows
 nul
+
+# Documentación interna (no versionar)
+Arquitectura/
+Documentos/

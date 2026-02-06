@@ -359,3 +359,292 @@ def list_snapshots():
                     "date": datetime.fromtimestamp(stats.st_mtime).isoformat()
                 })
     return files
+
+
+class ResetDemoRequest(BaseModel):
+    fecha_desde: str  # formato YYYY-MM-DD
+    fecha_hasta: str  # formato YYYY-MM-DD
+    cuenta_id: int | None = None  # None = todas las cuentas elegibles
+    cuenta_ids: List[int] | None = None  # Lista de cuentas específicas a eliminar
+
+
+@router.post("/reset-demo/preview")
+def reset_demo_preview(request: ResetDemoRequest, conn=Depends(get_db_connection)):
+    """
+    Muestra un preview de los registros que serán eliminados por cuenta.
+    No elimina nada, solo cuenta.
+    """
+    cursor = conn.cursor()
+    try:
+        # 1. Obtener cuentas elegibles (excluye efectivo)
+        cuenta_filter = ""
+        params = []
+        if request.cuenta_id:
+            cuenta_filter = "AND c.cuentaid = %s"
+            params.append(request.cuenta_id)
+
+        cursor.execute(f"""
+            SELECT c.cuentaid, c.cuenta
+            FROM cuentas c
+            INNER JOIN tipo_cuenta tc ON c.tipo_cuenta_id = tc.id
+            WHERE tc.permite_crear_manual = FALSE
+            {cuenta_filter}
+            ORDER BY c.cuenta
+        """, params)
+
+        cuentas_elegibles = cursor.fetchall()
+        if not cuentas_elegibles:
+            return {
+                "mensaje": "No hay cuentas elegibles para resetear",
+                "cuentas": [],
+                "totales": {}
+            }
+
+        # 2. Para cada cuenta, contar registros
+        preview_por_cuenta = []
+        totales = {
+            "vinculaciones": 0,
+            "extractos": 0,
+            "conciliaciones": 0,
+            "movimientos_detalle": 0,
+            "movimientos_encabezado": 0,
+            "ingresos": 0,
+            "egresos": 0
+        }
+
+        for cuenta_id, cuenta_nombre in cuentas_elegibles:
+            conteos = {
+                "cuenta_id": cuenta_id,
+                "cuenta": cuenta_nombre,
+                "vinculaciones": 0,
+                "extractos": 0,
+                "conciliaciones": 0,
+                "movimientos_detalle": 0,
+                "movimientos_encabezado": 0,
+                "ingresos": 0,
+                "egresos": 0
+            }
+
+            # Contar extractos y calcular ingresos/egresos
+            cursor.execute("""
+                SELECT COUNT(*),
+                       COALESCE(SUM(CASE WHEN valor > 0 THEN valor ELSE 0 END), 0) as ingresos,
+                       COALESCE(SUM(CASE WHEN valor < 0 THEN ABS(valor) ELSE 0 END), 0) as egresos
+                FROM movimientos_extracto
+                WHERE fecha BETWEEN %s AND %s AND cuenta_id = %s
+            """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
+            row = cursor.fetchone()
+            conteos["extractos"] = row[0]
+            conteos["ingresos"] = float(row[1]) if row[1] else 0
+            conteos["egresos"] = float(row[2]) if row[2] else 0
+
+            # Contar vinculaciones
+            cursor.execute("""
+                SELECT COUNT(*) FROM movimiento_vinculaciones
+                WHERE movimiento_extracto_id IN (
+                    SELECT id FROM movimientos_extracto
+                    WHERE fecha BETWEEN %s AND %s AND cuenta_id = %s
+                )
+            """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
+            conteos["vinculaciones"] = cursor.fetchone()[0]
+
+            # Contar conciliaciones (períodos afectados)
+            cursor.execute("""
+                SELECT COUNT(DISTINCT (year, month)) FROM movimientos_extracto
+                WHERE fecha BETWEEN %s AND %s AND cuenta_id = %s
+            """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
+            conteos["conciliaciones"] = cursor.fetchone()[0]
+
+            # Contar movimientos encabezado
+            cursor.execute("""
+                SELECT COUNT(*) FROM movimientos_encabezado
+                WHERE fecha BETWEEN %s AND %s AND cuentaid = %s
+            """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
+            conteos["movimientos_encabezado"] = cursor.fetchone()[0]
+
+            # Contar movimientos detalle
+            cursor.execute("""
+                SELECT COUNT(*) FROM movimientos_detalle
+                WHERE movimiento_id IN (
+                    SELECT id FROM movimientos_encabezado
+                    WHERE fecha BETWEEN %s AND %s AND cuentaid = %s
+                )
+            """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
+            conteos["movimientos_detalle"] = cursor.fetchone()[0]
+
+            # Calcular total de la cuenta
+            conteos["total"] = (
+                conteos["vinculaciones"] +
+                conteos["extractos"] +
+                conteos["conciliaciones"] +
+                conteos["movimientos_detalle"] +
+                conteos["movimientos_encabezado"]
+            )
+
+            # Solo agregar si tiene registros
+            if conteos["total"] > 0:
+                preview_por_cuenta.append(conteos)
+                for key in totales:
+                    totales[key] += conteos[key]
+
+        totales["total"] = sum(totales.values())
+
+        return {
+            "mensaje": "Preview generado",
+            "periodo": f"{request.fecha_desde} a {request.fecha_hasta}",
+            "cuentas": preview_por_cuenta,
+            "totales": totales
+        }
+
+    except Exception as e:
+        logger.error(f"Error en reset-demo preview: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en preview: {str(e)}")
+    finally:
+        cursor.close()
+
+
+@router.delete("/reset-demo")
+def reset_demo(request: ResetDemoRequest, conn=Depends(get_db_connection)):
+    """
+    Elimina movimientos, extractos, vinculaciones y conciliaciones de un período.
+
+    Excluye automáticamente las cuentas de efectivo (tipo_cuenta.permite_crear_manual = TRUE).
+
+    Orden de eliminación (por FK):
+    1. movimiento_vinculaciones
+    2. movimientos_extracto
+    3. conciliaciones
+    4. movimientos_detalle
+    5. movimientos_encabezado
+    """
+    cursor = conn.cursor()
+    try:
+        logger.info(f"Reset Demo: {request.fecha_desde} a {request.fecha_hasta}, cuenta_ids={request.cuenta_ids}")
+
+        # Si se proporciona lista de cuenta_ids, usarla directamente
+        if request.cuenta_ids and len(request.cuenta_ids) > 0:
+            # Filtrar solo las cuentas elegibles (no efectivo)
+            cursor.execute("""
+                SELECT c.cuentaid, c.cuenta
+                FROM cuentas c
+                INNER JOIN tipo_cuenta tc ON c.tipo_cuenta_id = tc.id
+                WHERE tc.permite_crear_manual = FALSE
+                AND c.cuentaid = ANY(%s)
+            """, [request.cuenta_ids])
+            cuentas_elegibles = cursor.fetchall()
+        elif request.cuenta_id:
+            # Compatibilidad con cuenta_id individual
+            cursor.execute("""
+                SELECT c.cuentaid, c.cuenta
+                FROM cuentas c
+                INNER JOIN tipo_cuenta tc ON c.tipo_cuenta_id = tc.id
+                WHERE tc.permite_crear_manual = FALSE
+                AND c.cuentaid = %s
+            """, [request.cuenta_id])
+            cuentas_elegibles = cursor.fetchall()
+        else:
+            # Todas las cuentas elegibles
+            cursor.execute("""
+                SELECT c.cuentaid, c.cuenta
+                FROM cuentas c
+                INNER JOIN tipo_cuenta tc ON c.tipo_cuenta_id = tc.id
+                WHERE tc.permite_crear_manual = FALSE
+            """)
+            cuentas_elegibles = cursor.fetchall()
+
+        if not cuentas_elegibles:
+            return {
+                "mensaje": "No hay cuentas elegibles para resetear",
+                "detalle": "Las cuentas de efectivo no se pueden resetear"
+            }
+
+        cuenta_ids = [c[0] for c in cuentas_elegibles]
+        cuenta_nombres = [c[1] for c in cuentas_elegibles]
+
+        logger.info(f"Cuentas elegibles: {cuenta_nombres}")
+
+        # Resultados
+        resultados = {
+            "vinculaciones": 0,
+            "extractos": 0,
+            "conciliaciones": 0,
+            "movimientos_detalle": 0,
+            "movimientos_encabezado": 0
+        }
+
+        # 2. Identificar períodos afectados (para conciliaciones)
+        cursor.execute("""
+            SELECT DISTINCT cuenta_id, year, month
+            FROM movimientos_extracto
+            WHERE fecha BETWEEN %s AND %s
+            AND cuenta_id = ANY(%s)
+        """, [request.fecha_desde, request.fecha_hasta, cuenta_ids])
+        periodos = cursor.fetchall()
+
+        # 3. Eliminar vinculaciones
+        cursor.execute("""
+            DELETE FROM movimiento_vinculaciones
+            WHERE movimiento_extracto_id IN (
+                SELECT id FROM movimientos_extracto
+                WHERE fecha BETWEEN %s AND %s
+                AND cuenta_id = ANY(%s)
+            )
+        """, [request.fecha_desde, request.fecha_hasta, cuenta_ids])
+        resultados["vinculaciones"] = cursor.rowcount
+        logger.info(f"Vinculaciones eliminadas: {resultados['vinculaciones']}")
+
+        # 4. Eliminar extractos
+        cursor.execute("""
+            DELETE FROM movimientos_extracto
+            WHERE fecha BETWEEN %s AND %s
+            AND cuenta_id = ANY(%s)
+        """, [request.fecha_desde, request.fecha_hasta, cuenta_ids])
+        resultados["extractos"] = cursor.rowcount
+        logger.info(f"Extractos eliminados: {resultados['extractos']}")
+
+        # 5. Eliminar conciliaciones de períodos afectados
+        if periodos:
+            for cuenta_id, year, month in periodos:
+                cursor.execute("""
+                    DELETE FROM conciliaciones
+                    WHERE cuenta_id = %s AND year = %s AND month = %s
+                """, [cuenta_id, year, month])
+                resultados["conciliaciones"] += cursor.rowcount
+        logger.info(f"Conciliaciones eliminadas: {resultados['conciliaciones']}")
+
+        # 6. Eliminar detalles de movimientos
+        cursor.execute("""
+            DELETE FROM movimientos_detalle
+            WHERE movimiento_id IN (
+                SELECT id FROM movimientos_encabezado
+                WHERE fecha BETWEEN %s AND %s
+                AND cuentaid = ANY(%s)
+            )
+        """, [request.fecha_desde, request.fecha_hasta, cuenta_ids])
+        resultados["movimientos_detalle"] = cursor.rowcount
+        logger.info(f"Detalles eliminados: {resultados['movimientos_detalle']}")
+
+        # 7. Eliminar movimientos del sistema
+        cursor.execute("""
+            DELETE FROM movimientos_encabezado
+            WHERE fecha BETWEEN %s AND %s
+            AND cuentaid = ANY(%s)
+        """, [request.fecha_desde, request.fecha_hasta, cuenta_ids])
+        resultados["movimientos_encabezado"] = cursor.rowcount
+        logger.info(f"Movimientos eliminados: {resultados['movimientos_encabezado']}")
+
+        conn.commit()
+
+        return {
+            "mensaje": "Reset Demo completado exitosamente",
+            "periodo": f"{request.fecha_desde} a {request.fecha_hasta}",
+            "cuentas_afectadas": cuenta_nombres,
+            "registros_eliminados": resultados
+        }
+
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error en reset-demo: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en reset: {str(e)}")
+    finally:
+        cursor.close()

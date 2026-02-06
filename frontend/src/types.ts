@@ -10,18 +10,62 @@ export interface ClasificacionManual {
     concepto_id: number
 }
 
+export interface ConfiguracionTipoCuenta {
+    tipo_cuenta_id: number | null
+    tipo_cuenta_nombre: string | null
+    // Permisos
+    permite_crear_manual: boolean
+    permite_editar: boolean
+    permite_modificar: boolean
+    permite_borrar: boolean
+    permite_clasificar: boolean
+    // Validaciones
+    requiere_descripcion: boolean
+    valor_minimo: number | null
+    // UX
+    responde_enter: boolean
+}
+
 export interface Cuenta {
     id: number
     nombre: string
     moneda?: string
     permite_carga: boolean
     permite_conciliar: boolean
+    tipo_cuenta_id?: number | null
+    tipo_cuenta_nombre?: string | null
+    configuracion?: ConfiguracionTipoCuenta | null
 }
 
 export interface Moneda {
     id: number
     isocode: string
     nombre: string
+}
+
+export interface TipoCuenta {
+    id: number
+    nombre: string
+    descripcion?: string
+    // Pesos algoritmo clasificación
+    peso_referencia: number
+    peso_descripcion: number
+    peso_valor: number
+    longitud_min_referencia: number
+    // Permisos
+    permite_crear_manual: boolean
+    permite_editar: boolean
+    permite_modificar: boolean
+    permite_borrar: boolean
+    permite_clasificar: boolean
+    // Validaciones
+    requiere_descripcion: boolean
+    valor_minimo: number | null
+    // UX
+    responde_enter: boolean
+    // Clasificación avanzada
+    referencia_define_tercero: boolean
+    activo: boolean
 }
 
 export interface TipoMovimiento {
@@ -104,10 +148,15 @@ export interface SugerenciaClasificacion {
     tipo_match: string | null
 }
 
+export interface ContextoItem {
+    movimiento: Movimiento
+    score: number  // Porcentaje de coincidencia (0-100)
+}
+
 export interface ContextoClasificacionResponse {
     movimiento_id: number
     sugerencia: SugerenciaClasificacion
-    contexto: Movimiento[]
+    contexto: ContextoItem[]
     referencia_no_existe: boolean
     referencia?: string | null
 }

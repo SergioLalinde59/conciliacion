@@ -1,3 +1,4 @@
+import React from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { DataTableSortIcon } from '../atoms/DataTableSortIcon';
 import { useState, useMemo } from 'react'
@@ -64,6 +65,14 @@ export interface DataTableProps<T> {
     style?: React.CSSProperties;
     maxHeight?: string | number;
     responsive?: boolean;
+    /** Filas expandibles: renderiza contenido debajo de la fila si está expandida */
+    renderExpandedRow?: (row: T, index: number) => React.ReactNode | null;
+    /** Keys de las filas actualmente expandidas */
+    expandedKeys?: Set<string | number>;
+    /** Callback cuando se hace click en una fila para expandir/colapsar */
+    onToggleExpand?: (key: string | number) => void;
+    /** Clase CSS para filas expandidas */
+    expandedRowClassName?: string;
 }
 
 type SortDirection = 'asc' | 'desc' | null
@@ -110,6 +119,10 @@ export function DataTable<T extends Record<string, any>>({
     style,
     maxHeight,
     responsive = true,
+    renderExpandedRow,
+    expandedKeys,
+    onToggleExpand,
+    expandedRowClassName = 'bg-gray-50',
 }: DataTableProps<T>) {
     // Determinar columna y dirección de ordenamiento por defecto
     const initialSortKey = defaultSortKey ?? columns.find(c => c.sortable)?.key ?? null;
@@ -270,51 +283,70 @@ export function DataTable<T extends Record<string, any>>({
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {sortedData.map((row, index) => (
-                        <tr key={getRowKey(row, index)} className="hover:bg-gray-50 transition-colors">
-                            {showActionsColumn && (
-                                <td className={`${rowPy} px-4 text-left sticky left-0 bg-white z-10`}>
-                                    <div className="flex gap-2">
-                                        {onEdit && (
-                                            <Button
-                                                variant="ghost-warning"
-                                                size="sm"
-                                                onClick={() => onEdit(row)}
-                                                className="!p-1.5"
-                                                title="Editar"
-                                            >
-                                                <Pencil size={15} />
-                                            </Button>
-                                        )}
-                                        {onDelete && (
-                                            <Button
-                                                variant="ghost-danger"
-                                                size="sm"
-                                                onClick={() => handleDelete(row)}
-                                                className="!p-1.5"
-                                                title="Eliminar"
-                                            >
-                                                <Trash2 size={15} />
-                                            </Button>
-                                        )}
-                                    </div>
-                                </td>
-                            )}
-                            {columns.map((column) => (
-                                <td
-                                    key={column.key}
-                                    className={`
-                                        ${rowPy} px-4 text-sm
-                                        ${column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left'}
-                                        ${column.className ?? ''}
-                                        ${column.cellClassName ?? ''}
-                                    `}
+                    {sortedData.map((row, index) => {
+                        const rowKey = getRowKey(row, index);
+                        const isExpanded = expandedKeys?.has(rowKey) ?? false;
+                        const expandedContent = renderExpandedRow?.(row, index);
+                        const totalColumns = columns.length + (showActionsColumn ? 1 : 0);
+
+                        return (
+                            <React.Fragment key={rowKey}>
+                                <tr
+                                    className={`hover:bg-gray-50 transition-colors ${onToggleExpand ? 'cursor-pointer' : ''}`}
+                                    onClick={() => onToggleExpand?.(rowKey)}
                                 >
-                                    {renderCell(row, column, index)}
-                                </td>
-                            ))}
-                        </tr>
-                    ))}
+                                    {showActionsColumn && (
+                                        <td className={`${rowPy} px-4 text-left sticky left-0 bg-white z-10`}>
+                                            <div className="flex gap-2">
+                                                {onEdit && (
+                                                    <Button
+                                                        variant="ghost-warning"
+                                                        size="sm"
+                                                        onClick={(e) => { e.stopPropagation(); onEdit(row); }}
+                                                        className="!p-1.5"
+                                                        title="Editar"
+                                                    >
+                                                        <Pencil size={15} />
+                                                    </Button>
+                                                )}
+                                                {onDelete && (
+                                                    <Button
+                                                        variant="ghost-danger"
+                                                        size="sm"
+                                                        onClick={(e) => { e.stopPropagation(); handleDelete(row); }}
+                                                        className="!p-1.5"
+                                                        title="Eliminar"
+                                                    >
+                                                        <Trash2 size={15} />
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    )}
+                                    {columns.map((column) => (
+                                        <td
+                                            key={column.key}
+                                            className={`
+                                                ${rowPy} px-4 text-sm
+                                                ${column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left'}
+                                                ${column.className ?? ''}
+                                                ${column.cellClassName ?? ''}
+                                            `}
+                                        >
+                                            {renderCell(row, column, index)}
+                                        </td>
+                                    ))}
+                                </tr>
+                                {isExpanded && expandedContent && (
+                                    <tr className={expandedRowClassName}>
+                                        <td colSpan={totalColumns} className="px-4 py-3">
+                                            {expandedContent}
+                                        </td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
+                        );
+                    })}
                 </tbody>
             </table>
         </div>

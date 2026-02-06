@@ -3,12 +3,14 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
 from src.infrastructure.api.dependencies import (
-    get_movimiento_repository, 
-    get_reglas_repository, 
-    get_tercero_repository, 
+    get_movimiento_repository,
+    get_reglas_repository,
+    get_tercero_repository,
     get_tercero_descripcion_repository,
     get_centro_costo_repository,
-    get_concepto_repository
+    get_concepto_repository,
+    get_cuenta_repository,
+    get_matching_alias_repository
 )
 from src.domain.ports.movimiento_repository import MovimientoRepository
 from src.domain.ports.reglas_repository import ReglasRepository
@@ -16,6 +18,8 @@ from src.domain.ports.tercero_repository import TerceroRepository
 from src.domain.ports.tercero_descripcion_repository import TerceroDescripcionRepository
 from src.domain.ports.centro_costo_repository import CentroCostoRepository
 from src.domain.ports.concepto_repository import ConceptoRepository
+from src.domain.ports.cuenta_repository import CuentaRepository
+from src.domain.ports.matching_alias_repository import MatchingAliasRepository
 from src.application.services.clasificacion_service import ClasificacionService
 from src.infrastructure.api.routers.movimientos import MovimientoResponse, _to_response # Reuse existing DTOs
 
@@ -28,10 +32,15 @@ class SugerenciaSchema(BaseModel):
     razon: Optional[str]
     tipo_match: Optional[str]
 
+class ContextoItemResponse(BaseModel):
+    """Movimiento del contexto con su score de coincidencia"""
+    movimiento: MovimientoResponse
+    score: float  # Porcentaje de coincidencia (0-100)
+
 class ContextoClasificacionResponse(BaseModel):
     movimiento_id: int
     sugerencia: SugerenciaSchema
-    contexto: List[MovimientoResponse]
+    contexto: List[ContextoItemResponse]
     referencia_no_existe: bool = False
     referencia: Optional[str] = None
 
@@ -52,15 +61,19 @@ def get_clasificacion_service(
     tercero_repo: TerceroRepository = Depends(get_tercero_repository),
     tercero_desc_repo: TerceroDescripcionRepository = Depends(get_tercero_descripcion_repository),
     grupo_repo: CentroCostoRepository = Depends(get_centro_costo_repository),
-    concepto_repo: ConceptoRepository = Depends(get_concepto_repository)
+    concepto_repo: ConceptoRepository = Depends(get_concepto_repository),
+    cuenta_repo: CuentaRepository = Depends(get_cuenta_repository),
+    matching_alias_repo: MatchingAliasRepository = Depends(get_matching_alias_repository)
 ) -> ClasificacionService:
     return ClasificacionService(
-        mov_repo, 
-        reglas_repo, 
-        tercero_repo, 
-        tercero_desc_repo, 
-        concepto_repo, 
-        grupo_repo
+        mov_repo,
+        reglas_repo,
+        tercero_repo,
+        tercero_desc_repo,
+        concepto_repo,
+        grupo_repo,
+        cuenta_repo,
+        matching_alias_repo
     )
 
 @router.get("/sugerencia/{id}", response_model=ContextoClasificacionResponse)
@@ -74,10 +87,16 @@ def obtener_sugerencia(
     """
     try:
         resultado = service.obtener_sugerencia_clasificacion(id)
-        
-        # Convertir objetos de dominio a DTOs de respuesta
-        contexto_dto = [_to_response(m) for m in resultado['contexto']]
-        
+
+        # Convertir objetos de dominio a DTOs con score
+        contexto_dto = [
+            ContextoItemResponse(
+                movimiento=_to_response(item['movimiento']),
+                score=item['score']
+            )
+            for item in resultado['contexto']
+        ]
+
         return ContextoClasificacionResponse(
             movimiento_id=resultado['movimiento_id'],
             sugerencia=SugerenciaSchema(**resultado['sugerencia']),

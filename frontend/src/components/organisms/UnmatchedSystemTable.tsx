@@ -10,9 +10,17 @@ interface UnmatchedSystemTableProps {
     records: any[] // Usamos any o un tipo compatible que tenga las props necesarias
     onEdit?: (mov: any) => void
     onDelete?: (id: number) => void
+    permiteEditar?: boolean
+    permiteBorrar?: boolean
 }
 
-export const UnmatchedSystemTable = ({ records, onEdit, onDelete }: UnmatchedSystemTableProps) => {
+export const UnmatchedSystemTable = ({
+    records,
+    onEdit,
+    onDelete,
+    permiteEditar = true,
+    permiteBorrar = true
+}: UnmatchedSystemTableProps) => {
     if (!records || records.length === 0) return null
 
     const { totalIngresos, totalEgresos, totalNeto } = useMemo(() => {
@@ -31,7 +39,7 @@ export const UnmatchedSystemTable = ({ records, onEdit, onDelete }: UnmatchedSys
             cellClassName: '!py-0.5 !px-0.5',
             accessor: (row) => (
                 <div className="flex justify-center gap-2">
-                    {onEdit && (
+                    {onEdit && permiteEditar && (
                         <Button
                             variant="ghost-warning"
                             size="sm"
@@ -42,7 +50,7 @@ export const UnmatchedSystemTable = ({ records, onEdit, onDelete }: UnmatchedSys
                             <Edit2 size={15} />
                         </Button>
                     )}
-                    {onDelete && (
+                    {onDelete && permiteBorrar && (
                         <Button
                             variant="ghost-danger"
                             size="sm"
@@ -87,7 +95,7 @@ export const UnmatchedSystemTable = ({ records, onEdit, onDelete }: UnmatchedSys
             'COP',
             { width: 'w-40' }
         )
-    ], [onEdit, onDelete])
+    ], [onEdit, onDelete, permiteEditar, permiteBorrar])
 
     return (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -123,6 +131,7 @@ export const UnmatchedSystemTable = ({ records, onEdit, onDelete }: UnmatchedSys
                 getRowKey={(row) => row.id}
                 showActions={false} // We are handling actions in a custom column
                 rounded={false}
+                stickyHeader={true}
                 className="border-none"
             />
 

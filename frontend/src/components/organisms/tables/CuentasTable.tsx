@@ -28,6 +28,20 @@ export const CuentasTable = ({ cuentas, loading, onEdit, onDelete }: Props) => {
             )
         },
         {
+            key: 'tipo_cuenta',
+            header: 'Tipo',
+            width: 'w-40',
+            accessor: (row) => (
+                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                    row.tipo_cuenta_nombre
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-500'
+                }`}>
+                    {row.tipo_cuenta_nombre || 'Sin asignar'}
+                </span>
+            )
+        },
+        {
             key: 'permite_carga',
             header: 'Permite Carga',
             align: 'center',

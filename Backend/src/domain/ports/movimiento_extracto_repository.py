@@ -47,3 +47,13 @@ class MovimientoExtractoRepository(ABC):
     def existe_movimiento(self, fecha, valor, referencia, cuenta_id: int, descripcion=None, usd=None) -> bool:
         """Verifica si existe un movimiento en el extracto"""
         pass
+
+    @abstractmethod
+    def obtener_por_cuenta(self, cuenta_id: int, limit: int = 100) -> List[MovimientoExtracto]:
+        """Obtiene los movimientos de extracto más recientes de una cuenta"""
+        pass
+
+    @abstractmethod
+    def contar_por_cuenta(self, cuenta_id: int) -> int:
+        """Cuenta el total de movimientos de extracto para una cuenta"""
+        pass

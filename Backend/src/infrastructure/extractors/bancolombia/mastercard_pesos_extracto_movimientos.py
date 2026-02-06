@@ -52,34 +52,57 @@ def extraer_movimientos(file_obj: Any) -> List[Dict[str, Any]]:
 def _extraer_movimientos_desde_texto(texto: str, offset_linea: int) -> List[Dict[str, Any]]:
     """
     Extrae movimientos desde el texto de una página del PDF.
+
+    Estrategia mejorada para evitar que números al final de descripciones
+    se confundan con valores:
+    1. Identificar líneas que empiezan con código + fecha
+    2. Buscar el símbolo $ para anclar el valor
+    3. Todo lo que está entre fecha y $ es descripción
     """
     movimientos = []
     lineas = texto.split('\n')
-    
+
     print(f"DEBUG: Procesando texto de página, longitud: {len(texto)}")
-    
-    # Regex ajustado al nuevo formato MasterCard Pesos:
-    # Columnas: Autorización | Fecha | Movimientos | Valor movimiento ...
-    # Ejemplo: R06441 26/12/2025 DROGUERIA PASTEUR TERP $ 61.856,00 ...
-    # Grupo 1: Fecha (DD/MM/YYYY)
-    # Grupo 2: Descripción (Nombre del comercio)
-    # Grupo 3: Valor (formato $ X.XXX,XX)
-    
-    patron_movimiento = re.compile(
-        r'^\s*[A-Z0-9]+\s+(\d{2}/\d{2}/\d{4})\s+(.+?)\s+([-]?\$\s*[-]?[\d.,]+)',
-        re.MULTILINE
+
+    # Dos patrones para mayor robustez:
+    # Patrón 1: CON código de autorización (ej: R06441 26/12/2025 DROGUERIA...)
+    # Patrón 2: SIN código, fecha directa (ej: 31/01/2026 INTERESES CORRIENTES...)
+    patron_con_codigo = re.compile(
+        r'^\s*([A-Z][A-Z0-9]*)\s+(\d{2}/\d{2}/\d{4})\s+(.+)$'
     )
-    
+    patron_sin_codigo = re.compile(
+        r'^\s*(\d{2}/\d{2}/\d{4})\s+(.+)$'
+    )
+
+    # Regex para encontrar el valor: busca $ seguido de número
+    # Esto ancla correctamente el valor y evita confundir números en descripciones
+    patron_valor = re.compile(r'([-]?\$\s*[-]?[\d.,]+)')
+
     for linea in lineas:
         linea = linea.strip()
         if not linea:
             continue
-            
-        match = patron_movimiento.search(linea)
-        if match:
-            fecha_str = match.group(1)
-            descripcion = match.group(2).strip()
-            valor_str = match.group(3)
+
+        # Intentar primero con código, luego sin código
+        inicio_match = patron_con_codigo.search(linea)
+        if inicio_match:
+            # Con código: group(1)=código, group(2)=fecha, group(3)=resto
+            fecha_str = inicio_match.group(2)
+            resto = inicio_match.group(3)
+        else:
+            inicio_match = patron_sin_codigo.search(linea)
+            if not inicio_match:
+                continue
+            # Sin código: group(1)=fecha, group(2)=resto
+            fecha_str = inicio_match.group(1)
+            resto = inicio_match.group(2)
+
+        # Buscar el valor con $ en el resto de la línea
+        valor_match = patron_valor.search(resto)
+        if valor_match:
+            valor_str = valor_match.group(1)
+            # Todo lo que está ANTES del $ es la descripción
+            descripcion = resto[:valor_match.start()].strip()
             
             # Debug para verificar qué está encontrando
             print(f"DEBUG: MATCH - Fecha: {fecha_str}, Desc: {descripcion}, Valor: {valor_str}")

@@ -4,9 +4,8 @@ import { DashboardSummaryRibbon } from '../components/organisms/dashboard/Dashbo
 import { DashboardAccountChart } from '../components/organisms/dashboard/DashboardAccountChart'
 import { DashboardAccountStats } from '../components/organisms/dashboard/DashboardAccountStats'
 import { CostCenterDetailsModal } from '../components/organisms/dashboard/CostCenterDetailsModal'
-import { ReportFilters } from '../components/organisms/dashboard/ReportFilters'
+import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
 import { apiService } from '../services/api'
-import { useCatalogo } from '../hooks/useCatalogo'
 import { getAnioYTD } from '../utils/dateUtils'
 import type { DashboardStats } from '../services/dashboard.service'
 import type { ConfigFiltroExclusion } from '../types/filters'
@@ -21,8 +20,8 @@ export const DashboardPage = () => {
     const [configFiltrosExclusion, setConfigFiltrosExclusion] = useState<ConfigFiltroExclusion[]>([])
 
     // ---- ESTADO DE FILTROS ----
-    const [fechaInicio, setFechaInicio] = useState(getAnioYTD().inicio)
-    const [fechaFin, setFechaFin] = useState(getAnioYTD().fin)
+    const [desde, setDesde] = useState(getAnioYTD().inicio)
+    const [hasta, setHasta] = useState(getAnioYTD().fin)
 
     // Selectores
     const [cuentaId, setCuentaId] = useState('')
@@ -31,14 +30,10 @@ export const DashboardPage = () => {
     const [conceptoId, setConceptoId] = useState('')
 
     // Toggles
-
     const [mostrarIngresos, setMostrarIngresos] = useState(true)
     const [mostrarEgresos, setMostrarEgresos] = useState(true)
     // Inicialmente excluimos IDs típicos (ej: 0 o nulos si se quiere) o vacío
     const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[]>([])
-
-    // ---- CATÁLOGOS ----
-    const { terceros, centrosCostos, conceptos, cuentas } = useCatalogo()
 
     // ---- ESTADO MODALES ----
     const [detailsModalOpen, setDetailsModalOpen] = useState(false)
@@ -49,7 +44,7 @@ export const DashboardPage = () => {
 
     const cargarEstadisticas = useCallback(() => {
         setLoadingStats(true)
-        apiService.dashboard.obtenerEstadisticas(fechaInicio, fechaFin)
+        apiService.dashboard.obtenerEstadisticas(desde, hasta)
             .then(data => {
                 setStats(data)
                 setLoadingStats(false)
@@ -58,7 +53,7 @@ export const DashboardPage = () => {
                 console.error("Error cargando estadísticas:", err)
                 setLoadingStats(false)
             })
-    }, [fechaInicio, fechaFin])
+    }, [desde, hasta])
 
     const cargarConfigExclusion = useCallback(() => {
         apiService.movimientos.obtenerConfiguracionFiltrosExclusion()
@@ -140,13 +135,12 @@ export const DashboardPage = () => {
 
     // Handlers
     const handleResetFilters = () => {
-        setFechaInicio(getAnioYTD().inicio)
-        setFechaFin(getAnioYTD().fin)
+        setDesde(getAnioYTD().inicio)
+        setHasta(getAnioYTD().fin)
         setCuentaId('')
         setTerceroId('')
         setCentroCostoId('')
         setConceptoId('')
-
         setMostrarIngresos(true)
         setMostrarEgresos(true)
         setCentrosCostosExcluidos([])
@@ -170,38 +164,28 @@ export const DashboardPage = () => {
             </header>
 
             {/* SECCIÓN SUPERIOR: FILTROS UNIFICADOS */}
-            <ReportFilters
-                fechaInicio={fechaInicio}
-                fechaFin={fechaFin}
-                onFechaInicioChange={setFechaInicio}
-                onFechaFinChange={setFechaFin}
-
-                terceroId={terceroId}
-                onTerceroChange={setTerceroId}
-                centroCostoId={centroCostoId}
-                onCentroCostoChange={setCentroCostoId}
-                conceptoId={conceptoId}
-                onConceptoChange={setConceptoId}
-
+            <FiltrosReporte
+                desde={desde}
+                hasta={hasta}
+                setDesde={setDesde}
+                setHasta={setHasta}
                 cuentaId={cuentaId}
-                onCuentaChange={setCuentaId}
-
-
-
+                setCuentaId={setCuentaId}
+                terceroId={terceroId}
+                setTerceroId={setTerceroId}
+                centroCostoId={centroCostoId}
+                setCentroCostoId={setCentroCostoId}
+                conceptoId={conceptoId}
+                setConceptoId={setConceptoId}
                 mostrarIngresos={mostrarIngresos}
-                onMostrarIngresosChange={setMostrarIngresos}
+                setMostrarIngresos={setMostrarIngresos}
                 mostrarEgresos={mostrarEgresos}
-                onMostrarEgresosChange={setMostrarEgresos}
-
+                setMostrarEgresos={setMostrarEgresos}
                 configuracionExclusion={configFiltrosExclusion}
                 centrosCostosExcluidos={centrosCostosExcluidos}
-                onCentrosCostosExcluidosChange={setCentrosCostosExcluidos}
-
-                terceros={terceros}
-                centrosCostos={centrosCostos}
-                conceptos={conceptos}
-
-                onReset={handleResetFilters}
+                setCentrosCostosExcluidos={setCentrosCostosExcluidos}
+                onLimpiar={handleResetFilters}
+                soloConciliables={false}
             />
 
             {/* SECCIÓN 1: RIBBON Y GRÁFICOS (Stats) */}

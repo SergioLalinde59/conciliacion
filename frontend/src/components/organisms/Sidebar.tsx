@@ -27,7 +27,9 @@ import {
     Settings,
     HardDrive,
     AlertCircle,
-    Unlink
+    Unlink,
+    Scale,
+    Database
 } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
 
@@ -60,6 +62,7 @@ export const Sidebar = () => {
     ];
 
     const menuConfiguracion = [
+        { name: 'Tipos de Cuenta', path: '/maestros/tipos-cuenta', icon: Scale },
         { name: 'Config. Filtros', path: '/maestros/config-filtros', icon: Filter },
         { name: 'Config. Valores Pendientes', path: '/maestros/config-valores-pendientes', icon: AlertCircle },
         { name: 'Reglas Auto', path: '/maestros/reglas', icon: Zap },
@@ -87,6 +90,7 @@ export const Sidebar = () => {
 
     const menuMantenimiento = [
         { name: 'Reiniciar Conciliación', path: '/herramientas/mantenimiento/reset-periodo', icon: RefreshCw },
+        { name: 'Reset Demo', path: '/admin/reset-demo', icon: Database },
         { name: 'Configuración', path: '/herramientas/mantenimiento/configuracion', icon: Settings },
         { name: 'Datos', path: '/herramientas/mantenimiento/backups', icon: Download },
         { name: 'Maestros', path: '/herramientas/mantenimiento/maestros', icon: Shield },

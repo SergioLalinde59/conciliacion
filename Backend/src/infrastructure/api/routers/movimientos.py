@@ -413,9 +413,42 @@ def _validar_detalles(
             
             if d.centro_costo_id and concepto.centro_costo_id != d.centro_costo_id:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail=f"Detalle {i+1}: El concepto {d.concepto_id} no pertenece al centro de costo {d.centro_costo_id}"
                 )
+
+
+def _validar_permisos_cuenta(
+    cuenta_id: int,
+    repo_cuenta: CuentaRepository,
+    operacion: str  # 'crear', 'editar', 'modificar', 'borrar', 'clasificar'
+):
+    """Valida que la cuenta permita la operación según su tipo_cuenta."""
+    cuenta = repo_cuenta.obtener_por_id(cuenta_id)
+    if not cuenta:
+        raise HTTPException(status_code=404, detail=f"Cuenta {cuenta_id} no encontrada")
+
+    # Mapeo de operaciones a campos de permiso
+    permisos = {
+        'crear': cuenta.permite_crear_manual,
+        'editar': cuenta.permite_editar,
+        'modificar': cuenta.permite_modificar,
+        'borrar': cuenta.permite_borrar,
+        'clasificar': cuenta.permite_clasificar
+    }
+
+    if operacion not in permisos:
+        raise HTTPException(status_code=400, detail=f"Operación '{operacion}' no reconocida")
+
+    if not permisos[operacion]:
+        tipo_nombre = cuenta.tipo_cuenta_nombre or 'este tipo de cuenta'
+        raise HTTPException(
+            status_code=403,
+            detail=f"No está permitido {operacion} movimientos en cuentas de tipo '{tipo_nombre}'"
+        )
+
+    return cuenta
+
 
 @router.post("", response_model=MovimientoResponse)
 def crear_movimiento(
@@ -429,6 +462,10 @@ def crear_movimiento(
     repo_concepto: ConceptoRepository = Depends(get_concepto_repository)
 ):
     logger.info(f"Creando nuevo movimiento: {dto.descripcion} por {dto.valor}")
+
+    # Validar permisos del tipo de cuenta
+    _validar_permisos_cuenta(dto.cuenta_id, repo_cuenta, 'crear')
+
     _validar_catalogos(dto, repo_cuenta, repo_moneda, repo_tercero, repo_centro_costo, repo_concepto)
     _validar_detalles(dto, repo_centro_costo, repo_concepto)
     
@@ -475,8 +512,8 @@ def crear_movimiento(
 
 @router.put("/{id}", response_model=MovimientoResponse)
 def actualizar_movimiento(
-    id: int, 
-    dto: MovimientoDTO, 
+    id: int,
+    dto: MovimientoDTO,
     repo: MovimientoRepository = Depends(get_movimiento_repository),
     repo_cuenta: CuentaRepository = Depends(get_cuenta_repository),
     repo_moneda: MonedaRepository = Depends(get_moneda_repository),
@@ -487,7 +524,54 @@ def actualizar_movimiento(
     existente = repo.obtener_por_id(id)
     if not existente:
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")
-    
+
+    # Obtener cuenta para validar permisos
+    cuenta = repo_cuenta.obtener_por_id(dto.cuenta_id)
+    if not cuenta:
+        raise HTTPException(status_code=404, detail=f"Cuenta {dto.cuenta_id} no encontrada")
+
+    # Detectar cambios en valores CRÍTICOS (fecha, valor) - inmutables para cuentas bancarias
+    valores_criticos_cambiaron = (
+        existente.fecha != dto.fecha or
+        float(existente.valor) != dto.valor
+    )
+
+    # Detectar cambios en descripción/referencia
+    texto_cambio = (
+        existente.descripcion != dto.descripcion or
+        (existente.referencia or "") != (dto.referencia or "")
+    )
+
+    # Si cambiaron valores críticos, validar permisos de editar y modificar
+    if valores_criticos_cambiaron:
+        if not cuenta.permite_editar:
+            tipo_nombre = cuenta.tipo_cuenta_nombre or 'este tipo de cuenta'
+            raise HTTPException(
+                status_code=403,
+                detail=f"No está permitido editar movimientos en cuentas de tipo '{tipo_nombre}'"
+            )
+        if not cuenta.permite_modificar:
+            tipo_nombre = cuenta.tipo_cuenta_nombre or 'este tipo de cuenta'
+            raise HTTPException(
+                status_code=403,
+                detail=f"No está permitido modificar valores (fecha, valor) en cuentas de tipo '{tipo_nombre}'. Solo puede cambiar la clasificación."
+            )
+    elif texto_cambio:
+        # Solo cambió descripción/referencia (sin fecha/valor)
+        if not cuenta.permite_modificar:
+            # No tiene permiso de modificar texto, forzar valores originales
+            # Esto permite clasificar sin error aunque el frontend envíe descripción diferente
+            dto.descripcion = existente.descripcion
+            dto.referencia = existente.referencia or ""
+
+    # Validar permiso de clasificar (siempre necesario para actualizar)
+    if not cuenta.permite_clasificar:
+        tipo_nombre = cuenta.tipo_cuenta_nombre or 'este tipo de cuenta'
+        raise HTTPException(
+            status_code=403,
+            detail=f"No está permitido clasificar movimientos en cuentas de tipo '{tipo_nombre}'"
+        )
+
     _validar_catalogos(dto, repo_cuenta, repo_moneda, repo_tercero, repo_centro_costo, repo_concepto)
     _validar_detalles(dto, repo_centro_costo, repo_concepto)
     
@@ -648,6 +732,7 @@ from src.infrastructure.api.dependencies import get_movimiento_vinculacion_repos
 def eliminar_movimientos_lote(
     request: DeleteBatchRequest,
     repo: MovimientoRepository = Depends(get_movimiento_repository),
+    repo_cuenta: CuentaRepository = Depends(get_cuenta_repository),
     repo_vinculacion: MovimientoVinculacionRepository = Depends(get_movimiento_vinculacion_repository)
 ):
     """
@@ -656,25 +741,39 @@ def eliminar_movimientos_lote(
     """
     logger.info(f"Solicitud de eliminación de lote: {len(request.ids)} registros")
     try:
+        # Primero validar permisos de todos los movimientos
+        movimientos_a_eliminar = []
+        for mov_id in request.ids:
+            existente = repo.obtener_por_id(mov_id)
+            if not existente:
+                raise HTTPException(status_code=404, detail=f"Movimiento {mov_id} no encontrado")
+            # Validar permisos del tipo de cuenta
+            _validar_permisos_cuenta(existente.cuenta_id, repo_cuenta, 'borrar')
+            movimientos_a_eliminar.append(existente)
+
+        # Si todos pasan la validación, proceder a eliminar
         count = 0
-        for id in request.ids:
+        for mov in movimientos_a_eliminar:
             # 1. Desvincular de cualquier match (Extracto -> Sistema)
             # Esto pone el movimiento del extracto en SIN_MATCH
-            repo_vinculacion.desvincular_por_sistema_id(id)
-            
+            repo_vinculacion.desvincular_por_sistema_id(mov.id)
+
             # 2. Eliminar movimiento del sistema
-            repo.eliminar(id)
+            repo.eliminar(mov.id)
             count += 1
-            
+
         return {"mensaje": "Eliminación exitosa", "registros_eliminados": count}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error eliminando lote: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error eliminando movimientos: {str(e)}")
 
 @router.delete("/{id}")
 def eliminar_movimiento(
-    id: int, 
+    id: int,
     repo: MovimientoRepository = Depends(get_movimiento_repository),
+    repo_cuenta: CuentaRepository = Depends(get_cuenta_repository),
     repo_vinculacion: MovimientoVinculacionRepository = Depends(get_movimiento_vinculacion_repository)
 ):
     """
@@ -682,13 +781,23 @@ def eliminar_movimiento(
     Antes de eliminar, desvincula cualquier conciliación existente.
     """
     try:
+        # Obtener movimiento para validar permisos
+        existente = repo.obtener_por_id(id)
+        if not existente:
+            raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+
+        # Validar permisos del tipo de cuenta
+        _validar_permisos_cuenta(existente.cuenta_id, repo_cuenta, 'borrar')
+
         # 1. Desvincular de cualquier match (Extracto -> Sistema)
         repo_vinculacion.desvincular_por_sistema_id(id)
-        
+
         # 2. Eliminar movimiento del sistema
         repo.eliminar(id)
-        
+
         return {"mensaje": "Movimiento eliminado correctamente"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error eliminando movimiento {id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

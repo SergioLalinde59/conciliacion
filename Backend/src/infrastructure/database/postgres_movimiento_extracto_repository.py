@@ -189,3 +189,37 @@ class PostgresMovimientoExtractoRepository(MovimientoExtractoRepository):
         exists = cursor.fetchone() is not None
         cursor.close()
         return exists
+
+    def obtener_por_cuenta(self, cuenta_id: int, limit: int = 100) -> List[MovimientoExtracto]:
+        """Obtiene los movimientos de extracto más recientes de una cuenta"""
+        cursor = self.conn.cursor()
+        query = """
+            SELECT
+                me.id, me.cuenta_id, me.year, me.month, me.fecha,
+                me.descripcion, me.referencia, me.valor, me.usd, me.trm,
+                me.numero_linea, me.raw_text, me.created_at,
+                c.cuenta
+            FROM movimientos_extracto me
+            JOIN cuentas c ON me.cuenta_id = c.cuentaid
+            WHERE me.cuenta_id = %s
+            ORDER BY me.fecha DESC, me.numero_linea DESC
+            LIMIT %s
+        """
+        cursor.execute(query, (cuenta_id, limit))
+        rows = cursor.fetchall()
+        cursor.close()
+
+        return [self._row_to_movimiento(row) for row in rows]
+
+    def contar_por_cuenta(self, cuenta_id: int) -> int:
+        """Cuenta el total de movimientos de extracto para una cuenta"""
+        cursor = self.conn.cursor()
+        query = """
+            SELECT COUNT(*)
+            FROM movimientos_extracto
+            WHERE cuenta_id = %s
+        """
+        cursor.execute(query, (cuenta_id,))
+        count = cursor.fetchone()[0]
+        cursor.close()
+        return count

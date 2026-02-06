@@ -40,6 +40,9 @@ from src.domain.ports.conciliacion_repository import ConciliacionRepository
 from src.domain.ports.movimiento_extracto_repository import MovimientoExtractoRepository
 from src.infrastructure.database.postgres_movimiento_extracto_repository import PostgresMovimientoExtractoRepository
 
+from src.infrastructure.database.postgres_tipo_cuenta_repository import PostgresTipoCuentaRepository
+from src.domain.ports.tipo_cuenta_repository import TipoCuentaRepository
+
 
 def get_cuenta_repository(conn=Depends(get_db_connection)) -> CuentaRepository:
     return PostgresCuentaRepository(conn)
@@ -85,6 +88,9 @@ from src.domain.ports.cuenta_extractor_repository import CuentaExtractorReposito
 
 def get_cuenta_extractor_repository(conn=Depends(get_db_connection)) -> CuentaExtractorRepository:
     return PostgresCuentaExtractorRepository(conn)
+
+def get_tipo_cuenta_repository(conn=Depends(get_db_connection)) -> TipoCuentaRepository:
+    return PostgresTipoCuentaRepository(conn)
 
 # Matching System Dependencies
 from src.infrastructure.database.postgres_movimiento_vinculacion_repository import PostgresMovimientoVinculacionRepository

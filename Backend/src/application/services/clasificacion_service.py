@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple
 from decimal import Decimal
+from datetime import date
 import os
 from difflib import SequenceMatcher
 from src.domain.models.movimiento import Movimiento
@@ -9,6 +10,17 @@ from src.domain.ports.tercero_repository import TerceroRepository
 from src.domain.ports.tercero_descripcion_repository import TerceroDescripcionRepository
 from src.domain.ports.centro_costo_repository import CentroCostoRepository
 from src.domain.ports.concepto_repository import ConceptoRepository
+from src.domain.ports.cuenta_repository import CuentaRepository
+from src.domain.ports.matching_alias_repository import MatchingAliasRepository
+import unicodedata
+
+def _normalizar_acentos(texto: str) -> str:
+    """Elimina acentos y diacríticos de un texto para comparación."""
+    if not texto:
+        return ""
+    # NFD descompone caracteres (é → e + ́), luego filtramos los diacríticos
+    nfkd = unicodedata.normalize('NFKD', texto)
+    return ''.join(c for c in nfkd if not unicodedata.combining(c))
 
 def calcular_similitud_texto(texto1: str, texto2: str) -> float:
     """
@@ -77,19 +89,97 @@ class ClasificacionService:
     Combina Reglas Estáticas y Aprendizaje Histórico.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  movimiento_repo: MovimientoRepository,
                  reglas_repo: ReglasRepository,
                  tercero_repo: TerceroRepository,
                  tercero_descripcion_repo: TerceroDescripcionRepository = None,
                  concepto_repo: ConceptoRepository = None,
-                 centro_costo_repo: CentroCostoRepository = None):
+                 centro_costo_repo: CentroCostoRepository = None,
+                 cuenta_repo: CuentaRepository = None,
+                 matching_alias_repo: MatchingAliasRepository = None):
         self.movimiento_repo = movimiento_repo
         self.reglas_repo = reglas_repo
         self.tercero_repo = tercero_repo
         self.tercero_descripcion_repo = tercero_descripcion_repo
         self.concepto_repo = concepto_repo
         self.centro_costo_repo = centro_costo_repo
+        self.cuenta_repo = cuenta_repo
+        self.matching_alias_repo = matching_alias_repo
+        # Caché de pesos por cuenta (lazy-loaded)
+        self._cache_pesos_cuenta: Optional[dict] = None
+        # Caché de aliases por cuenta (lazy-loaded)
+        self._cache_aliases_cuenta: Optional[dict] = None
+
+    def _obtener_pesos_cuenta(self, cuenta_id: int) -> dict:
+        """Obtiene los pesos de clasificación para una cuenta (lazy-loaded cache)."""
+        if self._cache_pesos_cuenta is None:
+            self._cache_pesos_cuenta = {}
+            if self.cuenta_repo:
+                try:
+                    cuentas = self.cuenta_repo.obtener_todas_con_tipo()
+                    for c in cuentas:
+                        self._cache_pesos_cuenta[c.cuentaid] = c.obtener_pesos_clasificacion()
+                except Exception as e:
+                    print(f"   ⚠️ Error cargando pesos de cuenta: {e}")
+
+        # Valores por defecto si no se encuentra
+        return self._cache_pesos_cuenta.get(cuenta_id, {
+            'peso_referencia': 100,
+            'peso_descripcion': 50,
+            'peso_valor': 30,
+            'longitud_min_referencia': 8
+        })
+
+    def _obtener_aliases_cuenta(self, cuenta_id: int) -> List:
+        """Obtiene los aliases de normalización para una cuenta (lazy-loaded cache)."""
+        if self._cache_aliases_cuenta is None:
+            self._cache_aliases_cuenta = {}
+
+        if cuenta_id not in self._cache_aliases_cuenta:
+            if self.matching_alias_repo:
+                try:
+                    aliases = self.matching_alias_repo.obtener_por_cuenta(cuenta_id)
+                    self._cache_aliases_cuenta[cuenta_id] = aliases
+                except Exception as e:
+                    print(f"   ⚠️ Error cargando aliases de cuenta {cuenta_id}: {e}")
+                    self._cache_aliases_cuenta[cuenta_id] = []
+            else:
+                self._cache_aliases_cuenta[cuenta_id] = []
+
+        return self._cache_aliases_cuenta.get(cuenta_id, [])
+
+    def _aplicar_aliases(self, descripcion: str, cuenta_id: int) -> str:
+        """
+        Aplica las reglas de normalización (aliases) a una descripción.
+
+        Args:
+            descripcion: Texto original de la descripción
+            cuenta_id: ID de la cuenta para obtener sus aliases
+
+        Returns:
+            Descripción normalizada según las reglas de la cuenta
+        """
+        if not descripcion:
+            return ""
+
+        aliases = self._obtener_aliases_cuenta(cuenta_id)
+        if not aliases:
+            return descripcion.upper().strip()
+
+        desc_norm = descripcion.upper().strip()
+        # Versión sin acentos para comparación
+        desc_sin_acentos = _normalizar_acentos(desc_norm)
+
+        for alias in aliases:
+            # Normalizar patrón sin acentos para comparación
+            patron_sin_acentos = _normalizar_acentos(alias.patron)
+            if patron_sin_acentos in desc_sin_acentos:
+                # Reemplazar en la versión sin acentos
+                desc_sin_acentos = desc_sin_acentos.replace(patron_sin_acentos, alias.reemplazo)
+                desc_norm = desc_sin_acentos  # Usar versión sin acentos como resultado
+
+        return desc_norm
 
     def clasificar_movimiento(self, movimiento: Movimiento) -> Tuple[bool, str]:
         """
@@ -233,9 +323,15 @@ class ClasificacionService:
         print(f"   Descripción: '{movimiento.descripcion}'")
         print(f"   Valor: {movimiento.valor}")
         print(f"   Tercero actual: {movimiento.tercero_id}")
-        
+
+        # Obtener pesos de clasificación para esta cuenta
+        pesos_cuenta = self._obtener_pesos_cuenta(movimiento.cuenta_id)
+        print(f"   Pesos cuenta {movimiento.cuenta_id}: ref={pesos_cuenta['peso_referencia']}, desc={pesos_cuenta['peso_descripcion']}, val={pesos_cuenta['peso_valor']}")
+
         referencia_no_existe = False
-        
+        match_referencia_encontrado = False  # Inicializar ANTES de usar
+        referencia_define_tercero = pesos_cuenta.get('referencia_define_tercero', False)
+
         # ============================================
         # 0.1. ESTRATEGIA: CONTEXTO PARA TERCERO EXISTENTE
         # ============================================
@@ -256,39 +352,62 @@ class ClasificacionService:
                         candidatos_map[m.id]['score_cobertura'] += 5
 
         # ============================================
-        # 0. ESTRATEGIA: REFERENCIA EXACTA (>8 DÍGITOS) - PRIORIDAD MÁXIMA
+        # 0. ESTRATEGIA: REFERENCIA DEFINE TERCERO (configurado en tipo_cuenta)
         # ============================================
-        # Según reglas de negocio: Si la referencia tiene más de 8 dígitos, buscar en catálogo específico.
-        # Si existe, ese ES el tercero y el historial debe ser de ese tercero.
-        # Si no existe, marcar flag para sugerir creación.
-        
-        tiene_referencia_larga = bool(movimiento.referencia and len(movimiento.referencia.strip()) > 8 and movimiento.referencia.isdigit())
-        match_referencia_encontrado = False
-        
-        if tiene_referencia_larga and self.tercero_descripcion_repo:
-            td = self.tercero_descripcion_repo.buscar_por_referencia(movimiento.referencia)
-            if td:
-                print(f"   ✅ MATCH REFERENCIA EXACTA (>8): {movimiento.referencia} -> TerceroID {td.terceroid}")
-                # 1. Fijar el tercero inmediatamente
-                sugerencia['tercero_id'] = td.terceroid
-                sugerencia['razon'] = f"Referencia Exacta (>8 dígitos): {movimiento.referencia}"
-                sugerencia['tipo_match'] = 'referencia_exacta'
+        # Si referencia_define_tercero = TRUE y hay referencia válida:
+        # - SOLO buscar movimientos con la misma referencia
+        # - El historial muestra únicamente movimientos con esa referencia
+        # - CC/Concepto puede variar (ej: Apple = Software o Hardware)
+
+        longitud_min_ref = pesos_cuenta.get('longitud_min_referencia', 8)
+        tiene_referencia_valida = bool(
+            movimiento.referencia
+            and len(movimiento.referencia.strip()) >= longitud_min_ref
+        )
+
+        if referencia_define_tercero and tiene_referencia_valida:
+            print(f"   🔑 referencia_define_tercero=TRUE, buscando solo por referencia: '{movimiento.referencia}'")
+
+            # Buscar movimientos con la MISMA referencia
+            cands_misma_ref, _ = self.movimiento_repo.buscar_avanzado(
+                referencia=movimiento.referencia.strip(),
+                limit=20
+            )
+
+            movs_con_misma_ref = [m for m in cands_misma_ref if m.id != movimiento.id and m.tercero_id]
+
+            if movs_con_misma_ref:
                 match_referencia_encontrado = True
-                
-                # 2. Forzar el contexto a ser SOLO de este tercero
-                # Buscamos historial de este tercero para intentar deducir CC/Concepto por similitud de valor/texto
-                cands_tercero, _ = self.movimiento_repo.buscar_avanzado(tercero_id=td.terceroid, limit=20)
-                
-                for m in cands_tercero:
-                    if m.id != movimiento.id:
-                        if m.id not in candidatos_map:
-                            candidatos_map[m.id] = {'mov': m, 'origen': {'referencia_tercero'}, 'score_cobertura': 10}
-                        else:
-                             candidatos_map[m.id]['origen'].add('referencia_tercero')
-                             candidatos_map[m.id]['score_cobertura'] += 10
+
+                # Tomar el tercero del primer movimiento clasificado con esa referencia
+                primer_clasificado = movs_con_misma_ref[0]
+                sugerencia['tercero_id'] = primer_clasificado.tercero_id
+                sugerencia['razon'] = f"Referencia: {movimiento.referencia}"
+                sugerencia['tipo_match'] = 'referencia_exacta'
+
+                for m in movs_con_misma_ref:
+                    if m.id not in candidatos_map:
+                        candidatos_map[m.id] = {'mov': m, 'origen': {'misma_referencia'}, 'score_cobertura': 0}
+                    else:
+                        candidatos_map[m.id]['origen'].add('misma_referencia')
+
+                print(f"   📌 Encontrados {len(movs_con_misma_ref)} movimientos con misma referencia")
             else:
-                print(f"   ⚠️ Referencia larga {movimiento.referencia} NO encontrada en catálogo.")
-                referencia_no_existe = True
+                # Si no hay historial pero sí catálogo de terceros, intentar buscar ahí
+                tiene_referencia_numerica = movimiento.referencia.isdigit()
+                if tiene_referencia_numerica and self.tercero_descripcion_repo:
+                    td = self.tercero_descripcion_repo.buscar_por_referencia(movimiento.referencia)
+                    if td:
+                        print(f"   ✅ Referencia encontrada en catálogo: {movimiento.referencia} -> TerceroID {td.terceroid}")
+                        sugerencia['tercero_id'] = td.terceroid
+                        sugerencia['razon'] = f"Referencia: {movimiento.referencia}"
+                        sugerencia['tipo_match'] = 'referencia_exacta'
+                        match_referencia_encontrado = True
+                    else:
+                        print(f"   ⚠️ Referencia {movimiento.referencia} sin historial ni en catálogo")
+                        referencia_no_existe = True
+                else:
+                    print(f"   ⚠️ Referencia {movimiento.referencia} sin historial previo")
 
         # ============================================
         # 1. ESTRATEGIA: PATRONES DE DESCRIPCIÓN (Catálogo Terceros)
@@ -360,82 +479,142 @@ class ClasificacionService:
         # ============================================
         # 3. CASOS ESPECIALES (FONDO RENTA / TRASLADO)
         # ============================================
-        es_ahorros = movimiento.cuenta_id == 1
-        es_fondo_renta = movimiento.cuenta_id == 3
-        
-        if es_fondo_renta:
-             # Traer historial de la cuenta 3 (los ultimos 20)
-             cands, _ = self.movimiento_repo.buscar_avanzado(cuenta_id=3, limit=20)
-             for m in cands:
-                if m.id != movimiento.id and m.tercero_id:
-                    if m.id not in candidatos_map:
-                        candidatos_map[m.id] = {'mov': m, 'origen': {'cuenta'}, 'score_cobertura': 0}
-                    candidatos_map[m.id]['origen'].add('cuenta')
+        # Solo aplica si NO hubo match por referencia exacta
+        if not match_referencia_encontrado:
+            tipo_cuenta_nombre = (pesos_cuenta.get('tipo_cuenta_nombre') or '').lower()
+            es_fondo_renta = 'fondo' in tipo_cuenta_nombre or 'renta' in tipo_cuenta_nombre
+
+            if es_fondo_renta:
+                 # Traer historial de la misma cuenta (los ultimos 20)
+                 cands, _ = self.movimiento_repo.buscar_avanzado(cuenta_id=movimiento.cuenta_id, limit=20)
+                 for m in cands:
+                    if m.id != movimiento.id and m.tercero_id:
+                        if m.id not in candidatos_map:
+                            candidatos_map[m.id] = {'mov': m, 'origen': {'cuenta'}, 'score_cobertura': 0}
+                        candidatos_map[m.id]['origen'].add('cuenta')
         
         # ============================================
-        # 4. EVALUACIÓN Y RANKING UNIFICADO
+        # 4. EVALUACIÓN Y RANKING UNIFICADO (con pesos dinámicos por tipo_cuenta)
         # ============================================
         resultados_scoring = []
-        
-        # Parámetros Scoring
-        PESO_TEXTO = 0.7
-        PESO_VALOR = 0.3
-        
+
+        # Usar pesos dinámicos de la cuenta
+        peso_ref = pesos_cuenta['peso_referencia']
+        peso_desc = pesos_cuenta['peso_descripcion']
+        peso_val = pesos_cuenta['peso_valor']
+        longitud_min_ref = pesos_cuenta.get('longitud_min_referencia', 8)
+
+        # Referencia del movimiento actual (para comparar)
+        ref_actual = (movimiento.referencia or "").strip()
+        tiene_ref_valida = len(ref_actual) >= longitud_min_ref
+
+        # Si el movimiento NO tiene referencia válida, redistribuir peso entre desc y valor
+        if not tiene_ref_valida and peso_ref > 0:
+            print(f"   ℹ️ Movimiento sin referencia válida (len={len(ref_actual)} < {longitud_min_ref}), redistribuyendo peso de referencia")
+            suma_desc_val = peso_desc + peso_val
+            if suma_desc_val > 0:
+                # Redistribuir proporcionalmente
+                peso_desc = peso_desc + (peso_ref * peso_desc / suma_desc_val)
+                peso_val = peso_val + (peso_ref * peso_val / suma_desc_val)
+            peso_ref = 0
+
+        suma_pesos = peso_ref + peso_desc + peso_val
+
+        # Normalizar pesos (0-1)
+        if suma_pesos > 0:
+            peso_ref_norm = peso_ref / suma_pesos
+            peso_texto_norm = peso_desc / suma_pesos
+            peso_valor_norm = peso_val / suma_pesos
+        else:
+            peso_ref_norm = 0.0
+            peso_texto_norm = 0.7
+            peso_valor_norm = 0.3
+
+        print(f"   📊 Pesos normalizados: ref={peso_ref_norm:.1%}, desc={peso_texto_norm:.1%}, val={peso_valor_norm:.1%}")
+
         # Margen valor
         margen_pct = Decimal(os.getenv('SIMILAR_RECORDS_VALUE_MARGIN_PERCENT', '20')) / Decimal('100')
         valor_abs = abs(movimiento.valor) if movimiento.valor else Decimal(0)
         valor_min = valor_abs * (1 - margen_pct)
         valor_max = valor_abs * (1 + margen_pct)
-        
+
         for mid, data in candidatos_map.items():
             cand = data['mov']
-            
-            # 1. Similitud Texto (Híbrida)
-            sim_texto = calcular_similitud_hibrida(descripcion, cand.descripcion or "")
-            
-            # 2. Similitud Valor
+
+            # 1. Match Referencia (solo si cumple longitud mínima)
+            match_ref = 0
+            ref_cand = (cand.referencia or "").strip()
+            if (len(ref_actual) >= longitud_min_ref and
+                len(ref_cand) >= longitud_min_ref and
+                ref_actual == ref_cand):
+                match_ref = 100  # Referencia exacta
+
+            # 2. Similitud Texto (Híbrida) - CON NORMALIZACIÓN
+            # Aplicar aliases de normalización antes de comparar
+            desc_norm = self._aplicar_aliases(descripcion, movimiento.cuenta_id)
+            cand_desc_norm = self._aplicar_aliases(cand.descripcion or "", movimiento.cuenta_id)
+            sim_texto = calcular_similitud_hibrida(desc_norm, cand_desc_norm)
+
+            # 3. Similitud Valor
             score_valor = 0
             cand_valor_abs = abs(cand.valor) if cand.valor else Decimal(0)
-            
+
             if cand.valor == movimiento.valor:
-                score_valor = 100 # Match exacto
-            elif (cand.valor is not None and movimiento.valor is not None 
-                  and (cand.valor < 0) == (movimiento.valor < 0) # Mismo signo
+                score_valor = 100  # Match exacto
+            elif (cand.valor is not None and movimiento.valor is not None
+                  and (cand.valor < 0) == (movimiento.valor < 0)  # Mismo signo
                   and valor_min <= cand_valor_abs <= valor_max):
-                score_valor = 50 # Rango aceptable
-            
+                score_valor = 80  # Diferencia ≤20% (match cercano)
+
             # Bonus por cobertura de palabras (Search Density)
-            # Si buscamos 5 palabras y el candidato tiene 4, es muy relevante
-            bonus_cobertura = min(data['score_cobertura'] * 2, 10) # Max 10 pts extra
-            
+            bonus_cobertura = min(data['score_cobertura'] * 2, 10)  # Max 10 pts extra
+
             # SCORE FINAL
-            score_final = (sim_texto * PESO_TEXTO) + (score_valor * PESO_VALOR) + bonus_cobertura
-            
+            # Si hay match de referencia exacta → 100 puntos (no hay que buscar más)
+            # La referencia es el número de cuenta del tercero en el banco
+            if match_ref == 100:
+                score_final = 100.0
+            else:
+                # Solo aplica fórmula de pesos cuando NO hay match de referencia
+                score_final = (sim_texto * peso_texto_norm) + (score_valor * peso_valor_norm) + bonus_cobertura
+
             resultados_scoring.append({
                 'movimiento': cand,
                 'score_final': score_final,
+                'match_ref': match_ref,
                 'sim_texto': sim_texto,
                 'score_valor': score_valor,
                 'origen': list(data['origen'])
             })
             
-        # Ordenar por Score Final Descendente (Ranking Competitivo)
-        resultados_scoring.sort(key=lambda x: x['score_final'], reverse=True)
+        # Ordenar por: 1) Score desc, 2) Fecha desc, 3) Valor por cercanía al actual
+        valor_referencia = abs(movimiento.valor or 0)
+        fecha_min = date(1900, 1, 1)
+        resultados_scoring.sort(
+            key=lambda x: (
+                -x['score_final'],  # Negativo para DESC (mayor score primero)
+                -(x['movimiento'].fecha if x['movimiento'].fecha else fecha_min).toordinal(),  # Negativo para DESC (más reciente primero)
+                abs(abs(x['movimiento'].valor or 0) - valor_referencia)  # ASC por cercanía al valor actual
+            )
+        )
         
         # Logging Top 5
         print(f"\n   🏆 TOP 5 CANDIDATOS (Ranking Unificado):")
         for i, res in enumerate(resultados_scoring[:5]):
             m = res['movimiento']
             print(f"      {i+1}. [{res['score_final']:.1f} pts] ID {m.id} - '{m.descripcion}'")
-            print(f"         Txt: {res['sim_texto']:.1f}% | Val: {res['score_valor']} | Origen: {res['origen']}")
+            print(f"         Ref: {res['match_ref']} | Txt: {res['sim_texto']:.1f}% | Val: {res['score_valor']} | Origen: {res['origen']}")
             
-        # Seleccionar contexto top 5
-        contexto_movimientos = [r['movimiento'] for r in resultados_scoring[:5]]
+        # Seleccionar contexto top 5 con su score de coincidencia
+        contexto_con_score = [
+            {'movimiento': r['movimiento'], 'score': round(r['score_final'], 1)}
+            for r in resultados_scoring[:5]
+        ]
         
         # ============================================
         # 5. INFERIR SUGERENCIAS DESDE EL GANADOR
         # ============================================
-        if not sugerencia['tercero_id'] and contexto_movimientos:
+        if not sugerencia['tercero_id'] and contexto_con_score:
             ganador = resultados_scoring[0]
             
             # Umbral de confianza
@@ -456,14 +635,55 @@ class ClasificacionService:
         # ============================================
         # 6. SUGERIR TERCERO SI TODOS SON IGUALES (Consistencia)
         # ============================================
-        if not sugerencia['tercero_id'] and contexto_movimientos:
-            terceros_unicos = set(m.tercero_id for m in contexto_movimientos if m.tercero_id)
+        if not sugerencia['tercero_id'] and contexto_con_score:
+            terceros_unicos = set(c['movimiento'].tercero_id for c in contexto_con_score if c['movimiento'].tercero_id)
             if len(terceros_unicos) == 1:
                 tercero_comun_id = terceros_unicos.pop()
                 sugerencia['tercero_id'] = tercero_comun_id
-                sugerencia['razon'] = f"Historial consistente ({len(contexto_movimientos)}/{len(contexto_movimientos)})"
+                sugerencia['razon'] = f"Historial consistente ({len(contexto_con_score)}/{len(contexto_con_score)})"
                 sugerencia['tipo_match'] = 'frecuencia_tercero'
-                
+
+        # ============================================
+        # 7. INFERIR CC/CONCEPTO DEL HISTORIAL DEL TERCERO
+        # ============================================
+        # Si ya tenemos tercero pero no CC/Concepto, buscar en el historial de ese tercero
+        if sugerencia['tercero_id'] and (not sugerencia['centro_costo_id'] or not sugerencia['concepto_id']):
+            # Filtrar candidatos que tengan el mismo tercero sugerido
+            candidatos_tercero = [
+                c['movimiento'] for c in contexto_con_score
+                if c['movimiento'].tercero_id == sugerencia['tercero_id']
+            ]
+
+            if candidatos_tercero:
+                # Umbral configurable (default 60% = 3/5)
+                umbral_cc_concepto = float(os.getenv('CLASIFICACION_UMBRAL_CC_CONCEPTO', '0.6'))
+
+                # Contar CC y Conceptos más frecuentes
+                from collections import Counter
+                cc_counter = Counter(m.centro_costo_id for m in candidatos_tercero if m.centro_costo_id)
+                concepto_counter = Counter(m.concepto_id for m in candidatos_tercero if m.concepto_id)
+
+                # Si hay CC consistente (>= umbral del historial del tercero)
+                if cc_counter and not sugerencia['centro_costo_id']:
+                    cc_mas_frecuente, cc_count = cc_counter.most_common(1)[0]
+                    if cc_count >= len(candidatos_tercero) * umbral_cc_concepto:
+                        sugerencia['centro_costo_id'] = cc_mas_frecuente
+                        print(f"   ✅ CC inferido del tercero: {cc_mas_frecuente} ({cc_count}/{len(candidatos_tercero)} >= {umbral_cc_concepto:.0%})")
+
+                # Si hay Concepto consistente (>= umbral del historial del tercero)
+                if concepto_counter and not sugerencia['concepto_id']:
+                    concepto_mas_frecuente, concepto_count = concepto_counter.most_common(1)[0]
+                    if concepto_count >= len(candidatos_tercero) * umbral_cc_concepto:
+                        sugerencia['concepto_id'] = concepto_mas_frecuente
+                        print(f"   ✅ Concepto inferido del tercero: {concepto_mas_frecuente} ({concepto_count}/{len(candidatos_tercero)} >= {umbral_cc_concepto:.0%})")
+
+                # Actualizar razón si se infirieron
+                if sugerencia['centro_costo_id'] and sugerencia['concepto_id']:
+                    if sugerencia['razon']:
+                        sugerencia['razon'] += " + CC/Concepto del tercero"
+                    else:
+                        sugerencia['razon'] = "CC/Concepto inferidos del historial del tercero"
+
         # Completar información de nombres para el frontend
         if sugerencia['tercero_id']:
             t = self.tercero_repo.obtener_por_id(sugerencia['tercero_id'])
@@ -472,7 +692,7 @@ class ClasificacionService:
         return {
             'movimiento_id': movimiento.id,
             'sugerencia': sugerencia,
-            'contexto': contexto_movimientos,
+            'contexto': contexto_con_score,
             'referencia_no_existe': referencia_no_existe,
             'referencia': movimiento.referencia if referencia_no_existe else None
         }
@@ -539,13 +759,16 @@ class ClasificacionService:
         umbral_similitud = float(os.getenv('SIMILAR_RECORDS_TEXT_SIMILARITY_THRESHOLD', '70'))
         descripcion_actual = movimiento.descripcion or ""
 
-        
+        # Normalizar la descripción actual usando aliases de la cuenta
+        desc_actual_norm = self._aplicar_aliases(descripcion_actual, movimiento.cuenta_id)
+
         # Calcular similitud híbrida para cada candidato
         candidatos_similitud = []
         for m in movs_similares:
             if m.id != movimiento.id:  # Excluir el movimiento de referencia
-                # Usar similitud híbrida (60% palabras + 40% secuencia)
-                similitud = calcular_similitud_hibrida(descripcion_actual, m.descripcion or "")
+                # Normalizar descripción del candidato y calcular similitud híbrida
+                desc_cand_norm = self._aplicar_aliases(m.descripcion or "", movimiento.cuenta_id)
+                similitud = calcular_similitud_hibrida(desc_actual_norm, desc_cand_norm)
                 if similitud >= umbral_similitud:
                     candidatos_similitud.append({
                         'movimiento': m,

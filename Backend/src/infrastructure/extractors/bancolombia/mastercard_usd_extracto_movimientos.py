@@ -104,10 +104,11 @@ def _extraer_movimientos_desde_texto(texto: str, offset_linea: int) -> List[Dict
                 movimientos.append({
                     'fecha': fecha,
                     'descripcion': descripcion,
-                    'referencia': '', 
+                    'referencia': '',
                     'valor': Decimal(0),
                     'usd': valor,
                     'trm': Decimal(0),
+                    'moneda': 'USD',
                     'numero_linea': offset_linea + len(movimientos) + 1,
                     'raw_text': linea
                 })

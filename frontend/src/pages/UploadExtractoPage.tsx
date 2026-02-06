@@ -3,7 +3,7 @@ import { apiService } from '../services/api'
 import { useCatalogo } from '../hooks/useCatalogo'
 import { ExtractDetailsTable } from '../components/organisms/ExtractDetailsTable'
 import type { ExtractDetailRow } from '../components/organisms/ExtractDetailsTable'
-import { UploadCloud, FileText, CheckCircle, AlertCircle, BarChart3, FolderOpen, ChevronDown, ChevronUp, Info } from 'lucide-react'
+import { UploadCloud, FileText, CheckCircle, AlertCircle, BarChart3, FolderOpen, ChevronDown, ChevronUp, Info, ExternalLink } from 'lucide-react'
 import { Modal } from '../components/molecules/Modal'
 import { Button } from '../components/atoms/Button'
 import { EditExtractMovementModal } from '../components/organisms/modals/EditExtractMovementModal'
@@ -36,6 +36,11 @@ interface ResumenExtracto {
         movimientos_salidas: number
         movimientos_rendimientos: number
         movimientos_retenciones: number
+        // Cargados = movimientos ya existentes en el sistema
+        cargados_entradas?: number
+        cargados_salidas?: number
+        cargados_rendimientos?: number
+        cargados_retenciones?: number
     }
 }
 
@@ -80,13 +85,14 @@ export const UploadExtractoPage: React.FC = () => {
     const [showEditModal, setShowEditModal] = useState(false)
     const [editingMovement, setEditingMovement] = useState<{ record: ExtractDetailRow, index: number } | null>(null)
     const [showDetailsManually, setShowDetailsManually] = useState(false) // Toggle to show details even if valid
-    const [showOnlyNew, setShowOnlyNew] = useState(true) // Filter for duplicates
 
     // --- State: Modals ---
     const [showLocalModal, setShowLocalModal] = useState(false)
     const [localFiles, setLocalFiles] = useState<string[]>([])
     const [loadingFiles, setLoadingFiles] = useState(false)
     const [showSuccessModal, setShowSuccessModal] = useState(false)
+    const [showPdfModal, setShowPdfModal] = useState(false)
+    const [pdfUrl, setPdfUrl] = useState<string | null>(null)
 
 
     // --- Handlers: File Selection ---
@@ -107,7 +113,6 @@ export const UploadExtractoPage: React.FC = () => {
         setResumen(null)
         setShowSuccessModal(false)
         setShowDetailsManually(false)
-        setShowOnlyNew(true)
     }
 
     const handleOpenLocalPicker = async () => {
@@ -250,6 +255,7 @@ export const UploadExtractoPage: React.FC = () => {
     }
 
 
+
     // --- Handlers: Confirmation ---
 
     const handleCargarDefinitivo = async () => {
@@ -296,12 +302,51 @@ export const UploadExtractoPage: React.FC = () => {
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(val)
 
+    const [pdfPage, setPdfPage] = useState<number>(1)
+
+    const handleVerPdf = async () => {
+        let url: string | null = null
+        let pagina = 1
+
+        // Determinar moneda según tipo de cuenta
+        const moneda = tipoCuenta.includes('USD') || tipoCuenta.includes('Dolares') ? 'DOLARES' : 'PESOS'
+
+        // Buscar página del resumen solo para archivos en servidor
+        if (localFilename) {
+            try {
+                const result = await apiService.archivos.buscarPaginaResumen(localFilename, moneda)
+                pagina = result.pagina
+            } catch (e) {
+                console.warn('No se pudo obtener página de resumen:', e)
+            }
+            url = `http://localhost:8000/api/archivos/ver-pdf?tipo=extractos&filename=${encodeURIComponent(localFilename)}`
+        } else if (file) {
+            url = URL.createObjectURL(file)
+            // Para archivos locales no podemos buscar la página sin subirlo primero
+        }
+
+        if (url) {
+            setPdfPage(pagina)
+            setPdfUrl(url)
+            setShowPdfModal(true)
+        }
+    }
+
+    const handleClosePdfModal = () => {
+        setShowPdfModal(false)
+        // Limpiar URL si fue creada con createObjectURL
+        if (pdfUrl && file) {
+            URL.revokeObjectURL(pdfUrl)
+        }
+        setPdfUrl(null)
+    }
 
     // --- UI Helpers ---
 
     const hasDescuadre = !!(resumen && resumen.validacion_cruzada && !resumen.validacion_cruzada.es_valido)
     const isDescuadreBlocking = hasDescuadre
-    const canUpload = !!(cuentaId && resumen?.year && resumen?.month && !loading)
+    const hasNewRecords = (resumen?.total_nuevos ?? 0) > 0
+    const canUpload = !!(cuentaId && resumen?.year && resumen?.month && !loading && hasNewRecords)
 
     return (
         <div className="flex flex-col h-full bg-slate-50/50 overflow-hidden">
@@ -443,7 +488,9 @@ export const UploadExtractoPage: React.FC = () => {
                                         <tr className="bg-slate-50/30">
                                             <th className="px-4 py-1.5 text-left text-[9px] font-bold text-slate-400 uppercase tracking-widest">Concepto</th>
                                             <th className="px-4 py-1.5 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Extracto (PDF)</th>
-                                            <th className="px-4 py-1.5 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Calculado</th>
+                                            <th className="px-4 py-1.5 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mov. (PDF)</th>
+                                            <th className="px-4 py-1.5 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Dif (PDF)</th>
+                                            <th className="px-4 py-1.5 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cargados (Mov)</th>
                                             <th className="px-4 py-1.5 text-right text-[9px] font-bold text-slate-400 uppercase tracking-widest">Diferencia</th>
                                         </tr>
                                     </thead>
@@ -454,6 +501,8 @@ export const UploadExtractoPage: React.FC = () => {
                                             <td className="px-4 py-1.5 text-right font-mono font-bold text-slate-800">
                                                 {formatCurrency(resumen.saldo_anterior)}
                                             </td>
+                                            <td className="px-4 py-1.5 text-right text-slate-300 font-mono italic">-</td>
+                                            <td className="px-4 py-1.5 text-right text-slate-300 font-mono italic">-</td>
                                             <td className="px-4 py-1.5 text-right text-slate-300 font-mono italic">-</td>
                                             <td className="px-4 py-1.5 text-right text-slate-300 font-mono italic">-</td>
                                         </tr>
@@ -476,6 +525,19 @@ export const UploadExtractoPage: React.FC = () => {
                                             </td>
                                             <td className="px-4 py-1.5 text-right">
                                                 {(() => {
+                                                    const diffPdf = resumen.entradas - (resumen.validacion_cruzada?.movimientos_entradas || 0)
+                                                    return (
+                                                        <span className={`font-black font-mono px-1.5 py-0.5 rounded text-[10px] ${Math.abs(diffPdf) > 1.0 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                            {formatCurrency(diffPdf)}
+                                                        </span>
+                                                    )
+                                                })()}
+                                            </td>
+                                            <td className="px-4 py-1.5 text-right text-emerald-600 font-bold font-mono">
+                                                {formatCurrency(resumen.validacion_cruzada?.movimientos_entradas || 0)}
+                                            </td>
+                                            <td className="px-4 py-1.5 text-right">
+                                                {(() => {
                                                     const diff = resumen.entradas - (resumen.validacion_cruzada?.movimientos_entradas || 0)
                                                     return (
                                                         <span className={`font-black font-mono px-1.5 py-0.5 rounded text-[10px] ${Math.abs(diff) > 1.0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
@@ -494,6 +556,19 @@ export const UploadExtractoPage: React.FC = () => {
                                                     {formatCurrency(resumen.rendimientos || 0)}
                                                 </td>
                                                 <td className="px-4 py-1.5 text-right text-blue-600 font-bold font-mono">
+                                                    {formatCurrency(resumen.validacion_cruzada?.movimientos_rendimientos || 0)}
+                                                </td>
+                                                <td className="px-4 py-1.5 text-right">
+                                                    {(() => {
+                                                        const diffPdf = (resumen.rendimientos || 0) - (resumen.validacion_cruzada?.movimientos_rendimientos || 0)
+                                                        return (
+                                                            <span className={`font-black font-mono px-1.5 py-0.5 rounded text-[10px] ${Math.abs(diffPdf) > 1.0 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                                {formatCurrency(diffPdf)}
+                                                            </span>
+                                                        )
+                                                    })()}
+                                                </td>
+                                                <td className="px-4 py-1.5 text-right text-emerald-600 font-bold font-mono">
                                                     {formatCurrency(resumen.validacion_cruzada?.movimientos_rendimientos || 0)}
                                                 </td>
                                                 <td className="px-4 py-1.5 text-right">
@@ -527,6 +602,19 @@ export const UploadExtractoPage: React.FC = () => {
                                             </td>
                                             <td className="px-4 py-1.5 text-right">
                                                 {(() => {
+                                                    const diffPdf = resumen.salidas - (resumen.validacion_cruzada?.movimientos_salidas || 0)
+                                                    return (
+                                                        <span className={`font-black font-mono px-1.5 py-0.5 rounded text-[10px] ${Math.abs(diffPdf) > 1.0 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                            {formatCurrency(diffPdf)}
+                                                        </span>
+                                                    )
+                                                })()}
+                                            </td>
+                                            <td className="px-4 py-1.5 text-right text-emerald-600 font-bold font-mono">
+                                                {formatCurrency(resumen.validacion_cruzada?.movimientos_salidas || 0)}
+                                            </td>
+                                            <td className="px-4 py-1.5 text-right">
+                                                {(() => {
                                                     const diff = resumen.salidas - (resumen.validacion_cruzada?.movimientos_salidas || 0)
                                                     return (
                                                         <span className={`font-black font-mono px-1.5 py-0.5 rounded text-[10px] ${Math.abs(diff) > 1.0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
@@ -545,6 +633,19 @@ export const UploadExtractoPage: React.FC = () => {
                                                     {formatCurrency(resumen.retenciones || 0)}
                                                 </td>
                                                 <td className="px-4 py-1.5 text-right text-blue-600 font-bold font-mono">
+                                                    {formatCurrency(resumen.validacion_cruzada?.movimientos_retenciones || 0)}
+                                                </td>
+                                                <td className="px-4 py-1.5 text-right">
+                                                    {(() => {
+                                                        const diffPdf = (resumen.retenciones || 0) - (resumen.validacion_cruzada?.movimientos_retenciones || 0)
+                                                        return (
+                                                            <span className={`font-black font-mono px-1.5 py-0.5 rounded text-[10px] ${Math.abs(diffPdf) > 1.0 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                                {formatCurrency(diffPdf)}
+                                                            </span>
+                                                        )
+                                                    })()}
+                                                </td>
+                                                <td className="px-4 py-1.5 text-right text-emerald-600 font-bold font-mono">
                                                     {formatCurrency(resumen.validacion_cruzada?.movimientos_retenciones || 0)}
                                                 </td>
                                                 <td className="px-4 py-1.5 text-right">
@@ -568,10 +669,72 @@ export const UploadExtractoPage: React.FC = () => {
                                             </td>
                                             <td className="px-4 py-2 text-right text-slate-300 font-mono italic">-</td>
                                             <td className="px-4 py-2 text-right text-slate-300 font-mono italic">-</td>
+                                            <td className="px-4 py-2 text-right text-slate-300 font-mono italic">-</td>
+                                            <td className="px-4 py-2 text-right text-slate-300 font-mono italic">-</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Banner de Estado según diferencia */}
+                            {resumen.validacion_cruzada && (() => {
+                                const diffEntradas = resumen.validacion_cruzada.diferencia_entradas || 0
+                                const diffSalidas = resumen.validacion_cruzada.diferencia_salidas || 0
+                                const totalDiff = Math.abs(diffEntradas) + Math.abs(diffSalidas)
+                                const esDiferenciaPositiva = diffEntradas > 0 || diffSalidas > 0
+                                const esDiferenciaNegativa = diffEntradas < 0 || diffSalidas < 0
+
+                                if (totalDiff < 1) {
+                                    // Diferencia = 0: Todo cuadra
+                                    return (
+                                        <div className="px-4 py-3 bg-emerald-50 border-t border-emerald-200 flex items-center gap-3">
+                                            <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                            <span className="text-emerald-700 font-bold text-sm">
+                                                Los movimientos coinciden con el extracto - Carga habilitada
+                                            </span>
+                                        </div>
+                                    )
+                                } else if (esDiferenciaPositiva) {
+                                    // Diferencia > 0: Faltan movimientos
+                                    const ultimaFecha = resumen.movimientos?.length
+                                        ? resumen.movimientos.reduce((max, m) => m.fecha > max ? m.fecha : max, resumen.movimientos[0].fecha)
+                                        : null
+                                    return (
+                                        <div className="px-4 py-3 bg-amber-50 border-t border-amber-200">
+                                            <div className="flex items-center gap-3">
+                                                <AlertCircle className="h-5 w-5 text-amber-600" />
+                                                <div>
+                                                    <span className="text-amber-700 font-bold text-sm">
+                                                        Faltan movimientos por {formatCurrency(Math.abs(diffEntradas) + Math.abs(diffSalidas))}
+                                                    </span>
+                                                    <p className="text-amber-600 text-xs mt-0.5">
+                                                        Revise la carga de movimientos pendientes.
+                                                        {ultimaFecha && <span className="font-bold"> Última fecha cargada: {ultimaFecha}</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                } else if (esDiferenciaNegativa) {
+                                    // Diferencia < 0: Error en parser
+                                    return (
+                                        <div className="px-4 py-3 bg-rose-50 border-t border-rose-200">
+                                            <div className="flex items-center gap-3">
+                                                <AlertCircle className="h-5 w-5 text-rose-600" />
+                                                <div>
+                                                    <span className="text-rose-700 font-bold text-sm">
+                                                        Error de lectura del extracto - Movimientos de más por {formatCurrency(Math.abs(diffEntradas) + Math.abs(diffSalidas))}
+                                                    </span>
+                                                    <p className="text-rose-600 text-xs mt-0.5">
+                                                        Verifique los detalles para identificar registros duplicados o mal parseados.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                }
+                                return null
+                            })()}
 
                             <div className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 flex justify-between items-center">
                                 <button
@@ -584,51 +747,49 @@ export const UploadExtractoPage: React.FC = () => {
                                     {showDetailsManually ? 'Ocultar Detalles' : 'Ver Detalles Detectados'}
                                 </button>
 
-                                <button
-                                    onClick={handleCargarDefinitivo}
-                                    disabled={loading || !canUpload || isDescuadreBlocking}
-                                    className={`px-5 py-2 rounded-xl font-black text-[11px] uppercase tracking-widest text-white shadow-md transition-all flex items-center gap-2
-                                        ${(!canUpload || isDescuadreBlocking)
-                                            ? 'bg-slate-300 cursor-not-allowed shadow-none'
-                                            : 'bg-emerald-500 hover:bg-emerald-600 hover:scale-[1.02] active:scale-[0.98] shadow-emerald-100'
-                                        }`}
-                                >
-                                    <UploadCloud size={14} className="stroke-[3px]" />
-                                    Confirmar y Cargar
-                                </button>
+                                <div className="flex items-center gap-3">
+                                    {/* Botón Ver PDF - Oculto pero funcional */}
+                                    {false && (file || localFilename) && (
+                                        <button
+                                            onClick={handleVerPdf}
+                                            className="px-4 py-2 rounded-xl font-black text-[11px] uppercase tracking-widest text-slate-600 bg-white border-2 border-slate-200 hover:border-blue-300 hover:text-blue-600 shadow-sm transition-all flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98]"
+                                            title="Validar totales del extracto"
+                                        >
+                                            <ExternalLink size={14} className="stroke-[2.5px]" />
+                                            Ver PDF
+                                        </button>
+                                    )}
+
+                                    <button
+                                        onClick={handleCargarDefinitivo}
+                                        disabled={loading || !canUpload || isDescuadreBlocking}
+                                        className={`px-5 py-2 rounded-xl font-black text-[11px] uppercase tracking-widest text-white shadow-md transition-all flex items-center gap-2
+                                            ${(!canUpload || isDescuadreBlocking)
+                                                ? 'bg-slate-300 cursor-not-allowed shadow-none'
+                                                : 'bg-emerald-500 hover:bg-emerald-600 hover:scale-[1.02] active:scale-[0.98] shadow-emerald-100'
+                                            }`}
+                                    >
+                                        <UploadCloud size={14} className="stroke-[3px]" />
+                                        Confirmar y Cargar
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
                         {/* 3. Tabla de Detalles - Flex expand para mayor espacio */}
                         {(hasDescuadre || showDetailsManually) && resumen.movimientos && (
                             <div className="flex-1 min-h-0 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 flex flex-col">
-                                <div className="px-4 py-2 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
-                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        Detalle de Movimientos Detectados
-                                    </h3>
-                                    <label className="flex items-center gap-2 cursor-pointer group">
-                                        <div className="relative">
-                                            <input
-                                                type="checkbox"
-                                                checked={showOnlyNew}
-                                                onChange={(e) => setShowOnlyNew(e.target.checked)}
-                                                className="sr-only"
-                                            />
-                                            <div className={`w-8 h-4 rounded-full transition-colors ${showOnlyNew ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
-                                            <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${showOnlyNew ? 'translate-x-4' : ''}`}></div>
-                                        </div>
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter group-hover:text-blue-600 transition-colors">
-                                            Ocultar Duplicados
-                                        </span>
-                                    </label>
-                                </div>
-                                <div className="flex-1 min-h-0">
-                                    <ExtractDetailsTable
-                                        records={resumen.movimientos}
-                                        onEdit={handleEditMovement}
-                                        showOnlyNew={showOnlyNew}
-                                    />
-                                </div>
+                                <ExtractDetailsTable
+                                    records={resumen.movimientos}
+                                    onEdit={handleEditMovement}
+                                    diferencias={resumen.validacion_cruzada ? {
+                                        entradas: resumen.validacion_cruzada.diferencia_entradas,
+                                        salidas: resumen.validacion_cruzada.diferencia_salidas,
+                                        rendimientos: resumen.validacion_cruzada.diferencia_rendimientos,
+                                        retenciones: resumen.validacion_cruzada.diferencia_retenciones
+                                    } : undefined}
+                                    esUSD={tipoCuenta.includes('USD') || tipoCuenta.includes('Dolares')}
+                                />
                             </div>
                         )}
                     </div>
@@ -741,6 +902,43 @@ export const UploadExtractoPage: React.FC = () => {
                     </div>
                 </div>
             </Modal>
+
+            {/* Modal para ver PDF - izquierda, sobre menú lateral */}
+            {showPdfModal && pdfUrl && (
+                <div className="fixed inset-0 z-50 flex items-center justify-start">
+                    {/* Overlay transparente */}
+                    <div
+                        className="absolute inset-0 bg-black/15"
+                        onClick={handleClosePdfModal}
+                    />
+
+                    {/* Panel del PDF - 35% ancho, 50% alto, alineado a la izquierda */}
+                    <div className="w-[35%] h-[50%] ml-4 bg-white shadow-2xl relative flex flex-col rounded-xl overflow-hidden animate-in slide-in-from-left duration-200">
+                        {/* Header */}
+                        <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                            <span className="font-bold text-xs text-slate-700">Extracto PDF</span>
+                            <button
+                                onClick={handleClosePdfModal}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-500"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* PDF Viewer - sin thumbnails, con zoom y scroll */}
+                        <div className="flex-1 bg-slate-100 overflow-auto">
+                            <iframe
+                                src={`${pdfUrl}#page=${pdfPage}&zoom=150&navpanes=0&scrollbar=1`}
+                                className="w-full h-full border-0"
+                                title="Extracto PDF"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

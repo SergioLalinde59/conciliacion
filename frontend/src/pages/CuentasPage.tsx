@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { Plus } from 'lucide-react'
-import type { Cuenta } from '../types'
+import type { Cuenta, TipoCuenta } from '../types'
 import { CuentasTable } from '../components/organisms/tables/CuentasTable'
 import { CuentaModal } from '../components/organisms/modals/CuentaModal'
 import { CsvExportButton } from '../components/molecules/CsvExportButton'
@@ -9,6 +9,7 @@ import { API_BASE_URL } from '../config'
 
 export const CuentasPage = () => {
     const [cuentas, setCuentas] = useState<Cuenta[]>([])
+    const [tiposCuenta, setTiposCuenta] = useState<TipoCuenta[]>([])
     const [loading, setLoading] = useState(true)
     const [modalOpen, setModalOpen] = useState(false)
     const [itemEditando, setItemEditando] = useState<Cuenta | null>(null)
@@ -27,8 +28,16 @@ export const CuentasPage = () => {
             })
     }
 
+    const cargarTiposCuenta = () => {
+        fetch(`${API_BASE_URL}/api/tipos-cuenta`)
+            .then(res => res.json())
+            .then(data => setTiposCuenta(data))
+            .catch(err => console.error("Error cargando tipos de cuenta:", err))
+    }
+
     useEffect(() => {
         cargarCuentas()
+        cargarTiposCuenta()
     }, [])
 
     const handleCreate = () => {
@@ -54,21 +63,28 @@ export const CuentasPage = () => {
             })
             .catch(err => {
                 console.error(err)
-                toast.error("Error de conexión al eliminar")
+                toast.error("Error de conexion al eliminar")
             })
     }
 
-    const handleSave = (data: { nombre: string, permite_carga: boolean, permite_conciliar: boolean }) => {
+    const handleSave = (data: {
+        nombre: string
+        permite_carga: boolean
+        permite_conciliar: boolean
+        tipo_cuenta_id: number | null
+    }) => {
+        const payload = {
+            cuenta: data.nombre,
+            permite_carga: data.permite_carga,
+            permite_conciliar: data.permite_conciliar,
+            tipo_cuenta_id: data.tipo_cuenta_id
+        }
+
         if (itemEditando) {
-            // Actualizar
             fetch(`${API_BASE_URL}/api/cuentas/${itemEditando.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cuenta: data.nombre,
-                    permite_carga: data.permite_carga,
-                    permite_conciliar: data.permite_conciliar
-                })
+                body: JSON.stringify(payload)
             }).then(res => {
                 if (res.ok) {
                     toast.success('Cuenta actualizada')
@@ -79,15 +95,10 @@ export const CuentasPage = () => {
                 }
             })
         } else {
-            // Crear
             fetch(`${API_BASE_URL}/api/cuentas`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    cuenta: data.nombre,
-                    permite_carga: data.permite_carga,
-                    permite_conciliar: data.permite_conciliar
-                })
+                body: JSON.stringify(payload)
             }).then(res => {
                 if (res.ok) {
                     toast.success('Cuenta creada')
@@ -103,13 +114,14 @@ export const CuentasPage = () => {
     const csvColumns = [
         { key: 'id' as const, label: 'ID' },
         { key: 'nombre' as const, label: 'Nombre' },
+        { key: 'tipo_cuenta_nombre' as const, label: 'Tipo' },
     ]
 
     return (
         <div className="max-w-5xl mx-auto">
             <div className="flex justify-between items-center mb-8">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Gestión de Cuentas</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">Gestion de Cuentas</h1>
                     <p className="text-gray-500 text-sm mt-1">Administra las cuentas bancarias y de efectivo</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -136,6 +148,7 @@ export const CuentasPage = () => {
             <CuentaModal
                 isOpen={modalOpen}
                 cuenta={itemEditando}
+                tiposCuenta={tiposCuenta}
                 onClose={() => setModalOpen(false)}
                 onSave={handleSave}
             />

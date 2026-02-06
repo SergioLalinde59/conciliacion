@@ -41,8 +41,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
         finally:
             cursor.close()
 
-    def _construir_filtros(self, 
-                           fecha_inicio: Optional[date] = None, 
+    def _construir_filtros(self,
+                           fecha_inicio: Optional[date] = None,
                            fecha_fin: Optional[date] = None,
                            cuenta_id: Optional[int] = None,
                            tercero_id: Optional[int] = None,
@@ -52,7 +52,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                            solo_pendientes: bool = False,
                            solo_clasificados: bool = False,
                            tipo_movimiento: Optional[str] = None,
-                           descripcion_contiene: Optional[str] = None
+                           descripcion_contiene: Optional[str] = None,
+                           referencia: Optional[str] = None
     ) -> tuple[str, list]:
         """
         Construye la cláusula WHERE y los parámetros para los filtros comunes.
@@ -103,7 +104,11 @@ class PostgresMovimientoRepository(MovimientoRepository):
         if descripcion_contiene:
             conditions.append("m.Descripcion ILIKE %s")
             params.append(f"%{descripcion_contiene}%")
-        
+
+        if referencia:
+            conditions.append("m.Referencia = %s")
+            params.append(referencia)
+
         if not conditions:
             return "", []
             
@@ -240,17 +245,14 @@ class PostgresMovimientoRepository(MovimientoRepository):
         # Check lock
         self._validar_bloqueo(mov.cuenta_id, mov.fecha)
 
-        # --- VALIDATION: Detalles must be provided ---
-        if not mov.detalles or len(mov.detalles) == 0:
-            raise ValueError("Debe proporcionar al menos un detalle de clasificación para el movimiento.")
-        
-        # --- VALIDATION: Sum of details must match header value ---
-        total_detalles = sum(d.valor for d in mov.detalles)
-        if abs(total_detalles - mov.valor) > Decimal('0.01'):  # Allow small rounding differences
-            raise ValueError(
-                f"La suma de los valores de los detalles ({total_detalles}) debe ser igual "
-                f"al valor del encabezado ({mov.valor}). Diferencia encontrada: {mov.valor - total_detalles}"
-            )
+        # --- VALIDATION: Sum of details must match header value (solo si hay detalles) ---
+        if mov.detalles:
+            total_detalles = sum(d.valor for d in mov.detalles)
+            if abs(total_detalles - mov.valor) > Decimal('0.01'):  # Allow small rounding differences
+                raise ValueError(
+                    f"La suma de los valores de los detalles ({total_detalles}) debe ser igual "
+                    f"al valor del encabezado ({mov.valor}). Diferencia encontrada: {mov.valor - total_detalles}"
+                )
 
         # --- SYNC AUTOMÁTICA DE TERCEROS ---
         # Si hay un único detalle con tercero, forzamos que el encabezado tenga el mismo tercero.
@@ -662,8 +664,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
         finally:
             cursor.close()
 
-    def buscar_avanzado(self, 
-                       fecha_inicio: Optional[date] = None, 
+    def buscar_avanzado(self,
+                       fecha_inicio: Optional[date] = None,
                        fecha_fin: Optional[date] = None,
                        cuenta_id: Optional[int] = None,
                        tercero_id: Optional[int] = None,
@@ -674,6 +676,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
                        solo_clasificados: bool = False,
                        tipo_movimiento: Optional[str] = None,
                        descripcion_contiene: Optional[str] = None,
+                       referencia: Optional[str] = None,
                        skip: int = 0,
                        limit: Optional[int] = None
     ) -> tuple[List[Movimiento], int]:
@@ -702,7 +705,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
             solo_pendientes=solo_pendientes,
             solo_clasificados=solo_clasificados,
             tipo_movimiento=tipo_movimiento,
-            descripcion_contiene=descripcion_contiene
+            descripcion_contiene=descripcion_contiene,
+            referencia=referencia
         )
         
         query_full_where = query_base + where_clause

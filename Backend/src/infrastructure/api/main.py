@@ -9,13 +9,12 @@ from src.infrastructure.database.connection import get_connection_pool, close_al
 
 # Importar routers
 from src.infrastructure.api.routers import (
-    movimientos, 
-    cuentas, 
-    monedas, 
-    tipos_movimiento, 
-    terceros, 
-    terceros, 
-    centros_costos, 
+    movimientos,
+    cuentas,
+    monedas,
+    tipos_movimiento,
+    terceros,
+    centros_costos,
     conceptos,
     catalogos,
     clasificacion,
@@ -23,14 +22,14 @@ from src.infrastructure.api.routers import (
     reglas,
     config_filtros_centros_costos,
     tercero_descripciones,
-    tercero_descripciones,
     conciliaciones,
     extractores,
     matching,
     dashboard,
     admin,
     config_valores_pendientes,
-    mantenimiento
+    mantenimiento,
+    tipos_cuenta
 )
 
 
@@ -113,6 +112,7 @@ app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(config_valores_pendientes.router)
 app.include_router(mantenimiento.router)
+app.include_router(tipos_cuenta.router)
 
 logger.info("Todos los routers registrados")
 

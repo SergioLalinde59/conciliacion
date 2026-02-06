@@ -82,6 +82,53 @@ export const archivosService = {
             method: 'POST',
             body: formData
         }).then(handleResponse)
+    },
+
+    buscarPaginaResumen: (filename: string, moneda: 'PESOS' | 'DOLARES' = 'PESOS'): Promise<{ pagina: number }> => {
+        return fetch(`${API_BASE_URL}/api/archivos/buscar-pagina-resumen?filename=${encodeURIComponent(filename)}&moneda=${moneda}`)
+            .then(handleResponse)
+    },
+
+    obtenerExtractosPorCuenta: (cuenta_id: number, limit: number = 100): Promise<{
+        total: number
+        mostrados: number
+        registros: Array<{
+            id: number
+            cuenta_id: number
+            fecha: string
+            descripcion: string
+            referencia: string
+            valor: number
+            usd: number | null
+            year: number
+            month: number
+        }>
+    }> => {
+        return fetch(`${API_BASE_URL}/api/archivos/extractos-cuenta/${cuenta_id}?limit=${limit}`)
+            .then(handleResponse)
+    },
+
+    obtenerExtractosTodasCuentas: (limitPorCuenta: number = 50): Promise<Record<number, {
+        cuenta_nombre: string
+        total: number
+        ingresos: number
+        egresos: number
+        ingresos_usd: number | null
+        egresos_usd: number | null
+        registros: Array<{
+            id: number
+            cuenta_id: number
+            fecha: string
+            descripcion: string
+            referencia: string
+            valor: number
+            usd: number | null
+            year: number
+            month: number
+        }>
+    }>> => {
+        return fetch(`${API_BASE_URL}/api/archivos/extractos-todas-cuentas?limit_por_cuenta=${limitPorCuenta}`)
+            .then(handleResponse)
     }
 }
 
