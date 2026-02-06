@@ -81,6 +81,9 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
     const submitLabel = mode === 'delete' ? 'Confirmar Borrado' : 'Guardar Movimiento'
     const submitIcon = mode === 'delete' ? Trash2 : Save
 
+    // Detectar si la cuenta es en dólares
+    const esUSD = config.tipo_cuenta_nombre?.includes('USD') || config.tipo_cuenta_nombre?.includes('Dolares') || false
+
     // Cargar cuentas y maestros al abrir
     useEffect(() => {
         if (isOpen) {
@@ -204,20 +207,36 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
     }, [formData.tercero_id])
 
     const handleCurrencyChange = (val: number | null, field: 'valor' | 'usd' | 'trm') => {
-        if (isReadOnly || (field !== 'valor' && !config.permite_modificar && movimiento)) return
+        if (isReadOnly) return
+        // Para cuentas USD, siempre permitir modificar USD y TRM
+        // Para otras cuentas, respetar el permiso permite_modificar
+        if (!esUSD && field !== 'valor' && !config.permite_modificar && movimiento) return
 
         const newFormData = { ...formData }
         newFormData[field] = val === null ? '' : val.toString()
+
+        let nuevoValorTotal: number | null = null
 
         if (field === 'usd' || field === 'trm') {
             const usd = field === 'usd' ? val : (formData.usd ? parseFloat(formData.usd) : 0)
             const trm = field === 'trm' ? val : (formData.trm ? parseFloat(formData.trm) : 0)
             if (usd && trm && usd !== 0 && trm !== 0) {
-                newFormData.valor = (usd * trm).toString()
+                nuevoValorTotal = usd * trm
+                newFormData.valor = nuevoValorTotal.toString()
             }
+        } else if (field === 'valor') {
+            nuevoValorTotal = val
         }
 
         setFormData(newFormData)
+
+        // Si hay un solo detalle, sincronizar su valor con el total
+        if (nuevoValorTotal !== null && detalles.length === 1) {
+            setDetalles(prev => [{
+                ...prev[0],
+                valor: nuevoValorTotal
+            }])
+        }
     }
 
     const handleAddDetail = () => {
@@ -269,7 +288,18 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
     if (config.valor_minimo && totalMovimiento < config.valor_minimo) {
         validationErrors.push(`Valor mínimo: $${config.valor_minimo.toLocaleString()}`)
     }
-    if (totalMovimiento === 0) {
+
+    // Validación de valor: para cuentas USD se valida el campo USD, para otras el valor COP
+    if (esUSD) {
+        const usdValue = formData.usd ? parseFloat(formData.usd) : 0
+        const trmValue = formData.trm ? parseFloat(formData.trm) : 0
+        if (usdValue === 0) {
+            validationErrors.push('Valor USD debe ser diferente de cero')
+        }
+        if (trmValue === 0) {
+            validationErrors.push('TRM debe ser diferente de cero')
+        }
+    } else if (totalMovimiento === 0) {
         validationErrors.push('Valor debe ser diferente de cero')
     }
     if (!formData.cuenta_id) {
@@ -490,6 +520,38 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                                 />
                             )}
                         </div>
+
+                        {/* Fila USD/TRM - Solo visible para cuentas en dólares */}
+                        {esUSD && (
+                            <div className="grid grid-cols-3 gap-4 bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                <CurrencyInput
+                                    label="Valor (USD)"
+                                    value={formData.usd ? parseFloat(formData.usd) : null}
+                                    onChange={(val) => handleCurrencyChange(val, 'usd')}
+                                    currency="USD"
+                                    required
+                                    disabled={isReadOnly}
+                                />
+                                <CurrencyInput
+                                    label="TRM (Tasa de cambio)"
+                                    value={formData.trm ? parseFloat(formData.trm) : null}
+                                    onChange={(val) => handleCurrencyChange(val, 'trm')}
+                                    currency="TRM"
+                                    required
+                                    disabled={isReadOnly}
+                                />
+                                <div className="flex flex-col">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor Calculado (COP)</label>
+                                    <div className="flex items-center h-10 px-3 bg-white border border-blue-300 rounded-lg">
+                                        <CurrencyDisplay
+                                            value={formData.valor ? parseFloat(formData.valor) : 0}
+                                            currency="COP"
+                                            colorize
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Fila 2: Nota adicional */}
                         <Input

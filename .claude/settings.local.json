@@ -20,10 +20,12 @@
       "Bash(timeout /t 5)",
       "Bash(docker stop:*)",
       "Bash(docker start:*)",
-      "Bash(more:*)"
+      "Bash(more:*)",
+      "Bash(cleanmgr:*)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\Slb\\.claude\\projects\\f--1--Cloud-4--AI-1--Antigravity-conciliacion\\memory"
+      "C:\\Users\\Slb\\.claude\\projects\\f--1--Cloud-4--AI-1--Antigravity-conciliacion\\memory",
+      "C:\\temp"
     ]
   }
 }
