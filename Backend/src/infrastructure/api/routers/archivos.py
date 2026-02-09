@@ -44,11 +44,10 @@ async def cargar_archivo(
         cuenta_id: ID de la cuenta en base de datos a asociar.
         actualizar_descripciones: Si es True, actualiza la descripción de movimientos existentes (fecha+valor).
     """
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
+    if not file.filename.lower().endswith(('.pdf', '.xlsx')):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF o Excel (.xlsx)")
 
     try:
-        # file.file es un SpooledTemporaryFile compatible con pdfplumber
         resultado = service.procesar_archivo(file.file, file.filename, tipo_cuenta, cuenta_id, actualizar_descripciones)
         return resultado
     except ValueError as ve:
@@ -69,8 +68,8 @@ async def analizar_archivo(
     Analiza un archivo PDF y retorna estadísticas preliminares sin guardar.
     """
     print(f"DEBUG ROUTER: analizar_archivo called. tipo_cuenta={tipo_cuenta}, cuenta_id={cuenta_id}, filename={file.filename}")
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
+    if not file.filename.lower().endswith(('.pdf', '.xlsx')):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF o Excel (.xlsx)")
 
     try:
         resultado = service.analizar_archivo(file.file, file.filename, tipo_cuenta, cuenta_id)
@@ -98,7 +97,7 @@ async def listar_directorios(tipo: str) -> List[str]:
         return []
 
     try:
-        files = [f for f in os.listdir(directory) if f.lower().endswith('.pdf')]
+        files = [f for f in os.listdir(directory) if f.lower().endswith(('.pdf', '.xlsx'))]
         return files
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error leyendo directorio: {str(e)}")

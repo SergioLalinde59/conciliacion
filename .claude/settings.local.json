@@ -24,11 +24,14 @@
       "Bash(cleanmgr:*)",
       "Bash(where:*)",
       "Bash(timeout:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(pip install:*)",
+      "Bash(docker compose up:*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Slb\\.claude\\projects\\f--1--Cloud-4--AI-1--Antigravity-conciliacion\\memory",
-      "C:\\temp"
+      "C:\\temp",
+      "f:\\1. Cloud\\4. AI\\1. Antigravity\\conciliacion"
     ]
   }
 }

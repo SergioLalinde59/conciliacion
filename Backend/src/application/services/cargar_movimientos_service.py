@@ -63,10 +63,43 @@ class CargarMovimientosService:
                 print(f"Error importando extractor {nombre}: {e}")
         return loaded_modules
 
-    def _extraer_movimientos(self, file_obj: Any, tipo_cuenta: str, cuenta_id: int = None) -> List[Dict[str, Any]]:
+    def _extraer_movimientos_excel(self, file_obj: Any, cuenta_id: int = None) -> List[Dict[str, Any]]:
+        """Extrae movimientos desde un archivo Excel (.xlsx) usando el extractor apropiado."""
+        EXTRACTORES_EXCEL = {
+            1: 'ahorros_movimientos_excel',
+            3: 'fondorenta_movimientos_excel',
+            6: 'mastercard_movimientos_excel',
+            7: 'mastercard_movimientos_excel',
+        }
+        modulo_name = EXTRACTORES_EXCEL.get(cuenta_id, 'ahorros_movimientos_excel')
+
+        try:
+            module = importlib.import_module(f"src.infrastructure.extractors.bancolombia.{modulo_name}")
+            if hasattr(file_obj, 'seek'):
+                file_obj.seek(0)
+            raw_movs = module.extraer_movimientos(file_obj)
+            for m in raw_movs:
+                if m.get('descripcion'):
+                    m['descripcion'] = m['descripcion'].strip().title()
+            return raw_movs
+        except Exception as e:
+            logger.error(f"Error extrayendo movimientos de Excel ({modulo_name}): {e}")
+            return []
+
+    def _extraer_movimientos(self, file_obj: Any, tipo_cuenta: str, cuenta_id: int = None, filename: str = None) -> List[Dict[str, Any]]:
         """Extrae movimientos usando los extractores configurados."""
+        # Si el archivo es Excel, usar extractor especializado
+        if filename and filename.lower().endswith('.xlsx'):
+            raw_movs = self._extraer_movimientos_excel(file_obj, cuenta_id)
+            # Filtrar por moneda para MasterCard (mismo archivo tiene COP y USD)
+            if tipo_cuenta == 'MasterCardUSD':
+                raw_movs = [m for m in raw_movs if m.get('moneda') == 'USD']
+            elif tipo_cuenta == 'MasterCardPesos':
+                raw_movs = [m for m in raw_movs if m.get('moneda') == 'COP']
+            return raw_movs
+
         modulos = self._obtener_modulos_extractor_movimientos(cuenta_id)
-        
+
         if modulos:
             for module in modulos:
                 try:
@@ -91,7 +124,7 @@ class CargarMovimientosService:
 
     def analizar_archivo(self, file_obj: Any, filename: str, tipo_cuenta: str, cuenta_id: Optional[int] = None) -> Dict[str, Any]:
         """Analiza el archivo previo a la carga (Previsualización)."""
-        raw_movs = self._extraer_movimientos(file_obj, tipo_cuenta, cuenta_id)
+        raw_movs = self._extraer_movimientos(file_obj, tipo_cuenta, cuenta_id, filename)
         resultado_detalle = []
         stats = {"leidos": len(raw_movs), "duplicados": 0, "nuevos": 0, "actualizables": 0}
         
@@ -152,7 +185,7 @@ class CargarMovimientosService:
 
     def procesar_archivo(self, file_obj: Any, filename: str, tipo_cuenta: str, cuenta_id: int, actualizar_descripciones: bool = False) -> Dict[str, Any]:
         """Carga formal de los movimientos a la base de datos."""
-        raw_movs = self._extraer_movimientos(file_obj, tipo_cuenta, cuenta_id)
+        raw_movs = self._extraer_movimientos(file_obj, tipo_cuenta, cuenta_id, filename)
         insertados, actualizados, duplicados, errores = 0, 0, 0, 0
         detalle_errores = []
 
@@ -230,11 +263,13 @@ class CargarMovimientosService:
                         continue
 
                 fecha_obj = date.fromisoformat(raw['fecha'])
-                
+                fecha_corte_obj = date.fromisoformat(raw['fecha_corte']) if raw.get('fecha_corte') else None
+
                 nuevo_mov = Movimiento(
                     fecha=fecha_obj, descripcion=raw['descripcion'],
                     referencia=raw.get('referencia', ''), valor=valor_para_bd,
-                    moneda_id=moneda_id, cuenta_id=cuenta_id, usd=usd_val
+                    moneda_id=moneda_id, cuenta_id=cuenta_id, usd=usd_val,
+                    fecha_corte=fecha_corte_obj
                 )
                 self.movimiento_repo.guardar(nuevo_mov)
                 insertados += 1

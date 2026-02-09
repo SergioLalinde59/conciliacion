@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { apiService } from '../services/api'
-import { UploadCloud, FileText, AlertCircle, FolderOpen, Database } from 'lucide-react'
+import { UploadCloud, FileText, FileSpreadsheet, AlertCircle, FolderOpen, Database } from 'lucide-react'
 import { Modal } from '../components/molecules/Modal'
 import { Button } from '../components/atoms/Button'
 import { LoadResultSummary } from '../components/molecules/LoadResultSummary'
@@ -34,6 +34,7 @@ type ExtractosPorCuenta = Record<number, {
 }>
 
 export const UploadMovimientosPage: React.FC = () => {
+    const [tipoArchivo, setTipoArchivo] = useState<'xlsx' | 'pdf'>('xlsx')
     const [file, setFile] = useState<File | null>(null)
     const [tipoCuenta, setTipoCuenta] = useState('')
     const [cuentaId, setCuentaId] = useState<number | null>(null)
@@ -215,7 +216,7 @@ export const UploadMovimientosPage: React.FC = () => {
         setStats(null)
         setUpdateExisting(false)
         setFiltroEstado('todos')
-    }, [file, tipoCuenta])
+    }, [file, tipoCuenta, tipoArchivo])
 
     const conteoFiltros = useMemo(() => ({
         todos: movimientosPreview.length,
@@ -258,7 +259,7 @@ export const UploadMovimientosPage: React.FC = () => {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900">Cargar Movimientos Bancarios</h1>
-                        <p className="text-slate-500 text-sm mt-1">Sube archivos PDF de extractos bancarios para procesar nuevos movimientos</p>
+                        <p className="text-slate-500 text-sm mt-1">Carga los movimientos bancarios a procesar</p>
                     </div>
                 </div>
             </div>
@@ -267,6 +268,37 @@ export const UploadMovimientosPage: React.FC = () => {
                 {/* 1. Selección */}
                 <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 space-y-6">
                     <form onSubmit={handleAnalizar} className="space-y-4">
+                        {/* Selector tipo de archivo */}
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Tipo de Archivo</label>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { setTipoArchivo('xlsx'); setFile(null); setLocalFilename(null); setAnalyzed(false); setStats(null); setMovimientosPreview([]); if (fileInputRef.current) fileInputRef.current.value = '' }}
+                                    className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl border-2 font-bold text-sm transition-all duration-200 ${
+                                        tipoArchivo === 'xlsx'
+                                            ? 'border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-100'
+                                            : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-500'
+                                    }`}
+                                >
+                                    <FileSpreadsheet size={20} className={tipoArchivo === 'xlsx' ? 'text-emerald-500' : 'text-slate-300'} />
+                                    Excel (.xlsx)
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setTipoArchivo('pdf'); setFile(null); setLocalFilename(null); setAnalyzed(false); setStats(null); setMovimientosPreview([]); if (fileInputRef.current) fileInputRef.current.value = '' }}
+                                    className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl border-2 font-bold text-sm transition-all duration-200 ${
+                                        tipoArchivo === 'pdf'
+                                            ? 'border-red-400 bg-red-50 text-red-700 shadow-sm shadow-red-100'
+                                            : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-500'
+                                    }`}
+                                >
+                                    <FileText size={20} className={tipoArchivo === 'pdf' ? 'text-red-500' : 'text-slate-300'} />
+                                    PDF
+                                </button>
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="md:col-span-2">
                                 <SelectorCuenta
@@ -373,19 +405,24 @@ export const UploadMovimientosPage: React.FC = () => {
                             </div>
                         )}
 
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors">
+                        <div className={`border-2 border-dashed rounded-lg p-6 text-center hover:bg-gray-50 transition-colors ${
+                            tipoArchivo === 'xlsx' ? 'border-emerald-300' : 'border-red-300'
+                        }`}>
                             <input
                                 type="file"
                                 id="file-upload"
-                                accept=".pdf"
+                                accept={tipoArchivo === 'xlsx' ? '.xlsx' : '.pdf'}
                                 onChange={handleFileChange}
                                 className="hidden"
                                 ref={fileInputRef}
                             />
                             <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                                <FileText className={`h-12 w-12 mb-2 ${file ? 'text-blue-500' : 'text-gray-400'}`} />
+                                {tipoArchivo === 'xlsx'
+                                    ? <FileSpreadsheet className={`h-12 w-12 mb-2 ${file ? 'text-emerald-500' : 'text-gray-400'}`} />
+                                    : <FileText className={`h-12 w-12 mb-2 ${file ? 'text-red-500' : 'text-gray-400'}`} />
+                                }
                                 <span className="text-lg font-medium text-gray-700">
-                                    {file ? file.name : localFilename ? `(Servidor) ${localFilename}` : "Seleccionar archivo PDF"}
+                                    {file ? file.name : localFilename ? `(Servidor) ${localFilename}` : tipoArchivo === 'xlsx' ? "Seleccionar archivo Excel (.xlsx)" : "Seleccionar archivo PDF"}
                                 </span>
                                 <span className="text-sm text-gray-500 mt-1">
                                     {file ? `${(file.size / 1024).toFixed(1)} KB` : "Haz clic para buscar en tu equipo"}
@@ -633,17 +670,20 @@ export const UploadMovimientosPage: React.FC = () => {
                 <div className="space-y-4 max-h-96 overflow-y-auto p-2">
                     {loadingFiles ? (
                         <div className="text-center py-4 text-slate-400 font-medium">Cargando archivos...</div>
-                    ) : localFiles.length === 0 ? (
-                        <div className="text-center py-4 text-slate-400 font-medium">No se encontraron archivos PDF en el directorio configurado.</div>
+                    ) : localFiles.filter(f => f.toLowerCase().endsWith(tipoArchivo === 'xlsx' ? '.xlsx' : '.pdf')).length === 0 ? (
+                        <div className="text-center py-4 text-slate-400 font-medium">No se encontraron archivos {tipoArchivo === 'xlsx' ? 'Excel (.xlsx)' : 'PDF'} en el directorio configurado.</div>
                     ) : (
                         <div className="grid gap-2">
-                            {localFiles.map(f => (
+                            {localFiles.filter(f => f.toLowerCase().endsWith(tipoArchivo === 'xlsx' ? '.xlsx' : '.pdf')).map(f => (
                                 <button
                                     key={f}
                                     onClick={() => handleLocalFileSelect(f)}
                                     className="flex items-center gap-3 p-4 rounded-2xl border border-slate-100 hover:bg-blue-50/50 hover:border-blue-200 transition-all text-left group"
                                 >
-                                    <FileText className="h-5 w-5 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                                    {f.toLowerCase().endsWith('.xlsx')
+                                        ? <FileSpreadsheet className="h-5 w-5 text-emerald-400 group-hover:text-emerald-600 transition-colors" />
+                                        : <FileText className="h-5 w-5 text-red-300 group-hover:text-red-500 transition-colors" />
+                                    }
                                     <span className="text-slate-700 font-bold group-hover:text-blue-700 transition-colors">{f}</span>
                                 </button>
                             ))}

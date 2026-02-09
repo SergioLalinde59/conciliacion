@@ -22,6 +22,7 @@ class Movimiento:
     referencia: str = ""
     usd: Optional[Decimal] = None
     trm: Optional[Decimal] = None
+    fecha_corte: Optional[date] = None
     created_at: Optional[datetime] = None
     detalle: Optional[str] = None
     

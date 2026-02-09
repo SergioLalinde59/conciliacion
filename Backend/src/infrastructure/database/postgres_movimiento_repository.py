@@ -127,12 +127,11 @@ class PostgresMovimientoRepository(MovimientoRepository):
 
     def _row_to_movimiento(self, row) -> Movimiento:
         """Helper para convertir fila de BD (Encabezado) a objeto Movimiento"""
-        # Nuevo orden esperado (según query actualizada): 
-        # m.Id, m.Fecha, m.Descripcion, m.Referencia, m.Valor, m.USD, m.TRM, 
+        # Orden esperado (según query actualizada):
+        # m.Id, m.Fecha, m.Descripcion, m.Referencia, m.Valor, m.USD, m.TRM,
         # m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
-        # c.cuenta, mon.moneda, t.tercero
-        
-        # Mapping seguro:
+        # c.cuenta, mon.moneda, t.tercero, m.fecha_corte
+
         _id = row[0]
         fecha = row[1]
         desc = row[2] or ""
@@ -145,10 +144,11 @@ class PostgresMovimientoRepository(MovimientoRepository):
         tercero_id = row[9]
         detalle_texto = row[10] if row[10] else None
         created_at = row[11] if len(row) > 11 else None
-        
+
         cuenta_nombre = row[12] if len(row) > 12 else None
         moneda_nombre = row[13] if len(row) > 13 else None
         tercero_nombre = row[14] if len(row) > 14 else None
+        fecha_corte = row[15] if len(row) > 15 else None
         
         # Instanciar Movimiento (sin clasificación detallada)
         if _id == 2232:
@@ -163,6 +163,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
             valor=valor,
             usd=usd,
             trm=trm,
+            fecha_corte=fecha_corte,
             moneda_id=moneda_id,
             cuenta_id=cuenta_id,
             created_at=created_at,
@@ -171,7 +172,6 @@ class PostgresMovimientoRepository(MovimientoRepository):
             cuenta_nombre=cuenta_nombre,
             moneda_nombre=moneda_nombre,
             _tercero_nombre=tercero_nombre
-            # detalles se pueblan aparte
         )
         return mov
 
@@ -274,14 +274,14 @@ class PostgresMovimientoRepository(MovimientoRepository):
             if mov.id:
                 # Update Encabezado
                 query = """
-                    UPDATE movimientos_encabezado 
+                    UPDATE movimientos_encabezado
                     SET Fecha=%s, Descripcion=%s, Referencia=%s, Valor=%s, USD=%s, TRM=%s,
-                        MonedaID=%s, CuentaID=%s, terceroid=%s, Detalle=%s
+                        MonedaID=%s, CuentaID=%s, terceroid=%s, Detalle=%s, fecha_corte=%s
                     WHERE Id=%s
                 """
                 cursor.execute(query, (
                     mov.fecha, mov.descripcion, mov.referencia, mov.valor, mov.usd, mov.trm,
-                    mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle,
+                    mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle, mov.fecha_corte,
                     mov.id
                 ))
             else:
@@ -289,13 +289,13 @@ class PostgresMovimientoRepository(MovimientoRepository):
                 query = """
                     INSERT INTO movimientos_encabezado (
                         Fecha, Descripcion, Referencia, Valor, USD, TRM,
-                        MonedaID, CuentaID, terceroid, Detalle
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        MonedaID, CuentaID, terceroid, Detalle, fecha_corte
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING Id, created_at
                 """
                 cursor.execute(query, (
                     mov.fecha, mov.descripcion, mov.referencia, mov.valor, mov.usd, mov.trm,
-                    mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle
+                    mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle, mov.fecha_corte
                 ))
                 result = cursor.fetchone()
                 mov.id = result[0]
@@ -377,7 +377,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
-                   t.tercero AS tercero_nombre
+                   t.tercero AS tercero_nombre,
+                   m.fecha_corte
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -404,7 +405,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
-                   t.tercero AS tercero_nombre
+                   t.tercero AS tercero_nombre,
+                   m.fecha_corte
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -427,7 +429,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
-                   t.tercero AS tercero_nombre
+                   t.tercero AS tercero_nombre,
+                   m.fecha_corte
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -449,7 +452,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
-                   t.tercero AS tercero_nombre
+                   t.tercero AS tercero_nombre,
+                   m.fecha_corte
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -524,7 +528,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
-                   t.tercero AS tercero_nombre
+                   t.tercero AS tercero_nombre,
+                   m.fecha_corte
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -626,7 +631,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                        m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
                        c.cuenta AS cuenta_nombre,
                        mon.moneda AS moneda_nombre,
-                       t.tercero AS tercero_nombre
+                       t.tercero AS tercero_nombre,
+                   m.fecha_corte
                 FROM movimientos_encabezado m
                 LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
                 LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -855,7 +861,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    m.MonedaID, m.CuentaID, m.terceroid, m.Detalle, m.created_at,
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
-                   t.tercero AS tercero_nombre
+                   t.tercero AS tercero_nombre,
+                   m.fecha_corte
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
