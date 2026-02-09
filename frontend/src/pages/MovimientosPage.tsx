@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LayoutList, Plus, Search, TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import { LayoutList, Plus, Search, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
 
 import type { Movimiento } from '../types'
 import { apiService } from '../services/api'
 import { useSessionStorage } from '../hooks/useSessionStorage'
 import { getMesActual, getPreviousPeriod } from '../utils/dateUtils'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
-// import { EstadisticasTotales } from '../components/organisms/EstadisticasTotales' // Removed usage
 import { MovimientosTable } from '../components/organisms/MovimientosTable'
 import { MovimientoModal } from '../components/organisms/modals/MovimientoModal'
 import { useReporteClasificacion, useConfiguracionExclusion } from '../hooks/useReportes'
-import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
+import { StatCard } from '../components/molecules/StatCard'
 import toast from 'react-hot-toast'
 
 export const MovimientosPage = () => {
@@ -175,15 +174,25 @@ export const MovimientosPage = () => {
         }
     }
 
+    // Detect USD: if valor sums to 0 but usd has values, use usd field
+    const esUSD = useMemo(() => {
+        if (movimientos.length === 0) return false
+        const sumaValor = movimientos.reduce((acc, m) => acc + Math.abs(m.valor), 0)
+        const sumaUsd = movimientos.reduce((acc, m) => acc + Math.abs(m.usd || 0), 0)
+        return sumaValor === 0 && sumaUsd > 0
+    }, [movimientos])
+
     const totalsDisplay = useMemo(() => {
-        if (totalesGlobales) return totalesGlobales
+        if (totalesGlobales && !esUSD) return totalesGlobales
+        const getVal = (m: Movimiento) => esUSD ? (m.usd || 0) : m.valor
         const sums = movimientos.reduce((acc, m) => {
-            if (m.valor > 0) acc.ingresos += m.valor
-            else acc.egresos += Math.abs(m.valor)
+            const v = getVal(m)
+            if (v > 0) acc.ingresos += v
+            else acc.egresos += Math.abs(v)
             return acc
         }, { ingresos: 0, egresos: 0 })
         return { ...sums, saldo: sums.ingresos - sums.egresos }
-    }, [movimientos, totalesGlobales])
+    }, [movimientos, totalesGlobales, esUSD])
 
     const filteredMovimientos = useMemo(() => {
         if (!busqueda) return movimientos
@@ -251,16 +260,17 @@ export const MovimientosPage = () => {
 
                     {/* Existing Cards */}
                     <StatCard
-                        label="Total Ingresos"
+                        label={esUSD ? "Total Ingresos (USD)" : "Total Ingresos"}
                         value={totalsDisplay.ingresos}
                         trend={calculateTrend(totalsDisplay.ingresos, totalesAnterior?.ingresos)}
                         icon={<TrendingUp className="w-5 h-5" />}
                         colorClass="text-emerald-600"
                         bgColorClass="bg-emerald-50"
                         borderColor="group-hover:border-emerald-200"
+                        currency={esUSD ? 'USD' : 'COP'}
                     />
                     <StatCard
-                        label="Total Egresos"
+                        label={esUSD ? "Total Egresos (USD)" : "Total Egresos"}
                         value={totalsDisplay.egresos}
                         trend={calculateTrend(totalsDisplay.egresos, totalesAnterior?.egresos)}
                         isEgreso
@@ -268,15 +278,17 @@ export const MovimientosPage = () => {
                         colorClass="text-rose-600"
                         bgColorClass="bg-rose-50"
                         borderColor="group-hover:border-rose-200"
+                        currency={esUSD ? 'USD' : 'COP'}
                     />
                     <StatCard
-                        label="Saldo Neto"
+                        label={esUSD ? "Saldo Neto (USD)" : "Saldo Neto"}
                         value={totalsDisplay.saldo}
                         trend={calculateTrend(totalsDisplay.saldo, totalesAnterior?.saldo)}
                         icon={<Wallet className="w-5 h-5" />}
                         colorClass={totalsDisplay.saldo >= 0 ? "text-indigo-600" : "text-rose-600"}
                         bgColorClass="bg-indigo-50"
                         borderColor="group-hover:border-indigo-200"
+                        currency={esUSD ? 'USD' : 'COP'}
                     />
                 </div>
 
@@ -341,45 +353,3 @@ export const MovimientosPage = () => {
     )
 }
 
-const StatCard = ({ label, value, trend, icon, colorClass, bgColorClass, borderColor, isEgreso = false, secondaryValue = null, isCurrency = true }: any) => {
-    const isPositive = trend > 0
-    const isNearZero = Math.abs(trend ?? 0) < 0.1
-
-    let trendColor = ""
-    if (isEgreso) {
-        trendColor = isPositive ? "text-rose-500 bg-rose-50" : "text-emerald-500 bg-emerald-50"
-    } else {
-        trendColor = isPositive ? "text-emerald-500 bg-emerald-50" : "text-rose-500 bg-rose-50"
-    }
-
-    if (isNearZero || trend === null) trendColor = "text-slate-400 bg-slate-50"
-
-    return (
-        <div className={`group bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 flex items-center justify-between transition-all duration-300 hover:shadow-md ${borderColor}`}>
-            <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-                    {typeof trend === 'number' && (
-                        <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${trendColor}`}>
-                            {isNearZero ? <Minus size={8} /> : isPositive ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
-                            {Math.abs(trend).toFixed(1)}%
-                        </div>
-                    )}
-                </div>
-                <div className={`text-2xl font-black tracking-tight ${colorClass} flex items-baseline`}>
-                    {isCurrency && typeof value === 'number' ? <CurrencyDisplay value={value} colorize={false} /> : <span>{value}</span>}
-                    {secondaryValue !== null && (
-                        <span className="text-sm opacity-40 font-medium text-slate-400 ml-2">/ {secondaryValue}</span>
-                    )}
-                </div>
-                <div className="flex items-center gap-1 text-[9px] text-slate-400 font-medium">
-                    <span className="w-1 h-1 rounded-full bg-slate-200" />
-                    {secondaryValue !== null ? 'Visible / Total en Periodo' : 'Periodo Actual'}
-                </div>
-            </div>
-            <div className={`p-3.5 ${bgColorClass} ${colorClass} rounded-2xl group-hover:scale-110 transition-transform duration-300 shadow-sm shadow-inner`}>
-                {icon}
-            </div>
-        </div>
-    )
-}

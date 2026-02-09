@@ -12,7 +12,7 @@ class PostgresCuentaRepository(CuentaRepository):
         """Campos SELECT para consultas con JOIN a tipo_cuenta."""
         return """
             c.cuentaid, c.cuenta, c.activa, c.permite_carga, c.permite_conciliar,
-            c.tipo_cuenta_id,
+            c.numero_cuenta, c.tipo_cuenta_id,
             tc.nombre as tipo_cuenta_nombre,
             COALESCE(tc.peso_referencia, 100) as peso_referencia,
             COALESCE(tc.peso_descripcion, 50) as peso_descripcion,
@@ -37,21 +37,22 @@ class PostgresCuentaRepository(CuentaRepository):
             activa=row[2],
             permite_carga=row[3],
             permite_conciliar=row[4],
-            tipo_cuenta_id=row[5],
-            tipo_cuenta_nombre=row[6],
-            peso_referencia=row[7],
-            peso_descripcion=row[8],
-            peso_valor=row[9],
-            longitud_min_referencia=row[10],
-            permite_crear_manual=row[11],
-            permite_editar=row[12],
-            permite_modificar=row[13],
-            permite_borrar=row[14],
-            permite_clasificar=row[15],
-            requiere_descripcion=row[16],
-            valor_minimo=Decimal(str(row[17])) if row[17] is not None else None,
-            responde_enter=row[18],
-            referencia_define_tercero=row[19]
+            numero_cuenta=row[5],
+            tipo_cuenta_id=row[6],
+            tipo_cuenta_nombre=row[7],
+            peso_referencia=row[8],
+            peso_descripcion=row[9],
+            peso_valor=row[10],
+            longitud_min_referencia=row[11],
+            permite_crear_manual=row[12],
+            permite_editar=row[13],
+            permite_modificar=row[14],
+            permite_borrar=row[15],
+            permite_clasificar=row[16],
+            requiere_descripcion=row[17],
+            valor_minimo=Decimal(str(row[18])) if row[18] is not None else None,
+            responde_enter=row[19],
+            referencia_define_tercero=row[20]
         )
 
     def guardar(self, cuenta: Cuenta) -> Cuenta:
@@ -61,17 +62,18 @@ class PostgresCuentaRepository(CuentaRepository):
                 cursor.execute(
                     """UPDATE cuentas
                        SET cuenta = %s, activa = %s, permite_carga = %s,
-                           permite_conciliar = %s, tipo_cuenta_id = %s
+                           permite_conciliar = %s, numero_cuenta = %s, tipo_cuenta_id = %s
                        WHERE cuentaid = %s""",
                     (cuenta.cuenta, cuenta.activa, cuenta.permite_carga,
-                     cuenta.permite_conciliar, cuenta.tipo_cuenta_id, cuenta.cuentaid)
+                     cuenta.permite_conciliar, cuenta.numero_cuenta,
+                     cuenta.tipo_cuenta_id, cuenta.cuentaid)
                 )
             else:
                 cursor.execute(
-                    """INSERT INTO cuentas (cuenta, activa, permite_carga, permite_conciliar, tipo_cuenta_id)
-                       VALUES (%s, %s, %s, %s, %s) RETURNING cuentaid""",
+                    """INSERT INTO cuentas (cuenta, activa, permite_carga, permite_conciliar, numero_cuenta, tipo_cuenta_id)
+                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING cuentaid""",
                     (cuenta.cuenta, cuenta.activa, cuenta.permite_carga,
-                     cuenta.permite_conciliar, cuenta.tipo_cuenta_id)
+                     cuenta.permite_conciliar, cuenta.numero_cuenta, cuenta.tipo_cuenta_id)
                 )
                 cuenta.cuentaid = cursor.fetchone()[0]
             self.conn.commit()

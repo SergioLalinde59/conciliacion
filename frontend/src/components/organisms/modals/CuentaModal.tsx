@@ -15,42 +15,51 @@ interface Props {
         nombre: string
         permite_carga: boolean
         permite_conciliar: boolean
+        numero_cuenta: string | null
         tipo_cuenta_id: number | null
     }) => void
 }
 
 export const CuentaModal = ({ isOpen, cuenta, tiposCuenta, onClose, onSave }: Props) => {
     const [nombre, setNombre] = useState('')
+    const [numeroCuenta, setNumeroCuenta] = useState('')
     const [permiteCarga, setPermiteCarga] = useState(false)
     const [permiteConciliar, setPermiteConciliar] = useState(false)
     const [tipoCuentaId, setTipoCuentaId] = useState<number | null>(null)
 
+    const numeroCuentaValido = numeroCuenta === '' || /^\d{9,16}$/.test(numeroCuenta)
+
     useEffect(() => {
         if (isOpen) {
             setNombre(cuenta?.nombre ?? '')
+            setNumeroCuenta(cuenta?.numero_cuenta ?? '')
             setPermiteCarga(cuenta?.permite_carga ?? false)
             setPermiteConciliar(cuenta?.permite_conciliar ?? false)
             setTipoCuentaId(cuenta?.tipo_cuenta_id ?? null)
         }
     }, [isOpen, cuenta])
 
+    const canSave = nombre.trim() !== '' && numeroCuentaValido
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        if (!nombre.trim()) return
+        if (!canSave) return
         onSave({
             nombre,
             permite_carga: permiteCarga,
             permite_conciliar: permiteConciliar,
+            numero_cuenta: numeroCuenta || null,
             tipo_cuenta_id: tipoCuentaId
         })
     }
 
     const handleSave = () => {
-        if (!nombre.trim()) return
+        if (!canSave) return
         onSave({
             nombre,
             permite_carga: permiteCarga,
             permite_conciliar: permiteConciliar,
+            numero_cuenta: numeroCuenta || null,
             tipo_cuenta_id: tipoCuentaId
         })
     }
@@ -68,7 +77,7 @@ export const CuentaModal = ({ isOpen, cuenta, tiposCuenta, onClose, onSave }: Pr
                     <Button
                         onClick={handleSave}
                         icon={Save}
-                        disabled={!nombre.trim()}
+                        disabled={!canSave}
                     >
                         Guardar
                     </Button>
@@ -83,6 +92,31 @@ export const CuentaModal = ({ isOpen, cuenta, tiposCuenta, onClose, onSave }: Pr
                     placeholder="Ej: Davivienda Ahorros"
                     autoFocus
                 />
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Numero de Cuenta
+                    </label>
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        value={numeroCuenta}
+                        onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '')
+                            if (val.length <= 16) setNumeroCuenta(val)
+                        }}
+                        placeholder="Ej: 0012345678"
+                        maxLength={16}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                            !numeroCuentaValido ? 'border-red-400' : 'border-gray-300'
+                        }`}
+                    />
+                    {numeroCuenta && !numeroCuentaValido && (
+                        <p className="text-xs text-red-500 mt-1">
+                            Debe contener entre 9 y 16 digitos
+                        </p>
+                    )}
+                </div>
 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">

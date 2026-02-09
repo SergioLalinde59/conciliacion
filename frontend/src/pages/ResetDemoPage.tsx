@@ -12,6 +12,7 @@ interface PreviewCuenta {
     conciliaciones: number
     movimientos_detalle: number
     movimientos_encabezado: number
+    movimientos_sistema?: number
     ingresos: number
     egresos: number
     total: number
@@ -197,7 +198,7 @@ export const ResetDemoPage: React.FC = () => {
             conciliaciones: acc.conciliaciones + c.conciliaciones,
             vinculaciones: acc.vinculaciones + c.vinculaciones,
             extractos: acc.extractos + c.extractos,
-            movimientos_sistema: acc.movimientos_sistema + c.movimientos_detalle + c.movimientos_encabezado,
+            movimientos_sistema: acc.movimientos_sistema + (c.movimientos_sistema ?? (c.movimientos_detalle + c.movimientos_encabezado)),
             total: acc.total + c.total
         }), { ingresos: 0, egresos: 0, conciliaciones: 0, vinculaciones: 0, extractos: 0, movimientos_sistema: 0, total: 0 })
 
@@ -364,7 +365,7 @@ export const ResetDemoPage: React.FC = () => {
                                                 {cuenta.extractos.toLocaleString()}
                                             </td>
                                             <td className="px-3 py-2 text-sm text-gray-600 text-right">
-                                                {(cuenta.movimientos_detalle + cuenta.movimientos_encabezado).toLocaleString()}
+                                                {(cuenta.movimientos_sistema ?? (cuenta.movimientos_detalle + cuenta.movimientos_encabezado)).toLocaleString()}
                                             </td>
                                             <td className="px-3 py-2 text-sm font-bold text-orange-600 text-right">
                                                 {cuenta.total.toLocaleString()}

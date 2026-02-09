@@ -6,7 +6,7 @@ import { TerceroModal } from '../components/organisms/modals/TerceroModal'
 import { MovimientoModal } from '../components/organisms/modals/MovimientoModal'
 
 import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
-import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split, Trash2 } from 'lucide-react'
+import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split, Trash2, RotateCcw } from 'lucide-react'
 import { DataTable } from '../components/molecules/DataTable'
 import { TableHeaderCell } from '../components/atoms/TableHeaderCell'
 import { fechaColumn, textoColumn, monedaColumn } from '../components/atoms/columnHelpers'
@@ -35,7 +35,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
     // Modals
     const [showTerceroModal, setShowTerceroModal] = useState(false)
     const [showAdvancedModal, setShowAdvancedModal] = useState(false)
-    const [modalInitialValues, setModalInitialValues] = useState<{ nombre?: string }>({})
+    const [modalInitialValues, setModalInitialValues] = useState<{ nombre?: string; alias?: string; referencia?: string }>({})
 
     // Batch Lote Modal
     const [showBatchModal, setShowBatchModal] = useState(false)
@@ -282,16 +282,30 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
     const abrirModalTercero = () => {
         setModalInitialValues({
-            nombre: movimientoActual?.descripcion || ''
+            nombre: '',
+            alias: movimientoActual?.descripcion || '',
+            referencia: movimientoActual?.referencia || ''
         })
         setShowTerceroModal(true)
     }
 
-    const handleGuardarTercero = async (nombre: string) => {
+    const handleGuardarTercero = async (nombre: string, alias?: string) => {
         try {
             const nuevoTercero = await apiService.terceros.crear({
                 tercero: nombre
             })
+            // Crear primer alias (descripción + referencia del extracto) si se proporcionó
+            if (alias) {
+                try {
+                    await apiService.terceros.crearDescripcion({
+                        terceroid: nuevoTercero.id,
+                        descripcion: alias,
+                        referencia: movimientoActual?.referencia || undefined
+                    })
+                } catch (err) {
+                    console.warn("Tercero creado pero error al crear alias:", err)
+                }
+            }
             // Update list
             setTerceros(prev => [...prev, nuevoTercero])
             // Select it
@@ -468,13 +482,22 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                         onChange={(val) => setTerceroId(val ? parseInt(val) : null)}
                                         placeholder="Buscar tercero..."
                                     />
-                                    <div className="mt-1 text-left">
+                                    <div className="mt-1 flex items-center gap-3">
                                         <button
                                             onClick={abrirModalTercero}
                                             className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                                         >
                                             + Nuevo Tercero
                                         </button>
+                                        {(terceroId || centroCostoId || conceptoId) && (
+                                            <button
+                                                onClick={() => { setTerceroId(null); setCentroCostoId(null); setConceptoId(null) }}
+                                                className="text-xs text-gray-400 hover:text-red-500 font-medium flex items-center gap-1 transition-colors"
+                                            >
+                                                <RotateCcw className="h-3 w-3" />
+                                                Limpiar clasificación
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 

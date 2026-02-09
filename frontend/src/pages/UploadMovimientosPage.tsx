@@ -5,6 +5,10 @@ import { Modal } from '../components/molecules/Modal'
 import { Button } from '../components/atoms/Button'
 import { LoadResultSummary } from '../components/molecules/LoadResultSummary'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
+import { StatCard } from '../components/molecules/StatCard'
+import { DataTable } from '../components/molecules/DataTable'
+import { TableHeaderCell } from '../components/atoms/TableHeaderCell'
+import { fechaColumn, monedaColumn, textoColumn } from '../components/atoms/columnHelpers'
 import { useCatalogo } from '../hooks/useCatalogo'
 
 type ExtractoRegistro = {
@@ -28,28 +32,6 @@ type ExtractosPorCuenta = Record<number, {
     egresos_usd: number | null
     registros: ExtractoRegistro[]
 }>
-
-// Subcomponent for Stats - Premium Style
-const StatCard = ({ label, value, secondaryValue, icon, colorClass, bgColorClass, borderColor, isCurrency = true }: any) => {
-    return (
-        <div className={`group bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 flex items-center justify-between transition-all duration-300 hover:shadow-md ${borderColor || ''}`}>
-            <div className="space-y-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-                <div className={`text-2xl font-black tracking-tight ${colorClass} flex items-baseline gap-2`}>
-                    {isCurrency
-                        ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value))
-                        : value}
-                    {secondaryValue !== undefined && secondaryValue !== null && (
-                        <span className="text-sm opacity-40 font-medium text-slate-400">/ {secondaryValue}</span>
-                    )}
-                </div>
-            </div>
-            <div className={`p-3.5 ${bgColorClass} ${colorClass} rounded-2xl group-hover:scale-110 transition-transform duration-300 shadow-sm shadow-inner`}>
-                {icon}
-            </div>
-        </div>
-    );
-};
 
 export const UploadMovimientosPage: React.FC = () => {
     const [file, setFile] = useState<File | null>(null)
@@ -352,30 +334,27 @@ export const UploadMovimientosPage: React.FC = () => {
                                         )}
                                     </span>
                                 </div>
-                                <div className="max-h-40 overflow-y-auto bg-white rounded-lg border border-amber-100">
-                                    <table className="min-w-full text-xs">
-                                        <thead className="bg-amber-50 sticky top-0">
-                                            <tr>
-                                                <th className="px-3 py-2 text-left font-bold text-amber-700">Fecha</th>
-                                                <th className="px-3 py-2 text-left font-bold text-amber-700">Descripción</th>
-                                                <th className="px-3 py-2 text-right font-bold text-amber-700">Valor</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-amber-50">
-                                            {extractosCuentaActual.registros.map((r) => (
-                                                <tr key={r.id} className="hover:bg-amber-50/30">
-                                                    <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{r.fecha}</td>
-                                                    <td className="px-3 py-1.5 text-slate-700 truncate max-w-[200px]" title={r.descripcion}>{r.descripcion}</td>
-                                                    <td className={`px-3 py-1.5 text-right font-medium ${r.valor >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                        {r.usd !== null
-                                                            ? `US$ ${r.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                                                            : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(r.valor)
-                                                        }
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                <div className="bg-white rounded-lg border border-amber-100">
+                                    <DataTable<ExtractoRegistro>
+                                        data={extractosCuentaActual.registros}
+                                        getRowKey={(r) => r.id}
+                                        rowPy="py-1"
+                                        stickyHeader
+                                        maxHeight={160}
+                                        showActions={false}
+                                        rounded={false}
+                                        columns={[
+                                            fechaColumn<ExtractoRegistro>('fecha', <TableHeaderCell>Fecha</TableHeaderCell>, (r) => r.fecha, { width: 'w-24' }),
+                                            textoColumn<ExtractoRegistro>('descripcion', <TableHeaderCell>Descripción</TableHeaderCell>, (r) => r.descripcion, {
+                                                cellClassName: 'truncate max-w-[200px] text-[12px] text-slate-700',
+                                            }),
+                                            monedaColumn<ExtractoRegistro>('valor', <TableHeaderCell>Valor</TableHeaderCell>,
+                                                (r) => r.usd !== null ? r.usd : r.valor,
+                                                (r) => r.usd !== null ? 'USD' : 'COP',
+                                                { decimals: 0 }
+                                            ),
+                                        ]}
+                                    />
                                 </div>
                                 <p className="text-[10px] text-amber-600 mt-2 font-medium">
                                     Estos registros serán reemplazados al cargar un nuevo extracto del mismo período.
@@ -498,86 +477,82 @@ export const UploadMovimientosPage: React.FC = () => {
                             </h3>
                         </div>
 
-                        <div className="flex-1 overflow-auto relative">
-                            <table className="min-w-full divide-y divide-gray-200 border-separate border-spacing-0">
-                                <thead className="bg-slate-50 sticky top-0 z-10">
-                                    <tr className="bg-white">
-                                        <th colSpan={6} className="px-4 py-2.5 border-b border-slate-100 text-left">
-                                            <div className="flex gap-1.5 flex-wrap">
-                                                {[
-                                                    { key: 'todos', label: 'Todos', active: 'bg-slate-700 text-white' },
-                                                    { key: 'duplicados', label: 'Duplicados', active: 'bg-orange-100 text-orange-700' },
-                                                    { key: 'actualizables', label: 'Actualizables', active: 'bg-blue-100 text-blue-700' },
-                                                    { key: 'nuevos', label: 'A Cargar', active: 'bg-emerald-100 text-emerald-700' },
-                                                ].map(f => (
-                                                    <button
-                                                        key={f.key}
-                                                        onClick={() => setFiltroEstado(f.key as typeof filtroEstado)}
-                                                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-200 ${
-                                                            filtroEstado === f.key
-                                                                ? f.active
-                                                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                                        }`}
-                                                    >
-                                                        {f.label}
-                                                        <span className="ml-1.5 opacity-70">({conteoFiltros[f.key as keyof typeof conteoFiltros]})</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </th>
-                                    </tr>
-                                    <tr>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Estado</th>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Fecha</th>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Descripción</th>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center border-b border-slate-100">Referencia</th>
-                                        <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Moneda</th>
-                                        <th className="px-4 py-3 text-right text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Valor</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-slate-100 text-sm">
-                                    {movimientosFiltrados.map((mov, idx) => (
-                                        <tr key={idx} className={`${mov.es_duplicado ? "bg-orange-50/30 text-slate-500" : mov.es_actualizable ? "bg-blue-50/30 text-slate-700" : "hover:bg-slate-50"} transition-colors`}>
-                                            <td className="px-4 py-2.5 whitespace-nowrap">
-                                                {mov.es_duplicado ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase">
-                                                        Duplicado
-                                                    </span>
-                                                ) : mov.es_actualizable ? (
-                                                    <div className="flex flex-col gap-0.5">
-                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">
-                                                            Actualizable
-                                                        </span>
-                                                        {mov.descripcion_actual && (
-                                                            <span className="text-[9px] text-blue-500 font-medium" title={mov.descripcion_actual}>
-                                                                (Exist: {mov.descripcion_actual.substring(0, 15)}...)
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 uppercase">
-                                                        Nuevo
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-2.5 whitespace-nowrap font-medium text-slate-600 text-[12px]">{mov.fecha}</td>
-                                            <td className="px-4 py-2.5 text-slate-700 text-[12px] leading-tight">{mov.descripcion}</td>
-                                            <td className="px-4 py-2.5 font-mono text-[11px] text-center text-slate-500">{mov.referencia || '-'}</td>
-                                            <td className="px-4 py-2.5 text-center text-[10px] font-bold text-slate-400">{mov.moneda}</td>
-                                            <td className={`px-4 py-2.5 text-right font-bold text-[13px] ${(() => {
-                                                const val = Number(mov.valor);
-                                                if (val > 0) return 'text-emerald-600';
-                                                if (val < 0) return 'text-rose-600';
-                                                return 'text-blue-600';
-                                            })()
-                                                }`}>
-                                                {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(mov.valor))}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div className="px-4 py-2.5 border-b border-slate-100 bg-white">
+                            <div className="flex gap-1.5 flex-wrap">
+                                {[
+                                    { key: 'todos', label: 'Todos', active: 'bg-slate-700 text-white' },
+                                    { key: 'duplicados', label: 'Duplicados', active: 'bg-orange-100 text-orange-700' },
+                                    { key: 'actualizables', label: 'Actualizables', active: 'bg-blue-100 text-blue-700' },
+                                    { key: 'nuevos', label: 'A Cargar', active: 'bg-emerald-100 text-emerald-700' },
+                                ].map(f => (
+                                    <button
+                                        key={f.key}
+                                        onClick={() => setFiltroEstado(f.key as typeof filtroEstado)}
+                                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all duration-200 ${
+                                            filtroEstado === f.key
+                                                ? f.active
+                                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        {f.label}
+                                        <span className="ml-1.5 opacity-70">({conteoFiltros[f.key as keyof typeof conteoFiltros]})</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
+                            <DataTable
+                                data={movimientosFiltrados}
+                                getRowKey={(_row: any, idx: number) => idx}
+                                rowPy="py-1.5"
+                                stickyHeader
+                                showActions={false}
+                                rounded={false}
+                                className="border-none"
+                                maxHeight="none"
+                                style={{ flex: 1, minHeight: 0 }}
+                                columns={[
+                                    {
+                                        key: 'estado',
+                                        header: <TableHeaderCell>Estado</TableHeaderCell>,
+                                        width: 'w-28',
+                                        accessor: (mov: any) => (
+                                            mov.es_duplicado ? (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 uppercase">
+                                                    Duplicado
+                                                </span>
+                                            ) : mov.es_actualizable ? (
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">
+                                                        Actualizable
+                                                    </span>
+                                                    {mov.descripcion_actual && (
+                                                        <span className="text-[9px] text-blue-500 font-medium" title={mov.descripcion_actual}>
+                                                            (Exist: {mov.descripcion_actual.substring(0, 15)}...)
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 uppercase">
+                                                    Nuevo
+                                                </span>
+                                            )
+                                        )
+                                    },
+                                    fechaColumn<any>('fecha', <TableHeaderCell>Fecha</TableHeaderCell>, (mov) => mov.fecha, { width: 'w-24' }),
+                                    textoColumn<any>('descripcion', <TableHeaderCell>Descripción</TableHeaderCell>, (mov) => mov.descripcion),
+                                    textoColumn<any>('referencia', <TableHeaderCell>Referencia</TableHeaderCell>, (mov) => mov.referencia || '-', {
+                                        align: 'center',
+                                        cellClassName: 'font-mono text-[11px] text-slate-500',
+                                        width: 'w-28',
+                                    }),
+                                    textoColumn<any>('moneda', <TableHeaderCell>Moneda</TableHeaderCell>, (mov) => mov.moneda, {
+                                        align: 'center',
+                                        cellClassName: 'text-[10px] font-bold text-slate-400',
+                                        width: 'w-20',
+                                    }),
+                                    monedaColumn<any>('valor', <TableHeaderCell>Valor</TableHeaderCell>, (mov) => Number(mov.valor), 'COP', { decimals: 0 }),
+                                ]}
+                            />
                     </div>
                 )}
 

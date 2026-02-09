@@ -27,6 +27,8 @@ interface MatchingTableProps {
     onDesvincularTodo?: () => void
     loading?: boolean
     className?: string
+    /** Conteo total de registros por estado (sin filtrar) */
+    estadoCounts?: Partial<Record<MatchEstado, number>>
 }
 
 type SortColumn = 'extracto_fecha' | 'extracto_descripcion' | 'extracto_valor' | 'extracto_usd' | 'extracto_trm' |
@@ -104,7 +106,8 @@ export const MatchingTable = ({
     onDesvincular,
     onDesvincularTodo,
     loading = false,
-    className = ''
+    className = '',
+    estadoCounts = {}
 }: MatchingTableProps) => {
     const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
     const [sortKey, setSortKey] = useState<SortColumn>(null)
@@ -480,6 +483,8 @@ export const MatchingTable = ({
                             const activeClass = `bg-${color}-100 text-${color}-700 border-${color}-300 ring-1 ring-${color}-300`
                             const inactiveClass = 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
 
+                            const count = estadoCounts[value]
+
                             return (
                                 <button
                                     key={value}
@@ -490,6 +495,9 @@ export const MatchingTable = ({
                                     `}
                                 >
                                     {label}
+                                    {count !== undefined && (
+                                        <span className="ml-1 opacity-70">({count})</span>
+                                    )}
                                 </button>
                             )
                         })}

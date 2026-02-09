@@ -28,6 +28,16 @@ export const CuentasTable = ({ cuentas, loading, onEdit, onDelete }: Props) => {
             )
         },
         {
+            key: 'numero_cuenta',
+            header: 'Nro. Cuenta',
+            width: 'w-40',
+            accessor: (row) => (
+                <span className="text-sm text-gray-600 font-mono">
+                    {row.numero_cuenta || '-'}
+                </span>
+            )
+        },
+        {
             key: 'tipo_cuenta',
             header: 'Tipo',
             width: 'w-40',

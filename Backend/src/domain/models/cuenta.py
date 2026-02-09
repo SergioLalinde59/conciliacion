@@ -1,6 +1,9 @@
+import re
 from dataclasses import dataclass
 from typing import Optional
 from decimal import Decimal
+
+_NUMERO_CUENTA_RE = re.compile(r'^\d{9,16}$')
 
 
 @dataclass
@@ -11,6 +14,7 @@ class Cuenta:
     activa: bool = True
     permite_carga: bool = False
     permite_conciliar: bool = False
+    numero_cuenta: Optional[str] = None
     # FK a tipo_cuenta
     tipo_cuenta_id: Optional[int] = None
     # Campos denormalizados (vienen del JOIN con tipo_cuenta)
@@ -37,6 +41,8 @@ class Cuenta:
     def __post_init__(self):
         if not self.cuenta:
             raise ValueError("El nombre de la cuenta es obligatorio.")
+        if self.numero_cuenta is not None and not _NUMERO_CUENTA_RE.match(self.numero_cuenta):
+            raise ValueError("El número de cuenta debe contener solo dígitos (entre 9 y 16).")
 
     @property
     def suma_pesos(self) -> int:

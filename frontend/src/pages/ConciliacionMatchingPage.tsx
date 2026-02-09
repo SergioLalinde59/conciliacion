@@ -258,6 +258,16 @@ export const ConciliacionMatchingPage = () => {
     })
 
 
+    // Conteo de registros por estado (sin filtrar)
+    const estadoCounts = useMemo(() => {
+        if (!matchingResult) return {}
+        const counts: Partial<Record<MatchEstado, number>> = {}
+        for (const match of matchingResult.matches) {
+            counts[match.estado] = (counts[match.estado] || 0) + 1
+        }
+        return counts
+    }, [matchingResult])
+
     // Filtrar matches
     const matchesFiltrados = useMemo(() => {
         if (!matchingResult) return []
@@ -498,6 +508,7 @@ export const ConciliacionMatchingPage = () => {
                                     selectedEstados={selectedEstados}
                                     onEstadosChange={setSelectedEstados}
                                     onLimpiar={limpiarFiltros}
+                                    estadoCounts={estadoCounts}
                                     onAprobar={isLocked ? undefined : (match) => {
                                         if (match.mov_sistema) {
                                             vincularMutation.mutate({

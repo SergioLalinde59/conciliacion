@@ -81,8 +81,12 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
     const submitLabel = mode === 'delete' ? 'Confirmar Borrado' : 'Guardar Movimiento'
     const submitIcon = mode === 'delete' ? Trash2 : Save
 
-    // Detectar si la cuenta es en dólares
-    const esUSD = config.tipo_cuenta_nombre?.includes('USD') || config.tipo_cuenta_nombre?.includes('Dolares') || false
+    // Detectar si la cuenta es en dólares (por nombre de cuenta, no por tipo)
+    const cuentaSeleccionada = cuentas.find(c => c.id.toString() === formData.cuenta_id)
+    const esUSD = cuentaSeleccionada?.nombre?.includes('USD') || cuentaSeleccionada?.nombre?.includes('Dolares') || false
+
+    // Detectar si es cuenta tipo Efectivo (única que permite edición del encabezado)
+    const esEfectivo = config.permite_crear_manual || false
 
     // Cargar cuentas y maestros al abrir
     useEffect(() => {
@@ -498,7 +502,7 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                                 soloConciliables={false}
                                 disabled={isReadOnly || !!movimiento}
                             />
-                            {movimiento ? (
+                            {(movimiento && !esEfectivo) ? (
                                 <div className="flex flex-col">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Valor Total</label>
                                     <div className="flex items-center h-10 px-3 bg-gray-100 border border-gray-300 rounded-lg">
@@ -516,7 +520,7 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                                     onChange={(val) => handleCurrencyChange(val, 'valor')}
                                     currency="COP"
                                     required
-                                    disabled={isReadOnly}
+                                    disabled={isReadOnly || esUSD}
                                 />
                             )}
                         </div>

@@ -8,6 +8,7 @@ import {
     TrendingDown,
     Unlink
 } from 'lucide-react';
+import { StatCard } from '../../components/molecules/StatCard';
 import { mantenimientoService } from '../../api/mantenimientoService';
 import type { ReclasificacionStats } from '../../api/mantenimientoService';
 import { apiService } from '../../services/api';
@@ -206,12 +207,19 @@ export const ReclasificarMovimientosPage = () => {
 
     // Stats Calculations (Calculated from fetched movements to ensure consistency with filters)
     const totalRecords = movimientos.length;
-    // Calculate totals directly from the movements list
+    // Detect USD: if valor sums to 0 but usd has values, use usd field
+    const esUSD = useMemo(() => {
+        if (movimientos.length === 0) return false;
+        const sumaValor = movimientos.reduce((acc, m) => acc + Math.abs(m.valor), 0);
+        const sumaUsd = movimientos.reduce((acc, m) => acc + Math.abs(m.usd || 0), 0);
+        return sumaValor === 0 && sumaUsd > 0;
+    }, [movimientos]);
+    const getAmount = (m: Movimiento) => esUSD ? (m.usd || 0) : m.valor;
     // Ingresos: positive values
-    const totalIngresos = useMemo(() => movimientos.reduce((acc, m) => acc + (m.valor > 0 ? m.valor : 0), 0), [movimientos]);
+    const totalIngresos = useMemo(() => movimientos.reduce((acc, m) => acc + (getAmount(m) > 0 ? getAmount(m) : 0), 0), [movimientos, esUSD]);
     // Egresos: negative values (sum absolute)
-    const totalEgresos = useMemo(() => movimientos.reduce((acc, m) => acc + (m.valor < 0 ? Math.abs(m.valor) : 0), 0), [movimientos]);
-    const totalSaldo = useMemo(() => movimientos.reduce((acc, m) => acc + m.valor, 0), [movimientos]);
+    const totalEgresos = useMemo(() => movimientos.reduce((acc, m) => acc + (getAmount(m) < 0 ? Math.abs(getAmount(m)) : 0), 0), [movimientos, esUSD]);
+    const totalSaldo = useMemo(() => movimientos.reduce((acc, m) => acc + getAmount(m), 0), [movimientos, esUSD]);
 
     // Check if period is closed/locked based on analized stats (we keep stats fetch just for this check)
     const hasBlockedAccounts = stats?.some(s => s.bloqueado);
@@ -420,7 +428,7 @@ export const ReclasificarMovimientosPage = () => {
                     onMostrarIngresosChange={setMostrarIngresos}
                     mostrarEgresos={mostrarEgresos}
                     onMostrarEgresosChange={setMostrarEgresos}
-                    soloConciliables={false}
+                    soloConciliables={true}
                     onLimpiar={() => {
                         const actual = getMesActual();
                         setFecha(actual.inicio);
@@ -474,29 +482,38 @@ export const ReclasificarMovimientosPage = () => {
                                 label="Total Registros"
                                 value={totalRecords}
                                 secondaryValue={totalPeriodo}
-                                icon={BarChart3}
-                                color="slate"
+                                icon={<BarChart3 className="w-5 h-5" />}
+                                colorClass="text-slate-600"
+                                bgColorClass="bg-slate-50"
+                                borderColor="group-hover:border-slate-300"
+                                isCurrency={false}
                             />
                             <StatCard
-                                label="Ingresos"
+                                label={esUSD ? "Ingresos (USD)" : "Ingresos"}
                                 value={totalIngresos}
-                                icon={TrendingUp}
-                                color="emerald"
-                                isCurrency
+                                icon={<TrendingUp className="w-5 h-5" />}
+                                colorClass="text-emerald-600"
+                                bgColorClass="bg-emerald-50"
+                                borderColor="group-hover:border-emerald-200"
+                                currency={esUSD ? 'USD' : 'COP'}
                             />
                             <StatCard
-                                label="Egresos"
+                                label={esUSD ? "Egresos (USD)" : "Egresos"}
                                 value={totalEgresos}
-                                icon={TrendingDown}
-                                color="rose"
-                                isCurrency
+                                icon={<TrendingDown className="w-5 h-5" />}
+                                colorClass="text-rose-600"
+                                bgColorClass="bg-rose-50"
+                                borderColor="group-hover:border-rose-200"
+                                currency={esUSD ? 'USD' : 'COP'}
                             />
                             <StatCard
-                                label="Balance Neto"
+                                label={esUSD ? "Balance Neto (USD)" : "Balance Neto"}
                                 value={totalSaldo}
-                                icon={Wallet}
-                                color={totalSaldo >= 0 ? "blue" : "amber"}
-                                isCurrency
+                                icon={<Wallet className="w-5 h-5" />}
+                                colorClass={totalSaldo >= 0 ? "text-blue-600" : "text-amber-600"}
+                                bgColorClass={totalSaldo >= 0 ? "bg-blue-50" : "bg-amber-50"}
+                                borderColor={totalSaldo >= 0 ? "group-hover:border-blue-200" : "group-hover:border-amber-200"}
+                                currency={esUSD ? 'USD' : 'COP'}
                             />
                         </div>
 
@@ -576,40 +593,3 @@ export const ReclasificarMovimientosPage = () => {
     );
 };
 
-// Subcomponent for Stats
-const StatCard = ({ label, value, secondaryValue, icon: Icon, color, isCurrency = false }: any) => {
-    // Color maps
-    const colors: any = {
-        slate: 'bg-white text-slate-800 border-slate-200',
-        emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        rose: 'bg-rose-50 text-rose-700 border-rose-200',
-        blue: 'bg-blue-50 text-blue-700 border-blue-200',
-        amber: 'bg-amber-50 text-amber-700 border-amber-200'
-    };
-    const iconColors: any = {
-        slate: 'text-slate-400 bg-slate-50',
-        emerald: 'text-emerald-600 bg-emerald-100/50',
-        rose: 'text-rose-600 bg-rose-100/50',
-        blue: 'text-blue-600 bg-blue-100/50',
-        amber: 'text-amber-600 bg-amber-100/50',
-    }
-
-    return (
-        <div className={`p-4 rounded-2xl border flex flex-col justify-between shadow-sm transition-all hover:shadow-md ${colors[color] || colors.slate}`}>
-            <div className="flex items-center gap-3 mb-2">
-                <div className={`p-2 rounded-lg ${iconColors[color] || iconColors.slate}`}><Icon className="w-5 h-5" /></div>
-                <span className={`text-xs font-bold uppercase tracking-wider ${color === 'slate' ? 'text-slate-400' : 'opacity-80'}`}>{label}</span>
-            </div>
-            <div className="text-3xl font-black tracking-tight flex items-baseline gap-2">
-                <span>
-                    {isCurrency
-                        ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value)
-                        : value}
-                </span>
-                {secondaryValue && (
-                    <span className="text-lg opacity-40 font-medium">/ {secondaryValue}</span>
-                )}
-            </div>
-        </div>
-    )
-}

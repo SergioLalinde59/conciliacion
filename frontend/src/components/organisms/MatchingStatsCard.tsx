@@ -71,7 +71,7 @@ export const MatchingStatsCard = ({
             {/* 3. Total */}
             <div className="flex justify-between items-center border-t border-gray-200 pt-1 mt-0.5">
                 <span className="text-gray-700 font-bold">Total:</span>
-                <span className="font-mono font-bold text-gray-900">{formatCurrency(stat.total)}</span>
+                <span className={`font-mono font-bold ${stat.total > 0 ? 'text-emerald-800' : stat.total < 0 ? 'text-red-800' : 'text-blue-700'}`}>{formatCurrency(stat.total)}</span>
             </div>
 
             {/* 4. Cantidad */}

@@ -19,15 +19,12 @@ export const adminService = {
         return fetch(`${API_BASE_URL}/api/admin/snapshots`).then(handleResponse)
     },
 
-    bulkExport: async (tables: string[]): Promise<Blob> => {
+    bulkExport: async (tables: string[], label: string): Promise<{ mensaje: string; archivo: string; ruta: string; size: number; tablas: number }> => {
         return fetch(`${API_BASE_URL}/api/admin/bulk-export`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tables })
-        }).then(res => {
-            if (!res.ok) throw new Error('Error al generar backup masivo')
-            return res.blob()
-        })
+            body: JSON.stringify({ tables, label })
+        }).then(handleResponse)
     },
 
     bulkImport: async (file: File): Promise<{ mensaje: string; registros: any }> => {

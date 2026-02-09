@@ -31,6 +31,7 @@ ALLOWED_TABLES = [
     "conceptos",
     
     # Configuración
+    "tipo_cuenta",
     "config_filtros_centro_costos",
     "config_valores_pendientes",
     "reglas_clasificacion",
@@ -50,8 +51,8 @@ else:
     load_dotenv()
 
 # Configuración de directorios
-# Permite configurar ruta absoluta o relativa en .env
-env_backup_path = os.getenv("BACKUP_PATH", os.path.join("Backend", "data", "snapshots"))
+# Prioridad: HOST_BACKUPS > BACKUP_PATH > default
+env_backup_path = os.getenv("HOST_BACKUPS", os.getenv("BACKUP_PATH", os.path.join("Backend", "data", "snapshots")))
 
 if os.path.isabs(env_backup_path):
     SNAPSHOT_DIR = env_backup_path
@@ -65,11 +66,12 @@ os.makedirs(RESTORE_DIR, exist_ok=True)
 
 class BulkExportRequest(BaseModel):
     tables: List[str]
+    label: str = "backup"
 
 @router.post("/bulk-export")
 def bulk_export_tables(request: BulkExportRequest, conn=Depends(get_db_connection)):
     """
-    Exporta múltiples tablas en un solo archivo ZIP.
+    Exporta múltiples tablas en un archivo ZIP guardado en HOST_BACKUPS.
     """
     try:
         logger.info(f"Iniciando backup masivo de {len(request.tables)} tablas")
@@ -82,54 +84,48 @@ def bulk_export_tables(request: BulkExportRequest, conn=Depends(get_db_connectio
             for table_name in request.tables:
                 cursor = conn.cursor()
                 try:
-                    # Obtener columnas
                     cursor.execute(f"SELECT * FROM {table_name} LIMIT 0")
                     if cursor.description:
                         colnames = [desc[0] for desc in cursor.description]
                     else:
                         colnames = []
 
-                    # Obtener datos
                     cursor.execute(f"SELECT * FROM {table_name}")
                     rows = cursor.fetchall()
 
-                    # Generar CSV en memoria
                     csv_output = io.StringIO()
                     writer = csv.writer(csv_output)
                     writer.writerow(colnames)
                     writer.writerows(rows)
-                    
+
                     zip_file.writestr(f"{table_name}.csv", csv_output.getvalue())
                 except Exception as e:
                     logger.error(f"Error procesando tabla {table_name}: {str(e)}")
-                    # Continuar con otras tablas o fallar? 
-                    # Preferible fallar para no generar backup incompleto silencioso
                     raise e
                 finally:
                     cursor.close()
 
         zip_buffer.seek(0)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"bulk_backup_{timestamp}.zip"
-        
-        # Opcional: Guardar copia en el servidor (en SNAPSHOT_DIR)
-        try:
-            full_path = os.path.join(SNAPSHOT_DIR, filename)
-            logger.info(f"Guardando copia en servidor: {full_path}")
-            with open(full_path, "wb") as f:
-                f.write(zip_buffer.read())
-            zip_buffer.seek(0)
-        except Exception as e:
-            logger.error(f"No se pudo guardar copia local del backup: {e}")
-            # No fallar la descarga si solo falla el guardado local
-            zip_buffer.seek(0)
 
-        return StreamingResponse(
-            iter([zip_buffer.getvalue()]),
-            media_type="application/x-zip-compressed",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
+        # Formato: YYYY-MM-DD backup_{label}.zip
+        fecha = datetime.now().strftime("%Y-%m-%d")
+        safe_label = request.label.lower().replace(" ", "_")
+        filename = f"{fecha} backup_{safe_label}.zip"
+
+        full_path = os.path.join(SNAPSHOT_DIR, filename)
+        logger.info(f"Guardando backup en: {full_path}")
+        with open(full_path, "wb") as f:
+            f.write(zip_buffer.read())
+
+        size_bytes = os.path.getsize(full_path)
+
+        return {
+            "mensaje": f"Backup guardado exitosamente",
+            "archivo": filename,
+            "ruta": full_path,
+            "size": size_bytes,
+            "tablas": len(request.tables)
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -246,8 +242,8 @@ def export_table_raw(table_name: str, conn=Depends(get_db_connection)):
         output.seek(0)
 
         # Guardar copia en el servidor
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"snapshot_{timestamp}_{table_name}.csv"
+        fecha = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{fecha} snapshot_{table_name}.csv"
         server_path = os.path.join(SNAPSHOT_DIR, filename)
         
         with open(server_path, "w", newline="", encoding="utf-8") as f:
@@ -350,7 +346,7 @@ def list_snapshots():
     files = []
     if os.path.exists(SNAPSHOT_DIR):
         for f in os.listdir(SNAPSHOT_DIR):
-            if f.endswith(".csv"):
+            if f.endswith(".csv") or f.endswith(".zip"):
                 path = os.path.join(SNAPSHOT_DIR, f)
                 stats = os.stat(path)
                 files.append({
@@ -425,11 +421,15 @@ def reset_demo_preview(request: ResetDemoRequest, conn=Depends(get_db_connection
                 "egresos": 0
             }
 
+            # Detectar si es cuenta USD
+            es_usd = "USD" in cuenta_nombre.upper() or "DOLARES" in cuenta_nombre.upper()
+
             # Contar extractos y calcular ingresos/egresos
-            cursor.execute("""
+            col_valor = "usd" if es_usd else "valor"
+            cursor.execute(f"""
                 SELECT COUNT(*),
-                       COALESCE(SUM(CASE WHEN valor > 0 THEN valor ELSE 0 END), 0) as ingresos,
-                       COALESCE(SUM(CASE WHEN valor < 0 THEN ABS(valor) ELSE 0 END), 0) as egresos
+                       COALESCE(SUM(CASE WHEN {col_valor} > 0 THEN {col_valor} ELSE 0 END), 0) as ingresos,
+                       COALESCE(SUM(CASE WHEN {col_valor} < 0 THEN ABS({col_valor}) ELSE 0 END), 0) as egresos
                 FROM movimientos_extracto
                 WHERE fecha BETWEEN %s AND %s AND cuenta_id = %s
             """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
@@ -471,6 +471,19 @@ def reset_demo_preview(request: ResetDemoRequest, conn=Depends(get_db_connection
                 )
             """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
             conteos["movimientos_detalle"] = cursor.fetchone()[0]
+
+            # Contar encabezados que tienen al menos 1 detalle
+            cursor.execute("""
+                SELECT COUNT(DISTINCT e.id) FROM movimientos_encabezado e
+                INNER JOIN movimientos_detalle d ON d.movimiento_id = e.id
+                WHERE e.fecha BETWEEN %s AND %s AND e.cuentaid = %s
+            """, [request.fecha_desde, request.fecha_hasta, cuenta_id])
+            encab_con_detalle = cursor.fetchone()[0]
+
+            # Filas efectivas del sistema (lo que ve el usuario en la vista aplanada)
+            conteos["movimientos_sistema"] = (
+                conteos["movimientos_encabezado"] - encab_con_detalle + conteos["movimientos_detalle"]
+            )
 
             # Calcular total de la cuenta
             conteos["total"] = (

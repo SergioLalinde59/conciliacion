@@ -71,12 +71,14 @@ export const CuentasPage = () => {
         nombre: string
         permite_carga: boolean
         permite_conciliar: boolean
+        numero_cuenta: string | null
         tipo_cuenta_id: number | null
     }) => {
         const payload = {
             cuenta: data.nombre,
             permite_carga: data.permite_carga,
             permite_conciliar: data.permite_conciliar,
+            numero_cuenta: data.numero_cuenta,
             tipo_cuenta_id: data.tipo_cuenta_id
         }
 

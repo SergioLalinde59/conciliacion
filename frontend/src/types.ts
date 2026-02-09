@@ -32,6 +32,7 @@ export interface Cuenta {
     moneda?: string
     permite_carga: boolean
     permite_conciliar: boolean
+    numero_cuenta?: string | null
     tipo_cuenta_id?: number | null
     tipo_cuenta_nombre?: string | null
     configuracion?: ConfiguracionTipoCuenta | null

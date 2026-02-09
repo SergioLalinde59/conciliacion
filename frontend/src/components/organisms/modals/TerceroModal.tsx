@@ -8,31 +8,34 @@ import type { Tercero } from '../../../types'
 interface Props {
     isOpen: boolean
     tercero: Tercero | null
-    initialValues?: { nombre?: string }
+    initialValues?: { nombre?: string; alias?: string; referencia?: string }
     onClose: () => void
-    onSave: (nombre: string) => void
+    onSave: (nombre: string, alias?: string) => void
 }
 
 /**
- * Modal para crear/editar terceros - Simplificado después de 3NF
- * Los campos descripcion y referencia ahora están en tercero_descripciones
+ * Modal para crear/editar terceros
+ * Al crear, permite definir el primer alias (descripción del extracto)
  */
 export const TerceroModal = ({ isOpen, tercero, initialValues, onClose, onSave }: Props) => {
     const [nombre, setNombre] = useState('')
+    const [alias, setAlias] = useState('')
 
     useEffect(() => {
         if (isOpen) {
             if (tercero) {
                 setNombre(tercero.nombre)
+                setAlias('')
             } else {
                 setNombre(initialValues?.nombre || '')
+                setAlias(initialValues?.alias || '')
             }
         }
     }, [isOpen, tercero, initialValues])
 
     const handleSubmit = () => {
         if (nombre.trim()) {
-            onSave(nombre)
+            onSave(nombre, alias.trim() || undefined)
         }
     }
 
@@ -58,11 +61,27 @@ export const TerceroModal = ({ isOpen, tercero, initialValues, onClose, onSave }
         >
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit() }} className="space-y-4">
                 <Input
-                    label="Nombre"
+                    label="Nombre del Tercero"
                     value={nombre}
                     onChange={(e) => setNombre(e.target.value)}
                     autoFocus
+                    placeholder="Nombre real del tercero..."
                 />
+                {!tercero && (
+                    <>
+                        <Input
+                            label="Alias (Descripción del Extracto)"
+                            value={alias}
+                            onChange={(e) => setAlias(e.target.value)}
+                            placeholder="Descripción como aparece en el extracto..."
+                        />
+                        {initialValues?.referencia && (
+                            <div className="text-sm text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+                                <span className="font-medium text-gray-600">Referencia:</span> {initialValues.referencia}
+                            </div>
+                        )}
+                    </>
+                )}
             </form>
         </Modal>
     )

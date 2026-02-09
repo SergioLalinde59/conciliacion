@@ -25,6 +25,7 @@ interface PreviewDataModalProps {
         extractos: number
         movimientos_detalle: number
         movimientos_encabezado: number
+        movimientos_sistema?: number
     }
 }
 
@@ -34,6 +35,7 @@ interface MovimientoExtracto {
     descripcion: string
     referencia: string | null
     valor: number
+    usd?: number | null
 }
 
 interface MovimientoMatch {
@@ -43,12 +45,14 @@ interface MovimientoMatch {
         fecha: string
         descripcion: string
         valor: number
+        usd?: number | null
     }
     mov_sistema: {
         id: number
         fecha: string
         descripcion: string
         valor: number
+        usd?: number | null
     } | null
     estado: string
     score_total: number
@@ -60,12 +64,14 @@ interface MovimientoSistema {
     descripcion: string
     referencia: string | null
     valor: number
+    usd?: number | null
     tercero_nombre: string | null
     centro_costo_nombre: string | null
     concepto_nombre: string | null
     detalles?: Array<{
         id: number
         valor: number
+        usd?: number | null
         tercero_nombre: string | null
         centro_costo_nombre: string | null
         concepto_nombre: string | null
@@ -79,6 +85,7 @@ interface MovimientoSistemaFlat {
     descripcion: string
     referencia: string | null
     valor: number
+    usd?: number | null
     tercero_nombre: string | null
     centro_costo_nombre: string | null
     concepto_nombre: string | null
@@ -115,6 +122,10 @@ const extractYearMonth = (dateStr: string): { year: number; month: number } => {
     return { year: date.getFullYear(), month: date.getMonth() + 1 }
 }
 
+/** Para cuentas USD, usa el campo usd si existe; sino cae a valor */
+const getValor = (mov: { valor: number; usd?: number | null }, esUSD: boolean): number =>
+    esUSD ? (mov.usd ?? mov.valor) : mov.valor
+
 // Aplanar movimientos del sistema con sus detalles
 const flattenMovimientos = (movimientos: MovimientoSistema[]): MovimientoSistemaFlat[] => {
     const result: MovimientoSistemaFlat[] = []
@@ -122,13 +133,26 @@ const flattenMovimientos = (movimientos: MovimientoSistema[]): MovimientoSistema
     for (const mov of movimientos) {
         // Si tiene detalles, agregar cada detalle como fila
         if (mov.detalles && mov.detalles.length > 0) {
+            const numDetalles = mov.detalles.length
             for (const det of mov.detalles) {
+                // Propagar usd del encabezado a detalles que no lo tienen
+                let detUsd = det.usd
+                if (detUsd == null && mov.usd != null) {
+                    if (numDetalles === 1) {
+                        detUsd = mov.usd
+                    } else if (mov.valor !== 0) {
+                        detUsd = mov.usd * (det.valor / mov.valor)
+                    } else {
+                        detUsd = mov.usd / numDetalles
+                    }
+                }
                 result.push({
                     id: det.id,
                     fecha: mov.fecha,
                     descripcion: mov.descripcion,
                     referencia: mov.referencia,
                     valor: det.valor,
+                    usd: detUsd,
                     tercero_nombre: det.tercero_nombre || mov.tercero_nombre,
                     centro_costo_nombre: det.centro_costo_nombre || mov.centro_costo_nombre,
                     concepto_nombre: det.concepto_nombre || mov.concepto_nombre,
@@ -144,6 +168,7 @@ const flattenMovimientos = (movimientos: MovimientoSistema[]): MovimientoSistema
                 descripcion: mov.descripcion,
                 referencia: mov.referencia,
                 valor: mov.valor,
+                usd: mov.usd,
                 tercero_nombre: mov.tercero_nombre,
                 centro_costo_nombre: mov.centro_costo_nombre,
                 concepto_nombre: mov.concepto_nombre,
@@ -157,15 +182,32 @@ const flattenMovimientos = (movimientos: MovimientoSistema[]): MovimientoSistema
 
 // ============ SUB-COMPONENTS ============
 
-const StatCard: React.FC<{ label: string; value: number | string; icon: React.ElementType; color: string }> = ({
-    label, value, icon: Icon, color
-}) => (
-    <div className={`${color} rounded-lg p-4 text-center`}>
-        <Icon size={20} className="mx-auto mb-2 opacity-70" />
-        <div className="text-2xl font-bold">{typeof value === 'number' ? value.toLocaleString() : value}</div>
-        <div className="text-xs uppercase tracking-wider opacity-70 mt-1">{label}</div>
-    </div>
-)
+interface StatsBarProps {
+    count: number
+    ingresos: number
+    egresos: number
+    currency: 'COP' | 'USD'
+}
+
+const StatsBar: React.FC<StatsBarProps> = ({ count, ingresos, egresos, currency }) => {
+    const saldo = ingresos + egresos
+    const items = [
+        { label: 'Registros', value: <span className="font-bold text-gray-900">{count}</span> },
+        { label: 'Ingresos', value: <CurrencyDisplay value={ingresos} currency={currency} className="font-bold text-emerald-600" /> },
+        { label: 'Egresos', value: <CurrencyDisplay value={egresos} currency={currency} className="font-bold text-rose-600" /> },
+        { label: 'Saldo', value: <CurrencyDisplay value={saldo} currency={currency} colorize className="font-bold" /> },
+    ]
+    return (
+        <div className="flex items-center gap-4">
+            {items.map((item) => (
+                <div key={item.label} className="text-center px-3 py-1 bg-gray-50 rounded">
+                    <div className="text-[10px] uppercase tracking-wider text-gray-400">{item.label}</div>
+                    <div className="text-sm">{item.value}</div>
+                </div>
+            ))}
+        </div>
+    )
+}
 
 const EstadoBadge: React.FC<{ estado: string }> = ({ estado }) => {
     const config = ESTADO_CONFIG[estado] || ESTADO_CONFIG['SIN_MATCH']
@@ -180,52 +222,152 @@ const EstadoBadge: React.FC<{ estado: string }> = ({ estado }) => {
 
 // ============ VIEWS ============
 
-const VistaConciliacion: React.FC<{ data: PreviewDataModalProps['previewCuenta'] }> = ({ data }) => {
+const VistaConciliacion: React.FC<{
+    data: PreviewDataModalProps['previewCuenta']
+    esUSD: boolean
+    matches: MovimientoMatch[]
+    loading: boolean
+}> = ({ data, esUSD, matches, loading }) => {
     if (!data) return <div className="text-center text-gray-400 py-8">Sin datos</div>
 
+    const saldo = data.ingresos - data.egresos
+    const currency = esUSD ? 'USD' : 'COP' as const
+
     return (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <StatCard
-                label="Ingresos"
-                value={data.ingresos}
-                icon={TrendingUp}
-                color="bg-emerald-50 text-emerald-700"
-            />
-            <StatCard
-                label="Egresos"
-                value={data.egresos}
-                icon={TrendingDown}
-                color="bg-rose-50 text-rose-700"
-            />
-            <StatCard
-                label="Conciliaciones"
-                value={data.conciliaciones}
-                icon={Database}
-                color="bg-blue-50 text-blue-700"
-            />
-            <StatCard
-                label="Vinculaciones"
-                value={data.vinculaciones}
-                icon={Link2}
-                color="bg-purple-50 text-purple-700"
-            />
-            <StatCard
-                label="Mov. Extracto"
-                value={data.extractos}
-                icon={FileText}
-                color="bg-amber-50 text-amber-700"
-            />
-            <StatCard
-                label="Mov. Sistema"
-                value={data.movimientos_detalle + data.movimientos_encabezado}
-                icon={TrendingUp}
-                color="bg-slate-100 text-slate-700"
-            />
+        <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+                {/* Tarjeta de registros */}
+                <div className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Registros</h4>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <Database size={16} className="text-blue-500" />
+                                <span>Conciliaciones</span>
+                            </div>
+                            <span className="text-lg font-bold text-gray-900">{data.conciliaciones}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <Link2 size={16} className="text-purple-500" />
+                                <span>Vinculaciones</span>
+                            </div>
+                            <span className="text-lg font-bold text-gray-900">{data.vinculaciones}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <FileText size={16} className="text-amber-500" />
+                                <span>Mov. Extracto</span>
+                            </div>
+                            <span className="text-lg font-bold text-gray-900">{data.extractos}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <TrendingUp size={16} className="text-slate-500" />
+                                <span>Mov. Sistema</span>
+                            </div>
+                            <span className="text-lg font-bold text-gray-900">{data.movimientos_sistema ?? (data.movimientos_detalle + data.movimientos_encabezado)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Tarjeta de valores */}
+                <div className="border border-gray-200 rounded-lg p-5">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Valores</h4>
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <TrendingUp size={16} className="text-emerald-500" />
+                                <span>Ingresos</span>
+                            </div>
+                            <CurrencyDisplay value={data.ingresos} currency={currency} className="text-lg font-bold text-emerald-700" />
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <TrendingDown size={16} className="text-rose-500" />
+                                <span>Egresos</span>
+                            </div>
+                            <CurrencyDisplay value={data.egresos} currency={currency} className="text-lg font-bold text-rose-700" />
+                        </div>
+                        <hr className="border-gray-200" />
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                                <span>Saldo</span>
+                            </div>
+                            <CurrencyDisplay value={saldo} currency={currency} colorize className="text-lg font-bold" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Tabla de detalle de vinculaciones */}
+            {loading ? (
+                <LoadingSpinner />
+            ) : matches.length > 0 ? (
+                <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-3 py-2 text-center text-xs font-bold text-gray-600 uppercase">Estado</th>
+                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Score</th>
+                                <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Fecha Ext.</th>
+                                <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Descripción Ext.</th>
+                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor Ext.{esUSD ? ' (USD)' : ''}</th>
+                                <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Fecha Sist.</th>
+                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor Sist.{esUSD ? ' (USD)' : ''}</th>
+                                <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Dif.</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-100">
+                            {matches.map((match, idx) => {
+                                const valExt = getValor(match.mov_extracto, esUSD)
+                                const valSist = match.mov_sistema ? getValor(match.mov_sistema, esUSD) : null
+                                return (
+                                    <tr key={match.id || idx} className="hover:bg-gray-50">
+                                        <td className="px-3 py-2 text-center">
+                                            <EstadoBadge estado={match.estado} />
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-medium">
+                                            {Math.round(match.score_total * 100)}%
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                            {formatDate(match.mov_extracto.fecha)}
+                                        </td>
+                                        <td className="px-3 py-2 max-w-[200px] truncate" title={match.mov_extracto.descripcion}>
+                                            {match.mov_extracto.descripcion}
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                            <CurrencyDisplay value={valExt} currency={currency} colorize />
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap text-gray-500">
+                                            {match.mov_sistema ? formatDate(match.mov_sistema.fecha) : '-'}
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                            {valSist !== null ? (
+                                                <CurrencyDisplay value={valSist} currency={currency} colorize />
+                                            ) : (
+                                                <span className="text-gray-400">-</span>
+                                            )}
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                            {valSist !== null ? (
+                                                <CurrencyDisplay value={valExt - valSist} currency={currency} colorize />
+                                            ) : (
+                                                <span className="text-gray-400">-</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            ) : null}
         </div>
     )
 }
 
-const VistaExtracto: React.FC<{ data: MovimientoExtracto[]; loading: boolean }> = ({ data, loading }) => {
+const VistaExtracto: React.FC<{ data: MovimientoExtracto[]; loading: boolean; esUSD: boolean }> = ({ data, loading, esUSD }) => {
     if (loading) return <LoadingSpinner />
     if (!data.length) return <EmptyState message="No hay movimientos del extracto" />
 
@@ -238,7 +380,7 @@ const VistaExtracto: React.FC<{ data: MovimientoExtracto[]; loading: boolean }> 
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Fecha</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Descripción</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Referencia</th>
-                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">{esUSD ? 'Valor (USD)' : 'Valor'}</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -249,7 +391,7 @@ const VistaExtracto: React.FC<{ data: MovimientoExtracto[]; loading: boolean }> 
                             <td className="px-3 py-2 max-w-xs truncate" title={mov.descripcion}>{mov.descripcion}</td>
                             <td className="px-3 py-2 font-mono text-xs text-gray-500">{mov.referencia || '-'}</td>
                             <td className="px-3 py-2 text-right">
-                                <CurrencyDisplay value={mov.valor} colorize />
+                                <CurrencyDisplay value={getValor(mov, esUSD)} currency={esUSD ? 'USD' : 'COP'} colorize />
                             </td>
                         </tr>
                     ))}
@@ -259,9 +401,12 @@ const VistaExtracto: React.FC<{ data: MovimientoExtracto[]; loading: boolean }> 
     )
 }
 
-const VistaVinculaciones: React.FC<{ data: MovimientoMatch[]; loading: boolean }> = ({ data, loading }) => {
+const VistaVinculaciones: React.FC<{ data: MovimientoMatch[]; loading: boolean; esUSD: boolean }> = ({ data, loading, esUSD }) => {
     if (loading) return <LoadingSpinner />
     if (!data.length) return <EmptyState message="No hay vinculaciones" />
+
+    const currency = esUSD ? 'USD' : 'COP' as const
+    const headerSuffix = esUSD ? ' (USD)' : ''
 
     return (
         <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -272,50 +417,64 @@ const VistaVinculaciones: React.FC<{ data: MovimientoMatch[]; loading: boolean }
                         <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Score</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Fecha Ext.</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Descripción Ext.</th>
-                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor Ext.</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor Ext.{headerSuffix}</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Fecha Sist.</th>
-                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor Sist.</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor Sist.{headerSuffix}</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Dif.</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                    {data.map((match, idx) => (
-                        <tr key={match.id || idx} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 text-center">
-                                <EstadoBadge estado={match.estado} />
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium">
-                                {Math.round(match.score_total)}%
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap">
-                                {formatDate(match.mov_extracto.fecha)}
-                            </td>
-                            <td className="px-3 py-2 max-w-[200px] truncate" title={match.mov_extracto.descripcion}>
-                                {match.mov_extracto.descripcion}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                                <CurrencyDisplay value={match.mov_extracto.valor} colorize />
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap text-gray-500">
-                                {match.mov_sistema ? formatDate(match.mov_sistema.fecha) : '-'}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                                {match.mov_sistema ? (
-                                    <CurrencyDisplay value={match.mov_sistema.valor} colorize />
-                                ) : (
-                                    <span className="text-gray-400">-</span>
-                                )}
-                            </td>
-                        </tr>
-                    ))}
+                    {data.map((match, idx) => {
+                        const valExt = getValor(match.mov_extracto, esUSD)
+                        const valSist = match.mov_sistema ? getValor(match.mov_sistema, esUSD) : null
+                        return (
+                            <tr key={match.id || idx} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 text-center">
+                                    <EstadoBadge estado={match.estado} />
+                                </td>
+                                <td className="px-3 py-2 text-right font-medium">
+                                    {Math.round(match.score_total * 100)}%
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                    {formatDate(match.mov_extracto.fecha)}
+                                </td>
+                                <td className="px-3 py-2 max-w-[200px] truncate" title={match.mov_extracto.descripcion}>
+                                    {match.mov_extracto.descripcion}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                    <CurrencyDisplay value={valExt} currency={currency} colorize />
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap text-gray-500">
+                                    {match.mov_sistema ? formatDate(match.mov_sistema.fecha) : '-'}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                    {valSist !== null ? (
+                                        <CurrencyDisplay value={valSist} currency={currency} colorize />
+                                    ) : (
+                                        <span className="text-gray-400">-</span>
+                                    )}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                    {valSist !== null ? (
+                                        <CurrencyDisplay value={valExt - valSist} currency={currency} colorize />
+                                    ) : (
+                                        <span className="text-gray-400">-</span>
+                                    )}
+                                </td>
+                            </tr>
+                        )
+                    })}
                 </tbody>
             </table>
         </div>
     )
 }
 
-const VistaSistema: React.FC<{ data: MovimientoSistemaFlat[]; loading: boolean }> = ({ data, loading }) => {
+const VistaSistema: React.FC<{ data: MovimientoSistemaFlat[]; loading: boolean; esUSD: boolean }> = ({ data, loading, esUSD }) => {
     if (loading) return <LoadingSpinner />
     if (!data.length) return <EmptyState message="No hay movimientos del sistema" />
+
+    const currency = esUSD ? 'USD' : 'COP' as const
 
     return (
         <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -328,7 +487,7 @@ const VistaSistema: React.FC<{ data: MovimientoSistemaFlat[]; loading: boolean }
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Concepto</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Referencia</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 uppercase">Descripción</th>
-                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">Valor</th>
+                        <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 uppercase">{esUSD ? 'Valor (USD)' : 'Valor'}</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -356,7 +515,7 @@ const VistaSistema: React.FC<{ data: MovimientoSistemaFlat[]; loading: boolean }
                                 {mov.descripcion}
                             </td>
                             <td className="px-3 py-2 text-right">
-                                <CurrencyDisplay value={mov.valor} colorize />
+                                <CurrencyDisplay value={getValor(mov, esUSD)} currency={currency} colorize />
                             </td>
                         </tr>
                     ))}
@@ -394,6 +553,9 @@ export const PreviewDataModal: React.FC<PreviewDataModalProps> = ({
     const [selectedOption, setSelectedOption] = useState<PreviewOption>('conciliacion')
     const [loading, setLoading] = useState(false)
 
+    // Detectar si es cuenta USD
+    const esUSD = cuentaNombre.toUpperCase().includes('USD') || cuentaNombre.toUpperCase().includes('DOLARES')
+
     // Data states
     const [extractoData, setExtractoData] = useState<MovimientoExtracto[]>([])
     const [vinculacionesData, setVinculacionesData] = useState<MovimientoMatch[]>([])
@@ -407,18 +569,30 @@ export const PreviewDataModal: React.FC<PreviewDataModalProps> = ({
 
     // Fetch data when option changes
     useEffect(() => {
-        if (!isOpen || selectedOption === 'conciliacion') return
+        if (!isOpen) return
 
         const fetchData = async () => {
             setLoading(true)
             try {
                 switch (selectedOption) {
+                    case 'conciliacion': {
+                        const res = await fetch(
+                            `${API_BASE_URL}/api/matching/${cuentaId}/${year}/${month}`
+                        )
+                        if (res.ok) {
+                            const data = await res.json()
+                            const all: MovimientoMatch[] = data.matches || []
+                            setVinculacionesData(all.filter(m => m.mov_extracto.fecha >= fechaDesde && m.mov_extracto.fecha <= fechaHasta))
+                        }
+                        break
+                    }
                     case 'extracto': {
                         const res = await fetch(
                             `${API_BASE_URL}/api/conciliaciones/${cuentaId}/${year}/${month}/movimientos-extracto`
                         )
                         if (res.ok) {
-                            setExtractoData(await res.json())
+                            const all: MovimientoExtracto[] = await res.json()
+                            setExtractoData(all.filter(m => m.fecha >= fechaDesde && m.fecha <= fechaHasta))
                         }
                         break
                     }
@@ -428,7 +602,8 @@ export const PreviewDataModal: React.FC<PreviewDataModalProps> = ({
                         )
                         if (res.ok) {
                             const data = await res.json()
-                            setVinculacionesData(data.matches || [])
+                            const all: MovimientoMatch[] = data.matches || []
+                            setVinculacionesData(all.filter(m => m.mov_extracto.fecha >= fechaDesde && m.mov_extracto.fecha <= fechaHasta))
                         }
                         break
                     }
@@ -463,16 +638,59 @@ export const PreviewDataModal: React.FC<PreviewDataModalProps> = ({
         }
     }, [isOpen])
 
+    // Calcular estadísticas para la vista activa
+    const statsBar = useMemo(() => {
+        const currency = esUSD ? 'USD' as const : 'COP' as const
+
+        let count = 0
+        let ingresos = 0
+        let egresos = 0
+
+        switch (selectedOption) {
+            case 'conciliacion': {
+                if (previewCuenta) {
+                    count = previewCuenta.extractos
+                    ingresos = previewCuenta.ingresos
+                    egresos = -Math.abs(previewCuenta.egresos)
+                }
+                break
+            }
+            case 'extracto': {
+                count = extractoData.length
+                const vals = extractoData.map(m => getValor(m, esUSD))
+                ingresos = vals.filter(v => v > 0).reduce((a, b) => a + b, 0)
+                egresos = vals.filter(v => v < 0).reduce((a, b) => a + b, 0)
+                break
+            }
+            case 'vinculaciones': {
+                count = vinculacionesData.length
+                const vals = vinculacionesData.map(m => getValor(m.mov_extracto, esUSD))
+                ingresos = vals.filter(v => v > 0).reduce((a, b) => a + b, 0)
+                egresos = vals.filter(v => v < 0).reduce((a, b) => a + b, 0)
+                break
+            }
+            case 'sistema': {
+                count = sistemaDataFlat.length
+                const vals = sistemaDataFlat.map(m => getValor(m, esUSD))
+                ingresos = vals.filter(v => v > 0).reduce((a, b) => a + b, 0)
+                egresos = vals.filter(v => v < 0).reduce((a, b) => a + b, 0)
+                break
+            }
+        }
+
+        return <StatsBar count={count} ingresos={ingresos} egresos={egresos} currency={currency} />
+    }, [selectedOption, extractoData, vinculacionesData, sistemaDataFlat, esUSD, previewCuenta])
+
     const renderContent = () => {
         switch (selectedOption) {
             case 'conciliacion':
-                return <VistaConciliacion data={previewCuenta} />
+                return <VistaConciliacion data={previewCuenta} esUSD={esUSD} matches={vinculacionesData} loading={loading} />
             case 'extracto':
-                return <VistaExtracto data={extractoData} loading={loading} />
+                return <VistaExtracto data={extractoData} loading={loading} esUSD={esUSD} />
             case 'vinculaciones':
-                return <VistaVinculaciones data={vinculacionesData} loading={loading} />
+                return <VistaVinculaciones data={vinculacionesData} loading={loading} esUSD={esUSD} />
             case 'sistema':
-                return <VistaSistema data={sistemaDataFlat} loading={loading} />
+                return <VistaSistema data={sistemaDataFlat} loading={loading} esUSD={esUSD} />
             default:
                 return null
         }
@@ -490,6 +708,14 @@ export const PreviewDataModal: React.FC<PreviewDataModalProps> = ({
                 </Button>
             }
         >
+            {/* Rango de fechas y estadísticas */}
+            <div className="flex items-center justify-between -mt-2 mb-4">
+                <div className="text-sm text-gray-500">
+                    {formatDate(fechaDesde)} — {formatDate(fechaHasta)}
+                </div>
+                {statsBar}
+            </div>
+
             {/* Option selector */}
             <div className="mb-4">
                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">

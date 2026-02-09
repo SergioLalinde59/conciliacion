@@ -36,6 +36,7 @@ const TABLES_CONFIG = {
         icon: Settings,
         description: 'Parámetros del motor de matching y reglas automáticas',
         tables: [
+            { id: 'tipo_cuenta', label: 'Tipo de Cuentas', description: 'Clasificación y permisos por tipo de cuenta.' },
             { id: 'config_filtros_centro_costos', label: 'Filtros de Exclusión CC', description: 'Filtros aplicados por centro de costo.' },
             { id: 'config_valores_pendientes', label: 'Config. Valores Pendientes', description: 'Configuración para ignorar valores pendientes.' },
             { id: 'reglas_clasificacion', label: 'Reglas de Clasificación', description: 'Reglas para auto-clasificar registros contables.' },
@@ -119,22 +120,16 @@ export const CentroControlDatosPage: React.FC = () => {
 
         toast.promise(
             (async () => {
-                const blob = await adminService.bulkExport(tables)
-                const url = window.URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = `backup_${label.toLowerCase().replace(/ /g, '_')}_${new Date().toISOString().split('T')[0]}.zip`
-                document.body.appendChild(a)
-                a.click()
-                window.URL.revokeObjectURL(url)
+                const result = await adminService.bulkExport(tables, label)
+                cargarSnapshots()
+                return result
             })(),
             {
-                loading: `Generando backup masivo de ${label}...`,
-                success: `Backup de ${label} descargado.`,
-                error: 'Error en el backup masivo'
+                loading: `Generando backup de ${label}...`,
+                success: (r) => `${r.archivo} (${(r.size / 1024).toFixed(0)} KB)`,
+                error: 'Error en el backup'
             }
         )
-        setTimeout(cargarSnapshots, 2000)
     }
 
     const handleFileSelect = (target: string | 'category' | 'full', e: React.ChangeEvent<HTMLInputElement>) => {

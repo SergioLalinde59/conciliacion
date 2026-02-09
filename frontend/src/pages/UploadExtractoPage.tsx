@@ -8,6 +8,7 @@ import { Modal } from '../components/molecules/Modal'
 import { Button } from '../components/atoms/Button'
 import { EditExtractMovementModal } from '../components/organisms/modals/EditExtractMovementModal'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
+import { StatCard } from '../components/molecules/StatCard'
 
 interface ResumenExtracto {
     saldo_anterior: number
@@ -44,27 +45,6 @@ interface ResumenExtracto {
     }
 }
 
-// Subcomponent for Stats - Premium Style
-const StatCard = ({ label, value, secondaryValue, icon, colorClass, bgColorClass, borderColor, isCurrency = true }: any) => {
-    return (
-        <div className={`group bg-white p-3 rounded-xl shadow-sm border border-slate-200/60 flex items-center justify-between transition-all duration-300 hover:shadow-md ${borderColor || ''}`}>
-            <div className="space-y-0.5">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-                <div className={`text-lg font-black tracking-tight ${colorClass} flex items-baseline gap-2`}>
-                    {isCurrency
-                        ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value))
-                        : value}
-                    {secondaryValue !== undefined && secondaryValue !== null && (
-                        <span className="text-xs opacity-40 font-medium text-slate-400">/ {secondaryValue}</span>
-                    )}
-                </div>
-            </div>
-            <div className={`p-2.5 ${bgColorClass} ${colorClass} rounded-xl group-hover:scale-110 transition-transform duration-300 shadow-sm shadow-inner`}>
-                {React.cloneElement(icon as React.ReactElement<any>, { size: 18 })}
-            </div>
-        </div>
-    );
-};
 
 export const UploadExtractoPage: React.FC = () => {
     // --- State: File & Account ---
@@ -438,8 +418,8 @@ export const UploadExtractoPage: React.FC = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <StatCard
                                     label="Total Leídos"
-                                    value={resumen.total_leidos}
-                                    icon={<FileText />}
+                                    value={resumen.total_leidos || 0}
+                                    icon={<FileText className="w-5 h-5" />}
                                     colorClass="text-slate-600"
                                     bgColorClass="bg-slate-50"
                                     borderColor="group-hover:border-slate-300"
@@ -448,7 +428,7 @@ export const UploadExtractoPage: React.FC = () => {
                                 <StatCard
                                     label="Duplicados"
                                     value={resumen.total_duplicados || 0}
-                                    icon={<AlertCircle />}
+                                    icon={<AlertCircle className="w-5 h-5" />}
                                     colorClass="text-orange-600"
                                     bgColorClass="bg-orange-50"
                                     borderColor="group-hover:border-orange-200"
@@ -457,7 +437,7 @@ export const UploadExtractoPage: React.FC = () => {
                                 <StatCard
                                     label="Nuevos a Cargar"
                                     value={resumen.total_nuevos || 0}
-                                    icon={<CheckCircle />}
+                                    icon={<CheckCircle className="w-5 h-5" />}
                                     colorClass="text-emerald-600"
                                     bgColorClass="bg-emerald-50"
                                     borderColor="group-hover:border-emerald-200"
@@ -686,11 +666,18 @@ export const UploadExtractoPage: React.FC = () => {
 
                                 if (totalDiff < 1) {
                                     // Diferencia = 0: Todo cuadra
+                                    const todosduplicados = !hasNewRecords
                                     return (
-                                        <div className="px-4 py-3 bg-emerald-50 border-t border-emerald-200 flex items-center gap-3">
-                                            <CheckCircle className="h-5 w-5 text-emerald-600" />
-                                            <span className="text-emerald-700 font-bold text-sm">
-                                                Los movimientos coinciden con el extracto - Carga habilitada
+                                        <div className={`px-4 py-3 border-t flex items-center gap-3 ${todosduplicados ? 'bg-orange-50 border-orange-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                            {todosduplicados
+                                                ? <AlertCircle className="h-5 w-5 text-orange-600" />
+                                                : <CheckCircle className="h-5 w-5 text-emerald-600" />
+                                            }
+                                            <span className={`font-bold text-sm ${todosduplicados ? 'text-orange-700' : 'text-emerald-700'}`}>
+                                                {todosduplicados
+                                                    ? 'Los movimientos ya se encuentran cargados - Duplicados'
+                                                    : 'Los movimientos coinciden con el extracto - Carga habilitada'
+                                                }
                                             </span>
                                         </div>
                                     )

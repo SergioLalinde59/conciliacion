@@ -185,7 +185,7 @@ export const DashboardPage = () => {
                 centrosCostosExcluidos={centrosCostosExcluidos}
                 setCentrosCostosExcluidos={setCentrosCostosExcluidos}
                 onLimpiar={handleResetFilters}
-                soloConciliables={false}
+                soloConciliables={true}
             />
 
             {/* SECCIÓN 1: RIBBON Y GRÁFICOS (Stats) */}

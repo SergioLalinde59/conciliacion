@@ -1,5 +1,6 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 
 from src.domain.models.cuenta import Cuenta
@@ -13,7 +14,16 @@ class CuentaDTO(BaseModel):
     cuenta: str
     permite_carga: bool = False
     permite_conciliar: bool = False
+    numero_cuenta: Optional[str] = None
     tipo_cuenta_id: Optional[int] = None
+
+    @field_validator('numero_cuenta')
+    @classmethod
+    def validar_numero_cuenta(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v != '':
+            if not re.match(r'^\d{9,16}$', v):
+                raise ValueError('El número de cuenta debe contener solo dígitos (entre 9 y 16)')
+        return v if v != '' else None
 
 
 class ConfiguracionTipoResponse(BaseModel):
@@ -38,6 +48,7 @@ class CuentaResponse(BaseModel):
     nombre: str
     permite_carga: bool = False
     permite_conciliar: bool = False
+    numero_cuenta: Optional[str] = None
     tipo_cuenta_id: Optional[int] = None
     tipo_cuenta_nombre: Optional[str] = None
     # Configuración del tipo de cuenta
@@ -51,6 +62,7 @@ def _cuenta_to_response(c: Cuenta) -> dict:
         "nombre": c.cuenta,
         "permite_carga": c.permite_carga,
         "permite_conciliar": c.permite_conciliar,
+        "numero_cuenta": c.numero_cuenta,
         "tipo_cuenta_id": c.tipo_cuenta_id,
         "tipo_cuenta_nombre": c.tipo_cuenta_nombre,
         "configuracion": {
@@ -89,6 +101,7 @@ def crear_cuenta(dto: CuentaDTO, repo: CuentaRepository = Depends(get_cuenta_rep
         cuenta=dto.cuenta,
         permite_carga=dto.permite_carga,
         permite_conciliar=dto.permite_conciliar,
+        numero_cuenta=dto.numero_cuenta,
         tipo_cuenta_id=dto.tipo_cuenta_id
     )
     try:
@@ -112,6 +125,7 @@ def actualizar_cuenta(id: int, dto: CuentaDTO, repo: CuentaRepository = Depends(
         activa=existente.activa,
         permite_carga=dto.permite_carga,
         permite_conciliar=dto.permite_conciliar,
+        numero_cuenta=dto.numero_cuenta,
         tipo_cuenta_id=dto.tipo_cuenta_id
     )
     try:

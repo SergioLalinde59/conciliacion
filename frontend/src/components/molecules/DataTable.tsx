@@ -138,9 +138,8 @@ export function DataTable<T extends Record<string, any>>({
     const currentSortKey = isControlled ? controlledSortKey : internalSortKey;
     const currentSortDirection = isControlled ? controlledSortDirection : internalSortDirection;
 
-    // Ordenar datos (solo si no es controlado)
+    // Ordenar datos
     const sortedData = useMemo(() => {
-        if (isControlled) return data;
         if (!currentSortKey || !currentSortDirection) return data;
         const column = columns.find(c => c.key === currentSortKey);
         if (!column) return data;
@@ -238,21 +237,21 @@ export function DataTable<T extends Record<string, any>>({
             <table className="w-full text-left border-collapse">
                 <thead>
                     {headerGroups && (
-                        <tr className={`bg-gray-50 border-b border-gray-200 ${stickyHeader ? 'sticky top-0 z-10' : ''}`}>
+                        <tr className="bg-gray-50 border-b border-gray-200">
                             {headerGroups.map((group, index) => (
                                 <th
                                     key={index}
                                     colSpan={group.colSpan}
-                                    className={`py-2 px-4 text-xs font-bold uppercase tracking-wider ${group.className ?? ''}`}
+                                    className={`py-2 px-4 text-xs font-bold ${stickyHeader ? 'sticky top-0 z-10 bg-gray-50' : ''} ${group.className ?? ''}`}
                                 >
                                     {group.title}
                                 </th>
                             ))}
                         </tr>
                     )}
-                    <tr className={`border-b border-gray-200 bg-gray-50 ${stickyHeader ? (headerGroups ? 'sticky top-[25px] z-10' : 'sticky top-0 z-10') : ''}`}>
+                    <tr className="border-b border-gray-200 bg-gray-50">
                         {showActionsColumn && (
-                            <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left w-32 sticky left-0 bg-gray-50 z-20">
+                            <th className={`py-3 px-4 text-xs font-semibold text-gray-500 text-left w-32 bg-gray-50 ${stickyHeader ? (headerGroups ? 'sticky top-[25px] z-20' : 'sticky top-0 z-20') : 'sticky left-0 z-20'}`}>
                                 Acciones
                             </th>
                         )}
@@ -260,7 +259,8 @@ export function DataTable<T extends Record<string, any>>({
                             <th
                                 key={column.key}
                                 className={`
-                                    py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider
+                                    py-3 px-4 text-xs font-semibold text-gray-500 bg-gray-50
+                                    ${stickyHeader ? (headerGroups ? 'sticky top-[25px] z-10' : 'sticky top-0 z-10') : ''}
                                     ${column.width ?? ''}
                                     ${column.align === 'center' ? 'text-center' : column.align === 'right' ? 'text-right' : 'text-left'}
                                     ${column.sortable ? 'cursor-pointer select-none hover:bg-gray-100 transition-colors' : ''}
