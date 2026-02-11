@@ -1,6 +1,0 @@
-{
-  "artifactType": "ARTIFACT_TYPE_IMPLEMENTATION_PLAN",
-  "summary": "Plan de implementación para mejorar la lógica de sugerencias de clasificación. Para movimientos sin referencia, buscar solo en la misma cuenta con descripción similar, y no mezclar movimientos con/sin referencia. Agregar columna de cuenta en historial relacionado.",
-  "updatedAt": "2026-01-16T05:26:11.819573900Z",
-  "version": "1"
-}

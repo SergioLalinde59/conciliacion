@@ -47,33 +47,33 @@ export const StatCard = ({
         : 'Periodo Actual'
 
     return (
-        <div className={`group bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 flex items-center justify-between transition-all duration-300 hover:shadow-md ${borderColor}`}>
-            <div className="space-y-1">
+        <div className={`group bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 flex flex-col transition-all duration-300 hover:shadow-md ${borderColor}`}>
+            <div className="flex items-start justify-between mb-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
                 <div className="flex items-center gap-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
                     {typeof trend === 'number' && (
                         <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${trendColor}`}>
                             {isNearZero ? <Minus size={8} /> : isPositive ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
                             {Math.abs(trend).toFixed(1)}%
                         </div>
                     )}
-                </div>
-                <div className={`text-2xl font-black font-mono tracking-tight ${colorClass} flex items-baseline`}>
-                    {isCurrency && typeof value === 'number'
-                        ? <CurrencyDisplay value={value} colorize={false} currency={currency} />
-                        : <span>{value}</span>
-                    }
-                    {secondaryValue !== null && (
-                        <span className="text-sm opacity-40 font-medium text-slate-400 font-sans ml-2">/ {secondaryValue}</span>
-                    )}
-                </div>
-                <div className="flex items-center gap-1 text-[9px] text-slate-400 font-medium">
-                    <span className="w-1 h-1 rounded-full bg-slate-200" />
-                    {subtitle || defaultSubtitle}
+                    <div className={`p-2.5 ${bgColorClass} ${colorClass} rounded-xl group-hover:scale-110 transition-transform duration-300 shadow-sm shadow-inner`}>
+                        {icon}
+                    </div>
                 </div>
             </div>
-            <div className={`p-3.5 ${bgColorClass} ${colorClass} rounded-2xl group-hover:scale-110 transition-transform duration-300 shadow-sm shadow-inner`}>
-                {icon}
+            <div className={`text-2xl font-black font-mono tracking-tight ${colorClass} flex items-baseline`}>
+                {isCurrency && typeof value === 'number'
+                    ? <CurrencyDisplay value={value} colorize={false} currency={currency} decimals={currency === 'COP' ? 0 : undefined} />
+                    : <span>{value}</span>
+                }
+                {secondaryValue !== null && (
+                    <span className="text-sm opacity-40 font-medium text-slate-400 font-sans ml-2">/ {secondaryValue}</span>
+                )}
+            </div>
+            <div className="flex items-center gap-1 text-[9px] text-slate-400 font-medium mt-1">
+                <span className="w-1 h-1 rounded-full bg-slate-200" />
+                {subtitle || defaultSubtitle}
             </div>
         </div>
     )

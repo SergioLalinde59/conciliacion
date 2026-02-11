@@ -319,8 +319,8 @@ export const ReporteEgresosCentroCostoPage = () => {
                                 getRowKey={(row, idx) => row.id || idx}
                                 rowPy="py-1.5"
                                 stickyHeader
-                                sortKey="egresos"
-                                sortDirection="desc"
+                                defaultSortKey="egresos"
+                                defaultSortDirection="desc"
                                 columns={[
                                     {
                                         header: <TableHeaderCell>Centro de Costo</TableHeaderCell>,

@@ -92,6 +92,71 @@ def get_cuenta_extractor_repository(conn=Depends(get_db_connection)) -> CuentaEx
 def get_tipo_cuenta_repository(conn=Depends(get_db_connection)) -> TipoCuentaRepository:
     return PostgresTipoCuentaRepository(conn)
 
+# Presupuesto Dependencies
+from src.infrastructure.database.postgres_presupuesto_repository import PostgresPresupuestoRepository
+from src.domain.ports.presupuesto_repository import PresupuestoRepository
+
+from src.infrastructure.database.postgres_presupuesto_detalle_repository import PostgresPresupuestoDetalleRepository
+from src.domain.ports.presupuesto_detalle_repository import PresupuestoDetalleRepository
+
+from src.infrastructure.database.postgres_presupuesto_generacion_repository import PostgresPresupuestoGeneracionRepository
+from src.domain.ports.presupuesto_generacion_repository import PresupuestoGeneracionRepository
+
+from src.infrastructure.database.postgres_presupuesto_comparacion_repository import PostgresPresupuestoComparacionRepository
+from src.domain.ports.presupuesto_comparacion_repository import PresupuestoComparacionRepository
+
+def get_presupuesto_repository(conn=Depends(get_db_connection)) -> PresupuestoRepository:
+    return PostgresPresupuestoRepository(conn)
+
+def get_presupuesto_detalle_repository(conn=Depends(get_db_connection)) -> PresupuestoDetalleRepository:
+    return PostgresPresupuestoDetalleRepository(conn)
+
+def get_presupuesto_generacion_repository(conn=Depends(get_db_connection)) -> PresupuestoGeneracionRepository:
+    return PostgresPresupuestoGeneracionRepository(conn)
+
+def get_presupuesto_comparacion_repository(conn=Depends(get_db_connection)) -> PresupuestoComparacionRepository:
+    return PostgresPresupuestoComparacionRepository(conn)
+
+from src.infrastructure.database.postgres_tipo_gasto_repository import PostgresTipoGastoRepository
+from src.domain.ports.tipo_gasto_repository import TipoGastoRepository
+
+from src.infrastructure.database.postgres_indicador_economico_repository import PostgresIndicadorEconomicoRepository
+from src.domain.ports.indicador_economico_repository import IndicadorEconomicoRepository
+
+from src.infrastructure.database.postgres_regla_presupuesto_repository import PostgresReglaPresupuestoRepository
+from src.domain.ports.regla_presupuesto_repository import ReglaPresupuestoRepository
+
+def get_tipo_gasto_repository(conn=Depends(get_db_connection)) -> TipoGastoRepository:
+    return PostgresTipoGastoRepository(conn)
+
+def get_indicador_economico_repository(conn=Depends(get_db_connection)) -> IndicadorEconomicoRepository:
+    return PostgresIndicadorEconomicoRepository(conn)
+
+def get_regla_presupuesto_repository(conn=Depends(get_db_connection)) -> ReglaPresupuestoRepository:
+    return PostgresReglaPresupuestoRepository(conn)
+
+from src.domain.services.presupuesto_generacion_service import PresupuestoGeneracionDomainService
+
+def get_presupuesto_generacion_domain_service() -> PresupuestoGeneracionDomainService:
+    return PresupuestoGeneracionDomainService()
+
+from src.application.services.presupuesto_service import PresupuestoService
+
+def get_presupuesto_service(
+    presupuesto_repo: PresupuestoRepository = Depends(get_presupuesto_repository),
+    detalle_repo: PresupuestoDetalleRepository = Depends(get_presupuesto_detalle_repository),
+    generacion_repo: PresupuestoGeneracionRepository = Depends(get_presupuesto_generacion_repository),
+    comparacion_repo: PresupuestoComparacionRepository = Depends(get_presupuesto_comparacion_repository),
+    tipo_gasto_repo: TipoGastoRepository = Depends(get_tipo_gasto_repository),
+    indicador_repo: IndicadorEconomicoRepository = Depends(get_indicador_economico_repository),
+    regla_repo: ReglaPresupuestoRepository = Depends(get_regla_presupuesto_repository),
+    generacion_service: PresupuestoGeneracionDomainService = Depends(get_presupuesto_generacion_domain_service)
+) -> PresupuestoService:
+    return PresupuestoService(
+        presupuesto_repo, detalle_repo, generacion_repo, comparacion_repo,
+        tipo_gasto_repo, indicador_repo, regla_repo, generacion_service
+    )
+
 # Matching System Dependencies
 from src.infrastructure.database.postgres_movimiento_vinculacion_repository import PostgresMovimientoVinculacionRepository
 from src.domain.ports.movimiento_vinculacion_repository import MovimientoVinculacionRepository
@@ -137,3 +202,23 @@ def get_conciliacion_service(
     date_service: DateRangeService = Depends(get_date_range_service)
 ) -> ConciliacionService:
     return ConciliacionService(mov_repo, vinc_repo, conciliacion_repo, date_service)
+
+# TRM Dependencies
+from src.infrastructure.database.postgres_trm_repository import PostgresTrmRepository
+from src.domain.ports.trm_repository import TrmRepository
+from src.infrastructure.external.datos_gov_trm_provider import DatosGovTrmProvider
+from src.domain.ports.trm_provider import TrmProvider
+from src.application.services.trm_application_service import TrmApplicationService
+
+def get_trm_repository(conn=Depends(get_db_connection)) -> TrmRepository:
+    return PostgresTrmRepository(conn)
+
+def get_trm_provider() -> TrmProvider:
+    return DatosGovTrmProvider()
+
+def get_trm_application_service(
+    trm_repo: TrmRepository = Depends(get_trm_repository),
+    trm_provider: TrmProvider = Depends(get_trm_provider),
+    mov_repo: MovimientoRepository = Depends(get_movimiento_repository)
+) -> TrmApplicationService:
+    return TrmApplicationService(trm_repo, trm_provider, mov_repo)

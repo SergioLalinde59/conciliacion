@@ -73,6 +73,8 @@ export interface DataTableProps<T> {
     onToggleExpand?: (key: string | number) => void;
     /** Clase CSS para filas expandidas */
     expandedRowClassName?: string;
+    /** Función para obtener clase CSS por fila */
+    getRowClassName?: (row: T, index: number) => string;
 }
 
 type SortDirection = 'asc' | 'desc' | null
@@ -123,6 +125,7 @@ export function DataTable<T extends Record<string, any>>({
     expandedKeys,
     onToggleExpand,
     expandedRowClassName = 'bg-gray-50',
+    getRowClassName,
 }: DataTableProps<T>) {
     // Determinar columna y dirección de ordenamiento por defecto
     const initialSortKey = defaultSortKey ?? columns.find(c => c.sortable)?.key ?? null;
@@ -292,7 +295,7 @@ export function DataTable<T extends Record<string, any>>({
                         return (
                             <React.Fragment key={rowKey}>
                                 <tr
-                                    className={`hover:bg-gray-50 transition-colors ${onToggleExpand ? 'cursor-pointer' : ''}`}
+                                    className={`hover:bg-gray-50/80 transition-colors ${onToggleExpand ? 'cursor-pointer' : ''} ${getRowClassName?.(row, index) || ''}`}
                                     onClick={() => onToggleExpand?.(rowKey)}
                                 >
                                     {showActionsColumn && (

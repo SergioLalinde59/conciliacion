@@ -39,3 +39,12 @@ export type {
     ConfigFiltroCentroCostoParams,
     ReglaClasificacionParams,
 } from './filters'
+
+// Tipos de presupuesto
+export type {
+    Presupuesto,
+    PresupuestoDetalle,
+    ComparacionPresupuesto,
+    ResumenMensualPresupuesto,
+    PresupuestoWidget,
+} from './Presupuesto'

@@ -25,6 +25,11 @@ logs/
 .idea/
 .vscode/
 
+# AI tools metadata
+.gemini/
+.agent/
+.claude/
+
 # Cache
 .pytest_cache/
 

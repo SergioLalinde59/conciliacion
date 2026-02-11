@@ -4,6 +4,7 @@ import { DashboardSummaryRibbon } from '../components/organisms/dashboard/Dashbo
 import { DashboardAccountChart } from '../components/organisms/dashboard/DashboardAccountChart'
 import { DashboardAccountStats } from '../components/organisms/dashboard/DashboardAccountStats'
 import { CostCenterDetailsModal } from '../components/organisms/dashboard/CostCenterDetailsModal'
+import { DashboardBudgetWidget } from '../components/organisms/dashboard/DashboardBudgetWidget'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
 import { apiService } from '../services/api'
 import { getAnioYTD } from '../utils/dateUtils'
@@ -187,6 +188,9 @@ export const DashboardPage = () => {
                 onLimpiar={handleResetFilters}
                 soloConciliables={true}
             />
+
+            {/* WIDGET PRESUPUESTO */}
+            <DashboardBudgetWidget />
 
             {/* SECCIÓN 1: RIBBON Y GRÁFICOS (Stats) */}
             <div className="space-y-4">

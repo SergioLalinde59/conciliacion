@@ -24,6 +24,7 @@ import { extractoresService } from './extractores.service'
 import { matchingService } from './matching.service'
 import { dashboardService } from './dashboard.service'
 import { adminService } from './admin.service'
+import { presupuestoService } from './presupuesto.service'
 
 /**
  * Objeto apiService unificado para compatibilidad con código existente
@@ -70,7 +71,10 @@ export const apiService = {
     dashboard: dashboardService,
 
     // Admin
-    admin: adminService
+    admin: adminService,
+
+    // Presupuesto
+    presupuesto: presupuestoService
 }
 
 // Exportar servicios individuales para uso directo
@@ -90,5 +94,6 @@ export {
     extractoresService,
     matchingService,
     dashboardService,
-    adminService
+    adminService,
+    presupuestoService
 }

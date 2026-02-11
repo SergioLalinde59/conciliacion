@@ -611,7 +611,7 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                                                     onChange={(val) => handleDetailChange(index, 'tercero_id', val ? parseInt(val) : null)}
                                                     options={terceros}
                                                     placeholder={index === 0 ? '(Encabezado)' : 'Seleccione...'}
-                                                    disabled={isReadOnly || !config.permite_clasificar || (index === 0 && !!detalle.tercero_id)}
+                                                    disabled={isReadOnly || !config.permite_clasificar}
                                                 />
                                             </td>
                                             <td className="px-3 py-2">
@@ -620,7 +620,7 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                                                     onChange={(val) => handleDetailChange(index, 'centro_costo_id', val ? parseInt(val) : null)}
                                                     options={centrosCostos}
                                                     placeholder="Seleccione..."
-                                                    disabled={isReadOnly || !config.permite_clasificar || (index === 0 && !!detalle.centro_costo_id)}
+                                                    disabled={isReadOnly || !config.permite_clasificar}
                                                 />
                                             </td>
                                             <td className="px-3 py-2">
@@ -629,7 +629,7 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                                                     onChange={(val) => handleDetailChange(index, 'concepto_id', val ? parseInt(val) : null)}
                                                     options={conceptos.filter(c => !detalle.centro_costo_id || Number(c.centro_costo_id) === Number(detalle.centro_costo_id))}
                                                     placeholder="Seleccione..."
-                                                    disabled={isReadOnly || !config.permite_clasificar || (index === 0 && !!detalle.concepto_id)}
+                                                    disabled={isReadOnly || !config.permite_clasificar}
                                                 />
                                             </td>
                                             <td className="px-3 py-2">

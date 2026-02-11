@@ -33,6 +33,14 @@ import { TiposCuentaPage } from './pages/TiposCuentaPage'
 import { ReconciliationResetPage } from './pages/ReconciliationResetPage'
 import { ReclasificarMovimientosPage } from './pages/mantenimiento/ReclasificarMovimientosPage'
 import { ResetDemoPage } from './pages/ResetDemoPage'
+import { PresupuestosPage } from './pages/PresupuestosPage'
+import { PresupuestoDetallePage } from './pages/PresupuestoDetallePage'
+import { PresupuestoVsRealPage } from './pages/PresupuestoVsRealPage'
+import { PresupuestoConfigPage } from './pages/PresupuestoConfigPage'
+import { TiposGastoPage } from './pages/TiposGastoPage'
+import { IndicadoresEconomicosPage } from './pages/IndicadoresEconomicosPage'
+import { ReglasPresupuestoPage } from './pages/ReglasPresupuestoPage'
+import { ClasificacionGastosPreviewPage } from './pages/ClasificacionGastosPreviewPage'
 
 
 function App() {
@@ -55,6 +63,7 @@ function App() {
                     <Route path="/maestros/extractores" element={<CuentaExtractoresPage />} />
                     <Route path="/maestros/matching" element={<MatchingConfigPage />} />
                     <Route path="/maestros/tipos-cuenta" element={<TiposCuentaPage />} />
+                    <Route path="/maestros/presupuesto-config" element={<PresupuestoConfigPage />} />
                     <Route path="/movimientos" element={<MovimientosPage />} />
                     <Route path="/movimientos/cargar" element={<UploadMovimientosPage />} />
                     <Route path="/conciliacion/cargar-extracto" element={<UploadExtractoPage />} />
@@ -73,6 +82,13 @@ function App() {
                     <Route path="/herramientas/mantenimiento/reset-periodo" element={<ReconciliationResetPage />} />
                     <Route path="/herramientas/mantenimiento/reclasificar-movimientos" element={<ReclasificarMovimientosPage />} />
                     <Route path="/admin/reset-demo" element={<ResetDemoPage />} />
+                    <Route path="/presupuestos" element={<PresupuestosPage />} />
+                    <Route path="/presupuestos/:id/detalle" element={<PresupuestoDetallePage />} />
+                    <Route path="/presupuestos/tipos-gasto" element={<TiposGastoPage />} />
+                    <Route path="/presupuestos/indicadores" element={<IndicadoresEconomicosPage />} />
+                    <Route path="/presupuestos/reglas" element={<ReglasPresupuestoPage />} />
+                    <Route path="/presupuestos/clasificacion" element={<ClasificacionGastosPreviewPage />} />
+                    <Route path="/reportes/presupuesto-vs-real" element={<PresupuestoVsRealPage />} />
                     <Route path="/herramientas/mantenimiento/:categoria" element={<CentroControlDatosPage />} />
                     <Route path="/mvtos/*" element={
                         <div className="p-8">

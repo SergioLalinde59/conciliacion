@@ -90,8 +90,8 @@ export function textoColumn<T>(
     sortValue: getValue,
     align: 'left',
     cellClassName: FONT_TEXTO,
-    ...options,
     accessor: (row: T) => <span>{getValue(row)}</span>,
+    ...options,
   };
 }
 

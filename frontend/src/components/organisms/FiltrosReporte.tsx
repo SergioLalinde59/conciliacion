@@ -9,13 +9,13 @@ import type { ConfigFiltroExclusion } from '../../types/filters'
 import { useCatalogo } from '../../hooks/useCatalogo'
 
 interface FiltrosReporteProps {
-    desde: string
-    hasta: string
+    desde?: string
+    hasta?: string
     onDesdeChange?: (val: string) => void
     setDesde?: (val: string) => void
     onHastaChange?: (val: string) => void
     setHasta?: (val: string) => void
-    cuentaId: string
+    cuentaId?: string
     onCuentaChange?: (val: string) => void
     setCuentaId?: (val: string) => void
     terceroId?: string
@@ -84,36 +84,44 @@ export const FiltrosReporte = ({
 
     return (
         <div className="bg-white/90 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-30 px-6 py-3 shadow-sm flex flex-col">
-            {/* Fila 1: Botones de Rango */}
-            <div className="flex items-center gap-3 mb-1.5">
-                <DateRangeButtons
-                    desde={desde}
-                    hasta={hasta}
-                    onDesdeChange={_onDesde}
-                    onHastaChange={_onHasta}
-                />
-            </div>
+            {/* Fila 1: Botones de Rango (solo si hay fechas) */}
+            {desde !== undefined && (
+                <div className="flex items-center gap-3 mb-1.5">
+                    <DateRangeButtons
+                        desde={desde}
+                        hasta={hasta || ''}
+                        onDesdeChange={_onDesde}
+                        onHastaChange={_onHasta}
+                    />
+                </div>
+            )}
 
-            {/* Fila 2: Fechas y Cuenta */}
-            <div className="flex flex-wrap items-end gap-6 mb-3">
-                <div className="flex-1 min-w-[400px]">
-                    <DateRangeInputs
-                        desde={desde} hasta={hasta}
-                        onDesdeChange={_onDesde} onHastaChange={_onHasta}
-                    />
+            {/* Fila 2: Fechas y Cuenta (solo si hay fechas o cuenta) */}
+            {(desde !== undefined || cuentaId !== undefined) && (
+                <div className="flex flex-wrap items-end gap-6 mb-3">
+                    {desde !== undefined && (
+                        <div className="flex-1 min-w-[400px]">
+                            <DateRangeInputs
+                                desde={desde} hasta={hasta || ''}
+                                onDesdeChange={_onDesde} onHastaChange={_onHasta}
+                            />
+                        </div>
+                    )}
+                    {cuentaId !== undefined && (
+                        <div className="w-[300px]">
+                            <label className="block text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">
+                                <span className="flex items-center gap-1.5 underline decoration-slate-200 underline-offset-4">Cuenta</span>
+                            </label>
+                            <SelectorCuenta
+                                value={cuentaId}
+                                onChange={_onCuenta}
+                                soloConciliables={soloConciliables}
+                                showTodas={true}
+                            />
+                        </div>
+                    )}
                 </div>
-                <div className="w-[300px]">
-                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 px-1">
-                        <span className="flex items-center gap-1.5 underline decoration-slate-200 underline-offset-4">Cuenta</span>
-                    </label>
-                    <SelectorCuenta
-                        value={cuentaId}
-                        onChange={_onCuenta}
-                        soloConciliables={soloConciliables}
-                        showTodas={true}
-                    />
-                </div>
-            </div>
+            )}
 
             {/* Fila 3: Clasificación y Reiniciar */}
             <div className="flex items-end gap-6 mb-3">

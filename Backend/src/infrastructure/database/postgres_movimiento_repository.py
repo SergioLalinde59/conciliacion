@@ -808,8 +808,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
              raise ValueError("Tipo de agrupación debe ser 'centro_costo', 'tercero' o 'concepto'")
 
         # Query principal sobre DETALLES
-        # Para cuentas USD, md.Valor=0, se usa m.usd en su lugar
-        val = "CASE WHEN COALESCE(m.usd, 0) != 0 THEN m.usd ELSE md.Valor END"
+        val = "md.Valor"
         query = f"""
             SELECT
                 {group_field} as nombre,
@@ -980,15 +979,12 @@ class PostgresMovimientoRepository(MovimientoRepository):
         cursor = self.conn.cursor()
         
         # Agregamos por Mes usando valores DE LOS DETALLES (md.Valor)
-        # Para cuentas USD, md.Valor=0, se usa m.usd en su lugar
         query = """
             SELECT
                 TO_CHAR(m.Fecha, 'YYYY-MM') as mes,
-                SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd > 0 THEN m.usd ELSE 0 END
-                         ELSE CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END END) as ingresos,
-                SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd < 0 THEN ABS(m.usd) ELSE 0 END
-                         ELSE CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END END) as egresos,
-                SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN m.usd ELSE md.Valor END) as saldo
+                SUM(CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END) as ingresos,
+                SUM(CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END) as egresos,
+                SUM(md.Valor) as saldo
             FROM movimientos_encabezado m
             LEFT JOIN movimientos_detalle md ON m.Id = md.movimiento_id
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
@@ -1032,16 +1028,14 @@ class PostgresMovimientoRepository(MovimientoRepository):
         """
         cursor = self.conn.cursor()
         
-        # Query sobre DETALLES (md) - usa m.usd para cuentas USD
+        # Query sobre DETALLES (md)
         query = """
             SELECT
                 md.TerceroID, t.tercero as TerceroNombre,
                 COUNT(DISTINCT m.Id) as Cantidad,
-                SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd > 0 THEN m.usd ELSE 0 END
-                         ELSE CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END END) as Ingresos,
-                SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd < 0 THEN ABS(m.usd) ELSE 0 END
-                         ELSE CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END END) as Egresos,
-                SUM(ABS(CASE WHEN COALESCE(m.usd, 0) != 0 THEN m.usd ELSE md.Valor END)) as VolumenTotal
+                SUM(CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END) as Ingresos,
+                SUM(CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END) as Egresos,
+                SUM(ABS(md.Valor)) as VolumenTotal
             FROM movimientos_encabezado m
             JOIN movimientos_detalle md ON m.Id = md.movimiento_id
             JOIN terceros t ON m.terceroid = t.terceroid
@@ -1064,8 +1058,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
  
         query += """
             GROUP BY md.TerceroID, t.tercero
-            HAVING SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd > 0 THEN m.usd ELSE 0 END
-                            ELSE CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END END) > 0
+            HAVING SUM(CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END) > 0
             ORDER BY VolumenTotal DESC
             LIMIT 50
         """
@@ -1267,8 +1260,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
         if 'JOIN centro_costos' not in join_clause:
             joins_extra = " LEFT JOIN centro_costos g ON md.centro_costo_id = g.centro_costo_id"
             
-        # Valor efectivo: usar m.usd cuando es cuenta USD (md.Valor es 0 para USD)
-        val = "CASE WHEN COALESCE(m.usd, 0) != 0 THEN m.usd ELSE md.Valor END"
+        val = "md.Valor"
         query = f"""
             SELECT
                 {col_id} as id,
@@ -1323,10 +1315,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                 m.CuentaID, c.cuenta as cuenta_nombre,
                 md.centro_costo_id, g.centro_costo as centro_costo_nombre,
                 COUNT(DISTINCT m.Id) as conteo,
-                SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd > 0 THEN m.usd ELSE 0 END
-                         ELSE CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END END) as ingresos,
-                SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd < 0 THEN ABS(m.usd) ELSE 0 END
-                         ELSE CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END END) as egresos
+                SUM(CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END) as ingresos,
+                SUM(CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END) as egresos
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN movimientos_detalle md ON m.Id = md.movimiento_id
@@ -1408,10 +1398,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                     m.CuentaID,
                     c.cuenta,
                     COUNT(m.Id) as conteo,
-                    SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd > 0 THEN m.usd ELSE 0 END
-                             ELSE CASE WHEN m.Valor > 0 THEN m.Valor ELSE 0 END END) as ingresos,
-                    SUM(CASE WHEN COALESCE(m.usd, 0) != 0 THEN CASE WHEN m.usd < 0 THEN ABS(m.usd) ELSE 0 END
-                             ELSE CASE WHEN m.Valor < 0 THEN ABS(m.Valor) ELSE 0 END END) as egresos
+                    SUM(CASE WHEN m.Valor > 0 THEN m.Valor ELSE 0 END) as ingresos,
+                    SUM(CASE WHEN m.Valor < 0 THEN ABS(m.Valor) ELSE 0 END) as egresos
                 FROM movimientos_encabezado m
                 LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
                 WHERE m.Fecha BETWEEN %s AND %s

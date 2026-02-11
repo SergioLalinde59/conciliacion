@@ -29,7 +29,12 @@ from src.infrastructure.api.routers import (
     admin,
     config_valores_pendientes,
     mantenimiento,
-    tipos_cuenta
+    tipos_cuenta,
+    presupuestos,
+    tipos_gasto,
+    indicadores_economicos,
+    reglas_presupuesto,
+    trm
 )
 
 
@@ -113,6 +118,11 @@ app.include_router(admin.router)
 app.include_router(config_valores_pendientes.router)
 app.include_router(mantenimiento.router)
 app.include_router(tipos_cuenta.router)
+app.include_router(presupuestos.router)
+app.include_router(tipos_gasto.router)
+app.include_router(indicadores_economicos.router)
+app.include_router(reglas_presupuesto.router)
+app.include_router(trm.router)
 
 logger.info("Todos los routers registrados")
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard,
@@ -29,26 +29,99 @@ import {
     AlertCircle,
     Unlink,
     Scale,
-    Database
+    Database,
+    Calculator,
+    Target,
+    Eye
 } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
 
 export const Sidebar = () => {
     const { showDecimals, toggleShowDecimals } = useSettings();
     const location = useLocation();
-    const [expanded, setExpanded] = useState<{ [key: string]: boolean }>({
-        maestros: false,
-        movimientos: true,
-        reportes: false,
-        configuracion: false,
-        mantenimiento: false
-    });
+
+    const sectionMenus: Record<string, { path: string }[]> = useMemo(() => ({
+        movimientos: [
+            { path: '/movimientos/cargar' },
+            { path: '/conciliacion/cargar-extracto' },
+            { path: '/conciliacion/matching' },
+            { path: '/herramientas/mantenimiento/reclasificar-movimientos' },
+            { path: '/movimientos/clasificar' },
+            { path: '/movimientos' },
+            { path: '/movimientos/sugerencias' },
+        ],
+        reportes: [
+            { path: '/reportes/egresos-tercero' },
+            { path: '/reportes/egresos-centro-costo' },
+            { path: '/reportes/ingresos-gastos' },
+            { path: '/reportes/descargar' },
+        ],
+        presupuestos: [
+            { path: '/reportes/presupuesto-vs-real' },
+            { path: '/presupuestos' },
+            { path: '/presupuestos/clasificacion' },
+            { path: '/presupuestos/reglas' },
+            { path: '/presupuestos/indicadores' },
+            { path: '/presupuestos/tipos-gasto' },
+            { path: '/maestros/presupuesto-config' },
+        ],
+        configuracion: [
+            { path: '/maestros/tipos-cuenta' },
+            { path: '/maestros/config-filtros' },
+            { path: '/maestros/config-valores-pendientes' },
+            { path: '/maestros/reglas' },
+            { path: '/maestros/alias' },
+            { path: '/maestros/extractores' },
+            { path: '/maestros/matching' },
+        ],
+        maestros: [
+            { path: '/maestros/cuentas' },
+            { path: '/maestros/monedas' },
+            { path: '/maestros/tipos-movimiento' },
+            { path: '/maestros/terceros' },
+            { path: '/maestros/terceros-descripciones' },
+            { path: '/maestros/centros-costos' },
+            { path: '/maestros/conceptos' },
+        ],
+        mantenimiento: [
+            { path: '/herramientas/mantenimiento/reset-periodo' },
+            { path: '/admin/reset-demo' },
+            { path: '/herramientas/mantenimiento/configuracion' },
+            { path: '/herramientas/mantenimiento/backups' },
+            { path: '/herramientas/mantenimiento/maestros' },
+            { path: '/herramientas/mantenimiento/sistema' },
+        ],
+    }), []);
+
+    const getActiveSection = (pathname: string): string | null => {
+        for (const [section, items] of Object.entries(sectionMenus)) {
+            if (items.some(item => pathname === item.path || pathname.startsWith(item.path + '/'))) {
+                return section;
+            }
+        }
+        return null;
+    };
+
+    const [manualToggle, setManualToggle] = useState<string | null>(null);
+    const activeSection = getActiveSection(location.pathname);
+
+    useEffect(() => {
+        setManualToggle(null);
+    }, [location.pathname]);
+
+    const isSectionExpanded = (sectionKey: string): boolean => {
+        if (manualToggle !== null) {
+            return manualToggle === sectionKey;
+        }
+        return sectionKey === activeSection;
+    };
 
     const toggleSection = (section: string) => {
-        setExpanded(prev => ({
-            ...prev,
-            [section]: !prev[section]
-        }));
+        if (isSectionExpanded(section)) {
+            setManualToggle('__none__');
+        } else {
+            setManualToggle(section);
+        }
     };
 
     const menuMaestros = [
@@ -88,6 +161,16 @@ export const Sidebar = () => {
         { name: 'Descargar Movimientos', path: '/reportes/descargar', icon: Download },
     ];
 
+    const menuPresupuestos = [
+        { name: 'Ppto vs Real', path: '/reportes/presupuesto-vs-real', icon: Target },
+        { name: 'Presupuestos', path: '/presupuestos', icon: Calculator },
+        { name: 'Clasif. Gastos', path: '/presupuestos/clasificacion', icon: Eye },
+        { name: 'Reglas Clasificación', path: '/presupuestos/reglas', icon: Zap },
+        { name: 'Indicadores Económicos', path: '/presupuestos/indicadores', icon: TrendingUp },
+        { name: 'Tipos de Gasto', path: '/presupuestos/tipos-gasto', icon: Tags },
+        { name: 'Config. Ppto', path: '/maestros/presupuesto-config', icon: Settings },
+    ];
+
     const menuMantenimiento = [
         { name: 'Reiniciar Conciliación', path: '/herramientas/mantenimiento/reset-periodo', icon: RefreshCw },
         { name: 'Reset Demo', path: '/admin/reset-demo', icon: Database },
@@ -106,10 +189,10 @@ export const Sidebar = () => {
                 className="w-full flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 hover:text-slate-300 transition-colors"
             >
                 <span>{title}</span>
-                {expanded[sectionKey] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {isSectionExpanded(sectionKey) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
 
-            <div className={`space-y-1 overflow-hidden transition-all duration-300 ${expanded[sectionKey] ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
+            <div className={`space-y-1 overflow-hidden transition-all duration-300 ${isSectionExpanded(sectionKey) ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
                 }`}>
                 {items.map((item) => {
                     const Icon = item.icon;
@@ -157,6 +240,7 @@ export const Sidebar = () => {
 
                 {renderMenuSection('Movimientos', menuMovimientos, 'movimientos')}
                 {renderMenuSection('Reportes', menuReportes, 'reportes')}
+                {renderMenuSection('Presupuestos', menuPresupuestos, 'presupuestos')}
                 {renderMenuSection('Configuración', menuConfiguracion, 'configuracion')}
                 {renderMenuSection('Maestros', menuMaestros, 'maestros')}
                 {renderMenuSection('Mantenimiento', menuMantenimiento, 'mantenimiento')}

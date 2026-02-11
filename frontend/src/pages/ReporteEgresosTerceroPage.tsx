@@ -322,8 +322,8 @@ export const ReporteEgresosTerceroPage = () => {
                                 getRowKey={(row, idx) => row.id || idx}
                                 rowPy="py-1.5"
                                 stickyHeader
-                                sortKey="egresos"
-                                sortDirection="desc"
+                                defaultSortKey="egresos"
+                                defaultSortDirection="desc"
                                 columns={[
                                     {
                                         header: <TableHeaderCell>Nombre</TableHeaderCell>,
