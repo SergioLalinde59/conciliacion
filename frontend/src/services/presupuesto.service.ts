@@ -178,7 +178,12 @@ export const presupuestoService = {
 
     // --- Widget Dashboard ---
 
-    widget: async (): Promise<PresupuestoWidget> => {
-        return fetch(`${API_BASE_URL}/api/dashboard/presupuesto-widget`).then(handleResponse)
+    widget: async (params?: {
+        centros_costos_excluidos?: number[]
+        centro_costo_id?: number; concepto_id?: number; tercero_id?: number
+    }): Promise<PresupuestoWidget> => {
+        const qp = params ? buildQueryParams(params as Record<string, unknown>) : ''
+        const qs = qp.toString() ? `?${qp}` : ''
+        return fetch(`${API_BASE_URL}/api/dashboard/presupuesto-widget${qs}`).then(handleResponse)
     },
 }

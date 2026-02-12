@@ -190,7 +190,12 @@ export const DashboardPage = () => {
             />
 
             {/* WIDGET PRESUPUESTO */}
-            <DashboardBudgetWidget />
+            <DashboardBudgetWidget
+                centrosCostosExcluidos={centrosCostosExcluidos}
+                centroCostoId={centroCostoId}
+                conceptoId={conceptoId}
+                terceroId={terceroId}
+            />
 
             {/* SECCIÓN 1: RIBBON Y GRÁFICOS (Stats) */}
             <div className="space-y-4">

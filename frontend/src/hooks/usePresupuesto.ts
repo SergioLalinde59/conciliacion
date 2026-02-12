@@ -9,7 +9,7 @@ export const PRESUPUESTO_KEYS = {
     comparacionMensual: (id: number, params?: Record<string, unknown>) => [...PRESUPUESTO_KEYS.all, 'comparacion-mensual', id, params] as const,
     resumenCC: (id: number) => [...PRESUPUESTO_KEYS.all, 'resumen-cc', id] as const,
     resumenMensual: (id: number) => [...PRESUPUESTO_KEYS.all, 'resumen-mensual', id] as const,
-    widget: () => [...PRESUPUESTO_KEYS.all, 'widget'] as const,
+    widget: (params?: Record<string, unknown>) => [...PRESUPUESTO_KEYS.all, 'widget', params] as const,
     clasificacionPreview: (anio: number, excluidos?: number[]) => [...PRESUPUESTO_KEYS.all, 'clasificacion-preview', anio, excluidos] as const,
     detalleMensual: (anio: number, ccId: number, conceptoId?: number | null) => [...PRESUPUESTO_KEYS.all, 'detalle-mensual', anio, ccId, conceptoId] as const,
 }
@@ -54,10 +54,13 @@ export const usePresupuestoComparacionMensual = (id: number, params?: {
         enabled: !!id,
     })
 
-export const usePresupuestoWidget = () =>
+export const usePresupuestoWidget = (params?: {
+    centros_costos_excluidos?: number[]
+    centro_costo_id?: number; concepto_id?: number; tercero_id?: number
+}) =>
     useQuery({
-        queryKey: PRESUPUESTO_KEYS.widget(),
-        queryFn: () => presupuestoService.widget(),
+        queryKey: PRESUPUESTO_KEYS.widget(params as Record<string, unknown>),
+        queryFn: () => presupuestoService.widget(params),
         staleTime: 10 * 60 * 1000,
     })
 

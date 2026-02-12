@@ -13,6 +13,7 @@ import { MatchStatusBadge } from '../atoms/MatchStatusBadge'
 import { DataTable, type Column, type HeaderGroup } from '../molecules/DataTable'
 import type { MovimientoMatch } from '../../types/Matching'
 import { MatchEstado } from '../../types/Matching'
+import { useFormatCurrency } from '../atoms/CurrencyDisplay'
 
 interface MatchingTableProps {
     matches: MovimientoMatch[]
@@ -34,24 +35,7 @@ interface MatchingTableProps {
 type SortColumn = 'extracto_fecha' | 'extracto_descripcion' | 'extracto_valor' | 'extracto_usd' | 'extracto_trm' |
     'sistema_fecha' | 'sistema_descripcion' | 'sistema_valor' | 'sistema_usd' | 'sistema_trm' | 'diferencia' | null
 
-// Funciones de formato
-const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('es-CO', {
-        style: 'currency',
-        currency: 'COP',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(value)
-}
-
-const formatDifference = (value: number) => {
-    return new Intl.NumberFormat('es-CO', {
-        style: 'currency',
-        currency: 'COP',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    }).format(value)
-}
+// Funciones de formato (formatCurrency y formatDifference se definen dentro del componente via useFormatCurrency)
 
 const formatUSD = (value: number | null | undefined) => {
     if (value === null || value === undefined) return '-'
@@ -109,6 +93,8 @@ export const MatchingTable = ({
     className = '',
     estadoCounts = {}
 }: MatchingTableProps) => {
+    const formatCurrency = useFormatCurrency()
+    const formatDifference = formatCurrency
     const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
     const [sortKey, setSortKey] = useState<SortColumn>(null)
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | null>('desc')

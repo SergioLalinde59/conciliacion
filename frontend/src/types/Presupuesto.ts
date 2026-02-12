@@ -120,6 +120,15 @@ export interface ResumenMensualPresupuesto {
     semaforo: 'verde' | 'amarillo' | 'rojo'
 }
 
+export interface PresupuestoWidgetMes {
+    mes: number
+    mes_nombre: string
+    presupuestado: number
+    ejecutado: number
+    porcentaje: number
+    semaforo: 'verde' | 'amarillo' | 'rojo'
+}
+
 export interface PresupuestoWidget {
     tiene_presupuesto: boolean
     presupuesto_id?: number
@@ -130,4 +139,5 @@ export interface PresupuestoWidget {
     semaforo: 'verde' | 'amarillo' | 'rojo'
     dias_restantes: number
     mes_nombre: string
+    meses?: PresupuestoWidgetMes[]
 }

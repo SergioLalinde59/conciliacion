@@ -64,7 +64,7 @@ export const StatCard = ({
             </div>
             <div className={`text-2xl font-black font-mono tracking-tight ${colorClass} flex items-baseline`}>
                 {isCurrency && typeof value === 'number'
-                    ? <CurrencyDisplay value={value} colorize={false} currency={currency} decimals={currency === 'COP' ? 0 : undefined} />
+                    ? <CurrencyDisplay value={value} colorize={false} currency={currency} />
                     : <span>{value}</span>
                 }
                 {secondaryValue !== null && (

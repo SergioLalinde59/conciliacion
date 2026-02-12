@@ -101,22 +101,40 @@ export const getNumberColorClass = (value: number): string => {
 }
 
 /**
+ * Hook para formatear moneda respetando el setting de decimales del sidebar.
+ * Usar en componentes donde no se puede usar <CurrencyDisplay> (ej: tooltips de gráficos).
+ *
+ * @example
+ * const fmt = useFormatCurrency()
+ * fmt(150000)        // "$150.000" o "$150.000,00" según setting
+ * fmt(50.25, 'USD')  // "$50.25"
+ */
+import { useSettings } from '../../context/SettingsContext'
+import { getAmountColorClass } from '../../utils/formatters'
+
+export const useFormatCurrency = () => {
+    const { showDecimals } = useSettings()
+    return (value: number, currency: CurrencyType = 'COP', showSymbol: boolean = true) => {
+        const effectiveDecimals = showDecimals ? 2 : 0
+        return formatCurrency(value, currency, showSymbol, effectiveDecimals)
+    }
+}
+
+/**
  * Componente CurrencyDisplay
- * 
+ *
  * @example
  * // COP básico
  * <CurrencyDisplay value={150000} />
- * 
+ *
  * @example
  * // USD con colorización
  * <CurrencyDisplay value={-50.25} currency="USD" />
- * 
+ *
  * @example
  * // Sin símbolo, sin colorización
  * <CurrencyDisplay value={100000} showSymbol={false} colorize={false} />
  */
-import { useSettings } from '../../context/SettingsContext'
-import { getAmountColorClass } from '../../utils/formatters'
 
 export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
     value,

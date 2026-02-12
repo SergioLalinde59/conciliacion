@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { TableHeaderCell } from '../atoms/TableHeaderCell'
 import { fechaColumn, textoColumn, monedaColumn } from '../atoms/columnHelpers'
 import { Modal } from '../molecules/Modal'
+import { useFormatCurrency } from '../atoms/CurrencyDisplay'
 
 interface UnmatchedSystemTableProps {
     records: any[]
@@ -26,8 +27,7 @@ export const UnmatchedSystemTable = ({
 
     if (!records || records.length === 0) return null
 
-    const formatCurrency = (val: number) =>
-        new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val)
+    const formatCurrency = useFormatCurrency()
 
     const { totalIngresos, totalEgresos, totalNeto } = useMemo(() => {
         const ingresos = records.reduce((sum, row) => sum + (Number(row.valor) > 0 ? Number(row.valor) : 0), 0)

@@ -88,6 +88,11 @@ def extraer_movimientos(file_obj: Any) -> List[Dict]:
         except Exception:
             continue
 
+        # IMPORTANTE: Los movimientos de tarjeta de crédito se multiplican por -1
+        # porque en el extracto del banco las compras vienen positivas (débito al saldo)
+        # pero para nosotros representan gastos (negativos)
+        valor = -valor
+
         # Descripcion y moneda
         descripcion = str(descripcion_raw).strip() if descripcion_raw else ''
         moneda = str(moneda_raw).strip().upper() if moneda_raw else 'COP'

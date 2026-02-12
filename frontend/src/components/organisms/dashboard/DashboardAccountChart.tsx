@@ -1,6 +1,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import type { DashboardStats } from '../../../services/dashboard.service'
 import { useMemo } from 'react'
+import { useFormatCurrency } from '../../atoms/CurrencyDisplay'
 
 interface Props {
     data: DashboardStats[]
@@ -32,8 +33,7 @@ export const DashboardAccountChart = ({ data, isLoading }: Props) => {
     if (isLoading) return <div className="h-64 flex items-center justify-center text-gray-400">Cargando gráfico...</div>
     if (chartData.length === 0) return <div className="h-64 flex items-center justify-center text-gray-400">No hay datos para mostrar</div>
 
-    const formatCurrency = (value: number) =>
-        new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP' }).format(value);
+    const formatCurrency = useFormatCurrency()
 
     return (
         <div className="h-80 w-full mt-4">

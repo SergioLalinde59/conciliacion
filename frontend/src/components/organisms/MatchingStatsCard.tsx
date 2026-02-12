@@ -1,6 +1,7 @@
 import { TrendingUp, TrendingDown, CheckCircle, AlertCircle, XCircle, EyeOff } from 'lucide-react'
 import { Card } from '../atoms/Card'
 import type { MatchingEstadisticas, DetailedStat } from '../../types/Matching'
+import { useFormatCurrency } from '../atoms/CurrencyDisplay'
 
 interface MatchingStatsCardProps {
     estadisticas: MatchingEstadisticas
@@ -20,15 +21,7 @@ export const MatchingStatsCard = ({
     unmatchedSystemRecordsCount = 0
 }: MatchingStatsCardProps) => {
 
-    // Helper para formateo de moneda
-    const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('es-CO', {
-            style: 'currency',
-            currency: 'COP',
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0
-        }).format(value)
-    }
+    const formatCurrency = useFormatCurrency()
 
     // Totales Generales
     const totalVinculados = estadisticas.ok.cantidad + estadisticas.probables.cantidad
