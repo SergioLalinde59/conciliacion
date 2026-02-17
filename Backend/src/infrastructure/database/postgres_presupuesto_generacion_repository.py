@@ -24,9 +24,15 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
                 md.ConceptoID as concepto_id,
                 md.TerceroID as tercero_id,
                 EXTRACT(MONTH FROM m.Fecha)::INT as mes,
-                SUM(ABS(md.Valor)) as monto
+                SUM(ABS(md.Valor)) as monto,
+                cc.centro_costo as centro_costo_nombre,
+                con.concepto as concepto_nombre,
+                t.tercero as tercero_nombre
             FROM movimientos_encabezado m
             JOIN movimientos_detalle md ON m.Id = md.movimiento_id
+            LEFT JOIN centro_costos cc ON md.centro_costo_id = cc.centro_costo_id
+            LEFT JOIN conceptos con ON md.ConceptoID = con.conceptoid
+            LEFT JOIN terceros t ON md.TerceroID = t.terceroid
             WHERE m.Fecha >= %s AND m.Fecha <= %s
               AND md.centro_costo_id IS NOT NULL
               AND md.Valor < 0
@@ -40,7 +46,8 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
 
         query += """
             GROUP BY md.centro_costo_id, md.ConceptoID, md.TerceroID,
-                     EXTRACT(MONTH FROM m.Fecha)
+                     EXTRACT(MONTH FROM m.Fecha),
+                     cc.centro_costo, con.concepto, t.tercero
             ORDER BY md.centro_costo_id, md.ConceptoID, mes
         """
 
@@ -57,7 +64,10 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
                 tercero_id=row[2],
                 mes=row[3],
                 monto_presupuestado=Decimal(str(row[4])).quantize(Decimal('0.01')),
-                tipo='variable'
+                tipo='variable',
+                centro_costo_nombre=row[5],
+                concepto_nombre=row[6],
+                tercero_nombre=row[7],
             )
             detalles.append(detalle)
 
@@ -72,6 +82,7 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
         fecha_inicio = f"{anio_fuente}-01-01"
         fecha_fin = f"{anio_fuente}-12-31"
 
+        # 1. Combinaciones CC/Concepto con movimientos en el año fuente
         query = """
             SELECT
                 md.centro_costo_id,
@@ -98,14 +109,12 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
         query += """
             GROUP BY md.centro_costo_id, md.ConceptoID,
                      cc.centro_costo, con.concepto
-            ORDER BY cc.centro_costo, con.concepto
         """
 
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
-        cursor.close()
 
-        return [
+        combos = [
             {
                 "centro_costo_id": row[0],
                 "concepto_id": row[1],
@@ -116,6 +125,46 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
             }
             for row in rows
         ]
+
+        # 2. Reglas CC+Concepto sin movimientos en el año fuente (huérfanas)
+        existing_pairs = {(c["centro_costo_id"], c["concepto_id"]) for c in combos}
+
+        orphan_query = """
+            SELECT
+                rp.centro_costo_id,
+                rp.concepto_id,
+                cc.centro_costo as centro_costo_nombre,
+                con.concepto as concepto_nombre
+            FROM reglas_presupuesto rp
+            JOIN centro_costos cc ON rp.centro_costo_id = cc.centro_costo_id
+            JOIN conceptos con ON rp.concepto_id = con.conceptoid
+            WHERE rp.centro_costo_id IS NOT NULL
+              AND rp.concepto_id IS NOT NULL
+        """
+        orphan_params: list = []
+
+        if centros_costos_excluidos:
+            placeholders = ','.join(['%s'] * len(centros_costos_excluidos))
+            orphan_query += f" AND rp.centro_costo_id NOT IN ({placeholders})"
+            orphan_params.extend(centros_costos_excluidos)
+
+        cursor.execute(orphan_query, tuple(orphan_params))
+        orphan_rows = cursor.fetchall()
+        cursor.close()
+
+        for row in orphan_rows:
+            if (row[0], row[1]) not in existing_pairs:
+                combos.append({
+                    "centro_costo_id": row[0],
+                    "concepto_id": row[1],
+                    "centro_costo_nombre": row[2],
+                    "concepto_nombre": row[3],
+                    "meses_activos": 0,
+                    "monto_total": 0.0
+                })
+
+        combos.sort(key=lambda c: (c["centro_costo_nombre"], c["concepto_nombre"]))
+        return combos
 
     def obtener_desglose_mensual(
         self,

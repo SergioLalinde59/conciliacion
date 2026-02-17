@@ -7,13 +7,14 @@ import json
 import pdfplumber
 
 from src.application.services.procesador_archivos_service import ProcesadorArchivosService
-from src.infrastructure.api.dependencies import get_movimiento_repository, get_moneda_repository, get_tercero_repository, get_conciliacion_repository, get_movimiento_extracto_repository, get_cuenta_extractor_repository
+from src.infrastructure.api.dependencies import get_movimiento_repository, get_moneda_repository, get_tercero_repository, get_conciliacion_repository, get_movimiento_extracto_repository, get_cuenta_extractor_repository, get_trm_application_service
 from src.domain.ports.movimiento_repository import MovimientoRepository
 from src.domain.ports.moneda_repository import MonedaRepository
 from src.domain.ports.tercero_repository import TerceroRepository
 from src.domain.ports.conciliacion_repository import ConciliacionRepository
 from src.domain.ports.movimiento_extracto_repository import MovimientoExtractoRepository
 from src.domain.ports.cuenta_extractor_repository import CuentaExtractorRepository
+from src.application.services.trm_application_service import TrmApplicationService
 
 router = APIRouter(prefix="/api/archivos", tags=["archivos"])
 
@@ -23,9 +24,10 @@ def get_procesador_service(
     tercero_repo: TerceroRepository = Depends(get_tercero_repository),
     conciliacion_repo: ConciliacionRepository = Depends(get_conciliacion_repository),
     movimiento_extracto_repo: MovimientoExtractoRepository = Depends(get_movimiento_extracto_repository),
-    cuenta_extractor_repo: CuentaExtractorRepository = Depends(get_cuenta_extractor_repository)
+    cuenta_extractor_repo: CuentaExtractorRepository = Depends(get_cuenta_extractor_repository),
+    trm_service: TrmApplicationService = Depends(get_trm_application_service)
 ) -> ProcesadorArchivosService:
-    return ProcesadorArchivosService(mov_repo, moneda_repo, tercero_repo, conciliacion_repo, movimiento_extracto_repo, cuenta_extractor_repo)
+    return ProcesadorArchivosService(mov_repo, moneda_repo, tercero_repo, conciliacion_repo, movimiento_extracto_repo, cuenta_extractor_repo, trm_service)
 
 @router.post("/cargar")
 async def cargar_archivo(

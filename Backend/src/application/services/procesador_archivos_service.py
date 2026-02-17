@@ -7,6 +7,7 @@ from src.domain.ports.movimiento_extracto_repository import MovimientoExtractoRe
 from src.domain.ports.cuenta_extractor_repository import CuentaExtractorRepository
 from src.application.services.cargar_movimientos_service import CargarMovimientosService
 from src.application.services.cargar_extracto_bancario_service import CargarExtractoBancarioService
+from src.application.services.trm_application_service import TrmApplicationService
 
 class ProcesadorArchivosService:
     """
@@ -14,19 +15,21 @@ class ProcesadorArchivosService:
     Este servicio ahora actúa como fachada para mantener compatibilidad,
     delegando tareas a CargarMovimientosService y CargarExtractoBancarioService.
     """
-    def __init__(self, 
-                 movimiento_repo: MovimientoRepository, 
+    def __init__(self,
+                 movimiento_repo: MovimientoRepository,
                  moneda_repo: MonedaRepository,
                  tercero_repo: TerceroRepository, # Se mantiene por firma, aunque no se use directo
                  conciliacion_repo: Optional[ConciliacionRepository] = None,
                  movimiento_extracto_repo: Optional[MovimientoExtractoRepository] = None,
-                 cuenta_extractor_repo: Optional[CuentaExtractorRepository] = None):
-        
+                 cuenta_extractor_repo: Optional[CuentaExtractorRepository] = None,
+                 trm_service: Optional[TrmApplicationService] = None):
+
         # Instanciar los nuevos servicios delegados
         self.cargar_movimientos_service = CargarMovimientosService(
             movimiento_repo=movimiento_repo,
             moneda_repo=moneda_repo,
-            cuenta_extractor_repo=cuenta_extractor_repo
+            cuenta_extractor_repo=cuenta_extractor_repo,
+            trm_service=trm_service
         )
         
         self.cargar_extracto_service = CargarExtractoBancarioService(

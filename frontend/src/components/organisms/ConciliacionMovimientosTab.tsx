@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { MessageModal } from '../molecules/MessageModal';
 import { DataTable } from '../molecules/DataTable';
 import { conciliacionService } from '../../services/conciliacionService';
 import { movimientosService } from '../../services/movements.service';
@@ -53,6 +54,7 @@ export const ConciliacionMovimientosTab: React.FC<Props> = ({ cuentaId, year, mo
     const [matches, setMatches] = useState<any[]>([]); // Using any for simplicity as matching types are extensive
     const [selectedSystemIds, setSelectedSystemIds] = useState<Set<number>>(new Set());
     const [deleting, setDeleting] = useState(false);
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error'} | null>(null);
 
     useEffect(() => {
         loadData();
@@ -115,7 +117,7 @@ export const ConciliacionMovimientosTab: React.FC<Props> = ({ cuentaId, year, mo
             await loadData(); // Reload data to refresh stats and lists
         } catch (error) {
             console.error("Error deleting movements:", error);
-            alert("Error al eliminar los movimientos. Por favor intenta de nuevo.");
+            setMsgModal({message: "Error al eliminar los movimientos. Por favor intenta de nuevo.", type: 'error'});
         } finally {
             setDeleting(false);
         }
@@ -415,6 +417,7 @@ export const ConciliacionMovimientosTab: React.FC<Props> = ({ cuentaId, year, mo
                     </div>
                 </div>
             </div>
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     );
 };

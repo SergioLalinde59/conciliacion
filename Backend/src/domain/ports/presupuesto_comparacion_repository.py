@@ -14,7 +14,8 @@ class PresupuestoComparacionRepository(ABC):
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
-        amarillo_hasta: float = 15.0
+        amarillo_hasta: float = 15.0,
+        excluir_estacionales: bool = False
     ) -> List[dict]:
         """Comparación presupuesto vs real agrupada por centro de costo"""
         pass
@@ -29,7 +30,8 @@ class PresupuestoComparacionRepository(ABC):
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
-        amarillo_hasta: float = 15.0
+        amarillo_hasta: float = 15.0,
+        excluir_estacionales: bool = False
     ) -> List[dict]:
         """Comparación presupuesto vs real agrupada por concepto dentro de un CC"""
         pass
@@ -45,7 +47,8 @@ class PresupuestoComparacionRepository(ABC):
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
-        amarillo_hasta: float = 15.0
+        amarillo_hasta: float = 15.0,
+        excluir_estacionales: bool = False
     ) -> List[dict]:
         """Comparación presupuesto vs real agrupada por tercero"""
         pass
@@ -60,7 +63,8 @@ class PresupuestoComparacionRepository(ABC):
         concepto_id: Optional[int] = None,
         tercero_id: Optional[int] = None,
         verde_hasta: float = 5.0,
-        amarillo_hasta: float = 15.0
+        amarillo_hasta: float = 15.0,
+        excluir_estacionales: bool = False
     ) -> List[dict]:
         """Resumen mensual: presupuestado vs ejecutado por mes, con filtros opcionales"""
         pass

@@ -22,7 +22,7 @@ export interface PaginatedResponse<T> {
 export const handleResponse = async (response: Response) => {
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || `Error en la petición: ${response.status}`)
+        throw new Error(errorData.detail || errorData.message || `Error en la petición: ${response.status}`)
     }
     return response.json()
 }

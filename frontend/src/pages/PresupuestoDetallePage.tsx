@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Plus, SlidersHorizontal, Save, X, Eye, Search, LayoutList, History, TrendingUp, TrendingDown, Wallet, Loader2 } from 'lucide-react'
+import { ArrowLeft, Plus, SlidersHorizontal, Save, X, Eye, Search, LayoutList, TrendingUp, TrendingDown, Wallet, Loader2, ChevronDown } from 'lucide-react'
 import { DataTableSortIcon } from '../components/atoms/DataTableSortIcon'
 import { presupuestoService } from '../services/presupuesto.service'
 import { centrosCostosService, conceptosService } from '../services/catalogs.service'
@@ -12,7 +12,10 @@ import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
 import { SemaforoBadge } from '../components/atoms/SemaforoBadge'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
 import { StatCard } from '../components/molecules/StatCard'
+import { BudgetComparisonBars } from '../components/organisms/BudgetComparisonBars'
 import { useConfiguracionExclusion } from '../hooks/useReportes'
+import { usePresupuestoVersiones } from '../hooks/usePresupuesto'
+import { formatCompact } from '../utils/formatters'
 import type { Presupuesto, ComparacionPresupuesto, ResumenMensualPresupuesto } from '../types/Presupuesto'
 import type { CentroCosto, Concepto } from '../types'
 
@@ -76,8 +79,7 @@ export const PresupuestoDetallePage = () => {
     const [mostrarIngresos, setMostrarIngresos] = useState(true)
     const [mostrarEgresos, setMostrarEgresos] = useState(true)
     const [busqueda, setBusqueda] = useState('')
-    const [ocultarNoMateriales, setOcultarNoMateriales] = useState(true)
-    const ccSort = useSort('presupuestado')
+    const ccSort = useSort('ejecutado')
 
     // CC Exclusion
     const { data: configExclusion = [], isFetched: exclusionConfigLoaded } = useConfiguracionExclusion()
@@ -118,6 +120,20 @@ export const PresupuestoDetallePage = () => {
     const [newTipo, setNewTipo] = useState('variable')
 
     const esBorrador = presupuesto?.estado === 'borrador'
+    const { data: versiones = [] } = usePresupuestoVersiones(presupuestoId)
+    const [versionDropdownOpen, setVersionDropdownOpen] = useState(false)
+    const versionDropdownRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (!versionDropdownOpen) return
+        const handler = (e: MouseEvent) => {
+            if (versionDropdownRef.current && !versionDropdownRef.current.contains(e.target as Node)) {
+                setVersionDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [versionDropdownOpen])
 
     // Init default YTD cuando se carga el presupuesto
     useEffect(() => {
@@ -163,47 +179,13 @@ export const PresupuestoDetallePage = () => {
         cargarComparacion()
     }, [cargarComparacion])
 
-    // --- Separar materiales / no-materiales ---
-    const { materiales, noMateriales } = useMemo(() => {
-        const numMeses = mesHasta - mesDesde + 1
-        const umbralMes = presupuesto?.umbral_minimo_mensual ?? 0
-        const umbralAnual = presupuesto?.umbral_minimo_anual ?? 0
-
-        let data = ccData
-        if (busqueda) data = data.filter(cc => cc.nombre.toLowerCase().includes(busqueda.toLowerCase()))
-
-        return data.reduce<{ materiales: ComparacionPresupuesto[]; noMateriales: ComparacionPresupuesto[] }>((acc, row) => {
-            const promMes = numMeses > 0 ? row.presupuestado / numMeses : 0
-            const noMaterial = (umbralMes > 0 && promMes < umbralMes)
-                || (umbralAnual > 0 && promMes * 12 < umbralAnual)
-            if (noMaterial) acc.noMateriales.push(row)
-            else acc.materiales.push(row)
-            return acc
-        }, { materiales: [], noMateriales: [] })
-    }, [ccData, busqueda, mesDesde, mesHasta, presupuesto])
-
-    const noMaterialSet = useMemo(() => new Set(noMateriales.map(r => r.id)), [noMateriales])
-
-    // --- Sorted display list ---
-    const displayCCs = useMemo(() => {
-        const data = ocultarNoMateriales ? materiales : [...materiales, ...noMateriales]
-        return [...data].sort((a, b) => {
-            const factor = ccSort.sortDir === 'asc' ? 1 : -1
-            if (ccSort.sortKey === 'nombre') return factor * a.nombre.localeCompare(b.nombre)
-            const aVal = (a as any)[ccSort.sortKey] ?? 0
-            const bVal = (b as any)[ccSort.sortKey] ?? 0
-            return factor * (aVal - bVal)
-        })
-    }, [materiales, noMateriales, ocultarNoMateriales, ccSort.sortKey, ccSort.sortDir])
-
-    // --- Totals (solo materiales) ---
+    // --- Totals (todos los CCs) ---
     const totales = useMemo(() => {
-        return materiales.reduce((acc, d) => ({
-            ejecutado_anterior: acc.ejecutado_anterior + d.ejecutado_anterior,
+        return ccData.reduce((acc, d) => ({
             presupuestado: acc.presupuestado + d.presupuestado,
             ejecutado: acc.ejecutado + d.ejecutado,
-        }), { ejecutado_anterior: 0, presupuestado: 0, ejecutado: 0 })
-    }, [materiales])
+        }), { presupuestado: 0, ejecutado: 0 })
+    }, [ccData])
 
     const variacionTotal = totales.presupuestado === 0
         ? (totales.ejecutado === 0 ? 0 : 100)
@@ -314,7 +296,6 @@ export const PresupuestoDetallePage = () => {
     // CSV from CC comparison
     const csvColumns = [
         { key: 'nombre' as const, label: 'Centro Costo' },
-        { key: 'ejecutado_anterior' as const, label: 'Ejec. Anterior' },
         { key: 'presupuestado' as const, label: 'Presupuestado' },
         { key: 'ejecutado' as const, label: 'Ejecutado' },
         { key: 'variacion_pct' as const, label: 'Var %' },
@@ -344,6 +325,55 @@ export const PresupuestoDetallePage = () => {
                                 {presupuesto?.nombre || 'Detalle Presupuesto'}
                             </h1>
                             {presupuesto && estadoBadge(presupuesto.estado)}
+                            {presupuesto && presupuesto.version_actual > 1 && (
+                                <div className="relative" ref={versionDropdownRef}>
+                                    <button
+                                        onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold hover:bg-purple-100 transition-colors"
+                                    >
+                                        v{presupuesto.version_actual}
+                                        <ChevronDown size={12} className={`transition-transform ${versionDropdownOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {versionDropdownOpen && versiones.length > 0 && (
+                                        <div className="absolute top-full left-0 mt-1 w-72 bg-white rounded-xl shadow-lg border border-gray-200 z-50 py-1">
+                                            <div className="px-3 py-2 border-b border-gray-100">
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Historial de versiones</p>
+                                            </div>
+                                            {versiones.map(v => (
+                                                <div
+                                                    key={v.version}
+                                                    className={`px-3 py-2 text-xs ${v.version === presupuesto.version_actual ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="font-semibold text-gray-700">
+                                                            v{v.version}
+                                                            {v.version === presupuesto.version_actual && (
+                                                                <span className="ml-1.5 text-[10px] text-purple-600 font-bold">ACTUAL</span>
+                                                            )}
+                                                        </span>
+                                                        <span className="text-gray-400 text-[10px]">
+                                                            {v.created_at ? new Date(v.created_at).toLocaleDateString('es-CO') : ''}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-3 mt-0.5 text-gray-500">
+                                                        <span>{v.lineas_generadas} líneas</span>
+                                                        <span>{formatCompact(v.total_presupuestado)}</span>
+                                                        {v.notas && <span className="truncate">{v.notas}</span>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {versiones.length > 1 && (
+                                                <button
+                                                    onClick={() => { setVersionDropdownOpen(false); navigate(`/presupuestos/${presupuestoId}/comparar-versiones`) }}
+                                                    className="w-full px-3 py-2 text-xs font-semibold text-purple-600 hover:bg-purple-50 border-t border-gray-100 text-left transition-colors"
+                                                >
+                                                    Comparar versiones
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         <p className="text-gray-500 text-sm mt-1">
                             Ano {presupuesto?.anio} — {ccData.length} centros de costo
@@ -423,27 +453,16 @@ export const PresupuestoDetallePage = () => {
             {/* Contenido */}
             <div className="flex-1 min-h-0 p-4 space-y-4 overflow-auto">
                 {/* StatCards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard
                         label="Centros de Costo"
-                        value={materiales.length}
-                        secondaryValue={ccData.length}
+                        value={ccData.length}
                         icon={<LayoutList className="w-5 h-5" />}
                         colorClass="text-slate-600"
                         bgColorClass="bg-slate-50"
                         borderColor="group-hover:border-slate-300"
                         isCurrency={false}
-                        subtitle="Visible / Total"
-                    />
-                    <StatCard
-                        label="Ejec. Año Anterior"
-                        value={totales.ejecutado_anterior}
-                        icon={<History className="w-5 h-5" />}
-                        colorClass="text-slate-500"
-                        bgColorClass="bg-slate-50"
-                        borderColor="group-hover:border-slate-300"
-                        isEgreso
-                        subtitle={`Gastos ${(presupuesto?.anio || currentYear) - 1}`}
+                        subtitle="Total"
                     />
                     <StatCard
                         label="Total Presupuestado"
@@ -477,111 +496,17 @@ export const PresupuestoDetallePage = () => {
                     />
                 </div>
 
-                {/* Tabla CC principal */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-slate-50 rounded-lg text-slate-500"><Search className="w-4 h-4" /></div>
-                            <input
-                                type="text"
-                                placeholder="Buscar centro de costo..."
-                                className="w-48 pl-1 py-1 text-xs border-none outline-none"
-                                value={busqueda}
-                                onChange={e => setBusqueda(e.target.value)}
-                            />
-                        </div>
-                        {noMateriales.length > 0 && (
-                            <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={ocultarNoMateriales}
-                                    onChange={e => setOcultarNoMateriales(e.target.checked)}
-                                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                />
-                                Ocultar mínimos ({noMateriales.length})
-                            </label>
-                        )}
-                    </div>
-                    <div className="flex-1 overflow-auto">
-                        <table className="w-full text-xs">
-                            <thead className="bg-gray-50 sticky top-0 z-10">
-                                <tr>
-                                    <SortHeader label="Centro de Costo" sortKey="nombre" currentKey={ccSort.sortKey} currentDir={ccSort.sortDir} onSort={ccSort.toggle} />
-                                    <SortHeader label="Ejec. Ant." sortKey="ejecutado_anterior" currentKey={ccSort.sortKey} currentDir={ccSort.sortDir} onSort={ccSort.toggle} align="right" />
-                                    <SortHeader label="Presupuestado" sortKey="presupuestado" currentKey={ccSort.sortKey} currentDir={ccSort.sortDir} onSort={ccSort.toggle} align="right" />
-                                    <SortHeader label="Ejecutado" sortKey="ejecutado" currentKey={ccSort.sortKey} currentDir={ccSort.sortDir} onSort={ccSort.toggle} align="right" />
-                                    <SortHeader label="Estado" sortKey="variacion_pct" currentKey={ccSort.sortKey} currentDir={ccSort.sortDir} onSort={ccSort.toggle} align="center" />
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {loading ? (
-                                    <tr><td colSpan={5} className="text-center py-8 text-gray-400">Cargando...</td></tr>
-                                ) : displayCCs.length === 0 ? (
-                                    <tr><td colSpan={5} className="text-center py-8 text-gray-400">Sin datos</td></tr>
-                                ) : displayCCs.map((cc) => {
-                                    const esNoMaterial = noMaterialSet.has(cc.id)
-                                    return (
-                                    <tr
-                                        key={cc.id}
-                                        className={`border-b border-gray-50 hover:bg-blue-50/30 cursor-pointer transition-colors ${esNoMaterial ? 'opacity-40' : ''}`}
-                                        onClick={() => handleCCClick(cc)}
-                                    >
-                                        <td className="px-3 py-2">
-                                            <div className="flex items-center gap-2 group">
-                                                <div className="w-5 h-5 rounded bg-indigo-50 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                                                    <Eye className="w-3 h-3" />
-                                                </div>
-                                                <span className={`font-bold uppercase tracking-tight ${esNoMaterial ? 'text-gray-400' : 'text-slate-700'}`}>{cc.id} - {cc.nombre}</span>
-                                            </div>
-                                        </td>
-                                        <td className={`px-3 py-2 text-right font-mono ${esNoMaterial ? 'text-gray-400' : 'text-slate-500'}`}>
-                                            <CurrencyDisplay value={cc.ejecutado_anterior} colorize={false} decimals={0} />
-                                        </td>
-                                        <td className={`px-3 py-2 text-right font-mono ${esNoMaterial ? 'text-gray-400' : 'text-blue-600'}`}>
-                                            <CurrencyDisplay value={cc.presupuestado} colorize={false} decimals={0} />
-                                        </td>
-                                        <td className={`px-3 py-2 text-right font-mono ${esNoMaterial ? 'text-gray-400' : 'text-rose-600'}`}>
-                                            <CurrencyDisplay value={cc.ejecutado} colorize={false} decimals={0} />
-                                        </td>
-                                        <td className="px-3 py-2 text-center">
-                                            {esNoMaterial ? (
-                                                <span className="text-[10px] text-gray-300">-</span>
-                                            ) : (
-                                                <SemaforoBadge valor={cc.semaforo} variacionPct={cc.variacion_pct} size="sm" />
-                                            )}
-                                        </td>
-                                    </tr>
-                                    )
-                                })}
-                            </tbody>
-                            {displayCCs.length > 0 && (
-                                <tfoot>
-                                    <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                                        <td className="px-3 py-2 uppercase text-slate-600">Total</td>
-                                        <td className="px-3 py-2 text-right font-mono text-slate-600">
-                                            <CurrencyDisplay value={totales.ejecutado_anterior} colorize={false} decimals={0} />
-                                        </td>
-                                        <td className="px-3 py-2 text-right font-mono text-blue-700">
-                                            <CurrencyDisplay value={totales.presupuestado} colorize={false} decimals={0} />
-                                        </td>
-                                        <td className="px-3 py-2 text-right font-mono text-rose-700">
-                                            <CurrencyDisplay value={totales.ejecutado} colorize={false} decimals={0} />
-                                        </td>
-                                        <td className="px-3 py-2 text-center">
-                                            {totales.presupuestado > 0 && (
-                                                <SemaforoBadge
-                                                    valor={variacionTotal <= (presupuesto?.semaforo_verde_hasta ?? 5) ? 'verde' : variacionTotal <= (presupuesto?.semaforo_amarillo_hasta ?? 15) ? 'amarillo' : 'rojo'}
-                                                    variacionPct={variacionTotal}
-                                                    size="sm"
-                                                />
-                                            )}
-                                        </td>
-                                    </tr>
-                                </tfoot>
-                            )}
-                        </table>
-                    </div>
-                </div>
+                {/* Gráfico de barras CC */}
+                <BudgetComparisonBars
+                    data={ccData}
+                    loading={loading}
+                    busqueda={busqueda}
+                    setBusqueda={setBusqueda}
+                    sortKey={ccSort.sortKey}
+                    sortDir={ccSort.sortDir}
+                    onSort={ccSort.toggle}
+                    onRowClick={handleCCClick}
+                />
             </div>
 
             {/* Modal Drilldown: Conceptos */}
@@ -739,7 +664,6 @@ const PresupuestoDrilldownModal = ({ title, breadcrumb, data, loading, onClose, 
             return factor * (aVal - bVal)
         })
     }, [data, q, sort.sortKey, sort.sortDir])
-    const totalAnt = filtered.reduce((s, r) => s + r.ejecutado_anterior, 0)
     const totalPresup = filtered.reduce((s, r) => s + r.presupuestado, 0)
     const totalEjec = filtered.reduce((s, r) => s + r.ejecutado, 0)
 
@@ -776,7 +700,6 @@ const PresupuestoDrilldownModal = ({ title, breadcrumb, data, loading, onClose, 
                         <input type="text" placeholder="Buscar..." className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl outline-none" value={q} onChange={e => setQ(e.target.value)} autoFocus />
                     </div>
                     <div className="flex gap-4 text-right">
-                        <div><p className="text-[9px] text-slate-400 font-bold capitalize">Ejec. Anterior</p><p className="text-xs font-mono text-slate-500 font-bold"><CurrencyDisplay value={totalAnt} colorize={false} decimals={0} /></p></div>
                         <div><p className="text-[9px] text-slate-400 font-bold capitalize">Presupuestado</p><p className="text-xs font-mono text-blue-600 font-bold"><CurrencyDisplay value={totalPresup} colorize={false} decimals={0} /></p></div>
                         <div><p className="text-[9px] text-slate-400 font-bold capitalize">Ejecutado</p><p className="text-xs font-mono text-rose-600 font-bold"><CurrencyDisplay value={totalEjec} colorize={false} decimals={0} /></p></div>
                         <div><p className="text-[9px] text-slate-400 font-bold capitalize">Variacion</p><p className="text-xs font-mono font-bold"><CurrencyDisplay value={totalEjec - totalPresup} decimals={0} /></p></div>
@@ -794,7 +717,6 @@ const PresupuestoDrilldownModal = ({ title, breadcrumb, data, loading, onClose, 
                             <thead className="bg-gray-50 sticky top-0 z-10">
                                 <tr>
                                     <SortHeader label="Nombre" sortKey="nombre" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} />
-                                    <SortHeader label="Ejec. Ant." sortKey="ejecutado_anterior" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="right" />
                                     <SortHeader label="Presup." sortKey="presupuestado" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="right" />
                                     <SortHeader label="Ejecutado" sortKey="ejecutado" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="right" />
                                     <SortHeader label="Estado" sortKey="variacion_pct" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="center" />
@@ -802,7 +724,7 @@ const PresupuestoDrilldownModal = ({ title, breadcrumb, data, loading, onClose, 
                             </thead>
                             <tbody>
                                 {filtered.length === 0 ? (
-                                    <tr><td colSpan={5} className="text-center py-8 text-gray-400">Sin datos</td></tr>
+                                    <tr><td colSpan={4} className="text-center py-8 text-gray-400">Sin datos</td></tr>
                                 ) : filtered.map((row, idx) => (
                                     <tr
                                         key={row.id ?? idx}
@@ -820,9 +742,6 @@ const PresupuestoDrilldownModal = ({ title, breadcrumb, data, loading, onClose, 
                                                     {row.id ? `${row.id} - ${row.nombre}` : row.nombre}
                                                 </span>
                                             </div>
-                                        </td>
-                                        <td className="px-3 py-2 text-right font-mono text-slate-500">
-                                            <CurrencyDisplay value={row.ejecutado_anterior} colorize={false} decimals={0} />
                                         </td>
                                         <td className="px-3 py-2 text-right font-mono text-blue-600">
                                             <CurrencyDisplay value={row.presupuestado} colorize={false} decimals={0} />
@@ -857,7 +776,6 @@ interface MesesDrilldownModalProps {
 
 const MesesDrilldownModal = ({ breadcrumb, data, loading, onClose }: MesesDrilldownModalProps) => {
     const sort = useSort('mes', 'asc')
-    const totalAnt = data.reduce((s, m) => s + m.ejecutado_anterior, 0)
     const totalPresup = data.reduce((s, m) => s + m.presupuestado, 0)
     const totalEjec = data.reduce((s, m) => s + m.ejecutado, 0)
 
@@ -900,7 +818,6 @@ const MesesDrilldownModal = ({ breadcrumb, data, loading, onClose }: MesesDrilld
                 {/* Totals */}
                 <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-end">
                     <div className="flex gap-4 text-right">
-                        <div><p className="text-[9px] text-slate-400 font-bold capitalize">Ejec. Anterior</p><p className="text-xs font-mono text-slate-500 font-bold"><CurrencyDisplay value={totalAnt} colorize={false} decimals={0} /></p></div>
                         <div><p className="text-[9px] text-slate-400 font-bold capitalize">Presupuestado</p><p className="text-xs font-mono text-blue-600 font-bold"><CurrencyDisplay value={totalPresup} colorize={false} decimals={0} /></p></div>
                         <div><p className="text-[9px] text-slate-400 font-bold capitalize">Ejecutado</p><p className="text-xs font-mono text-rose-600 font-bold"><CurrencyDisplay value={totalEjec} colorize={false} decimals={0} /></p></div>
                         <div><p className="text-[9px] text-slate-400 font-bold capitalize">Variacion</p><p className="text-xs font-mono font-bold"><CurrencyDisplay value={totalEjec - totalPresup} decimals={0} /></p></div>
@@ -918,7 +835,6 @@ const MesesDrilldownModal = ({ breadcrumb, data, loading, onClose }: MesesDrilld
                             <thead className="bg-gray-50 sticky top-0 z-10">
                                 <tr>
                                     <SortHeader label="Mes" sortKey="mes" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} />
-                                    <SortHeader label="Ejec. Ant." sortKey="ejecutado_anterior" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="right" />
                                     <SortHeader label="Presupuestado" sortKey="presupuestado" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="right" />
                                     <SortHeader label="Ejecutado" sortKey="ejecutado" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="right" />
                                     <SortHeader label="Estado" sortKey="variacion_pct" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} align="center" />
@@ -926,14 +842,11 @@ const MesesDrilldownModal = ({ breadcrumb, data, loading, onClose }: MesesDrilld
                             </thead>
                             <tbody>
                                 {sorted.length === 0 ? (
-                                    <tr><td colSpan={5} className="text-center py-8 text-gray-400">Sin datos</td></tr>
+                                    <tr><td colSpan={4} className="text-center py-8 text-gray-400">Sin datos</td></tr>
                                 ) : sorted.map(d => (
                                     <tr key={d.mes} className="border-b border-gray-50 hover:bg-slate-50/50 transition-colors">
                                         <td className="px-3 py-2.5 font-medium text-slate-700">
                                             {d.mes_nombre}
-                                        </td>
-                                        <td className="px-3 py-2.5 text-right font-mono text-slate-500">
-                                            <CurrencyDisplay value={d.ejecutado_anterior} colorize={false} decimals={0} />
                                         </td>
                                         <td className="px-3 py-2.5 text-right font-mono text-blue-600">
                                             <CurrencyDisplay value={d.presupuestado} colorize={false} decimals={0} />

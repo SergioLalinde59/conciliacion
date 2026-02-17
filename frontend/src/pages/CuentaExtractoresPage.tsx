@@ -5,10 +5,12 @@ import { Plus, Edit, X, FileText } from 'lucide-react'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 import { CsvExportButton } from '../components/molecules/CsvExportButton'
 import { DataTable, type Column } from '../components/molecules/DataTable'
+import { MessageModal } from '../components/molecules/MessageModal'
 
 export const CuentaExtractoresPage: React.FC = () => {
     const [extractores, setExtractores] = useState<CuentaExtractor[]>([])
     const [loading, setLoading] = useState(true)
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success' | 'info'} | null>(null)
 
     // Catalogs
     const [cuentas, setCuentas] = useState<Cuenta[]>([])
@@ -47,7 +49,7 @@ export const CuentaExtractoresPage: React.FC = () => {
     const handleGuardar = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!cuentaId || !modulo.trim()) {
-            alert('Complete Cuenta y Módulo')
+            setMsgModal({ message: 'Complete Cuenta y Módulo', type: 'warning' })
             return
         }
 
@@ -69,7 +71,7 @@ export const CuentaExtractoresPage: React.FC = () => {
             }
             limpiarForm()
         } catch (error) {
-            alert('Error guardando extractor')
+            setMsgModal({ message: 'Error guardando extractor', type: 'error' })
             console.error(error)
         }
     }
@@ -98,7 +100,7 @@ export const CuentaExtractoresPage: React.FC = () => {
             await apiService.extractores.eliminar(item.id)
             setExtractores(extractores.filter(r => r.id !== item.id))
         } catch (error) {
-            alert('Error eliminando extractor')
+            setMsgModal({ message: 'Error eliminando extractor', type: 'error' })
         }
     }
 
@@ -266,6 +268,7 @@ export const CuentaExtractoresPage: React.FC = () => {
                     deleteConfirmMessage="¿Eliminar este extractor?"
                 />
             </div>
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     )
 }

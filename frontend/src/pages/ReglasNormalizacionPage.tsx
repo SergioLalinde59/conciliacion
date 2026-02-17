@@ -5,6 +5,7 @@ import { Plus, RefreshCw, Edit, X } from 'lucide-react'
 import { DataTable } from '../components/molecules/DataTable'
 import type { Column } from '../components/molecules/DataTable'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
+import { MessageModal } from '../components/molecules/MessageModal'
 
 export const ReglasNormalizacionPage: React.FC = () => {
     const [aliases, setAliases] = useState<MatchingAlias[]>([])
@@ -15,6 +16,7 @@ export const ReglasNormalizacionPage: React.FC = () => {
     const [patron, setPatron] = useState('')
     const [reemplazo, setReemplazo] = useState('')
     const [editingId, setEditingId] = useState<number | null>(null)
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning'} | null>(null)
 
     useEffect(() => {
         if (selectedCuentaId) {
@@ -31,7 +33,7 @@ export const ReglasNormalizacionPage: React.FC = () => {
             setAliases(data)
         } catch (error) {
             console.error('Error cargando aliases:', error)
-            alert('Error cargando reglas de normalización')
+            setMsgModal({message: 'Error cargando reglas de normalización', type: 'error'})
         } finally {
             setLoading(false)
         }
@@ -40,11 +42,11 @@ export const ReglasNormalizacionPage: React.FC = () => {
     const handleGuardar = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!selectedCuentaId) {
-            alert('Seleccione una cuenta')
+            setMsgModal({message: 'Seleccione una cuenta', type: 'warning'})
             return
         }
         if (!patron.trim() || !reemplazo.trim()) {
-            alert('Complete todos los campos')
+            setMsgModal({message: 'Complete todos los campos', type: 'warning'})
             return
         }
 
@@ -66,7 +68,7 @@ export const ReglasNormalizacionPage: React.FC = () => {
             limpiarForm()
         } catch (error) {
             console.error(error)
-            alert('Error guardando la regla. Verifique que no exista un duplicado.')
+            setMsgModal({message: 'Error guardando la regla. Verifique que no exista un duplicado.', type: 'error'})
         }
     }
 
@@ -83,7 +85,7 @@ export const ReglasNormalizacionPage: React.FC = () => {
             setAliases(aliases.filter(a => a.id !== alias.id))
         } catch (error) {
             console.error(error)
-            alert('Error eliminando la regla')
+            setMsgModal({message: 'Error eliminando la regla', type: 'error'})
         }
     }
 
@@ -213,6 +215,7 @@ export const ReglasNormalizacionPage: React.FC = () => {
                     deleteConfirmMessage="¿Eliminar esta regla de normalización?"
                 />
             </div>
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     )
 }

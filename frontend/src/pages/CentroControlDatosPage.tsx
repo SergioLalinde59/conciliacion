@@ -12,7 +12,8 @@ import {
     FileText,
     Shield,
     Settings,
-    HardDrive
+    HardDrive,
+    Calculator
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 
@@ -57,6 +58,19 @@ const TABLES_CONFIG = {
             { id: 'movimiento_vinculaciones', label: 'Vinculaciones (Matches)', description: 'Links entre extracto y sistema.' },
         ]
     },
+    presupuestos: {
+        label: 'Presupuestos',
+        icon: Calculator,
+        description: 'Tablas de presupuestos, reglas, tipos de gasto e indicadores económicos',
+        tables: [
+            { id: 'tipos_gasto', label: 'Tipos de Gasto', description: 'Catálogo: Fijo, Variable, Salarial, Estacional, No Repetitivo.' },
+            { id: 'indicadores_economicos', label: 'Indicadores Económicos', description: 'IPC, aumentos salariales y otros indicadores por año.' },
+            { id: 'reglas_presupuesto', label: 'Reglas Presupuesto', description: 'Reglas CC+Concepto → tipo gasto + indicador.' },
+            { id: 'presupuesto_versiones', label: 'Versiones Presupuesto', description: 'Historial de versiones generadas por presupuesto.' },
+            { id: 'presupuesto_detalle', label: 'Presupuesto Detalle', description: 'Líneas de detalle por CC/Concepto/mes.' },
+            { id: 'presupuestos', label: 'Presupuestos', description: 'Presupuestos anuales con configuración y umbrales.' },
+        ]
+    },
     sistema: {
         label: 'Sistema Completo',
         icon: HardDrive,
@@ -69,7 +83,8 @@ const TABLES_CONFIG = {
 TABLES_CONFIG.sistema.tables = [
     ...TABLES_CONFIG.maestros.tables,
     ...TABLES_CONFIG.configuracion.tables,
-    ...TABLES_CONFIG.backups.tables
+    ...TABLES_CONFIG.backups.tables,
+    ...TABLES_CONFIG.presupuestos.tables
 ]
 
 export const CentroControlDatosPage: React.FC = () => {

@@ -9,6 +9,7 @@ from src.domain.ports.presupuesto_detalle_repository import PresupuestoDetalleRe
 from src.domain.ports.presupuesto_comparacion_repository import PresupuestoComparacionRepository
 from src.domain.ports.presupuesto_generacion_repository import PresupuestoGeneracionRepository
 from src.application.services.presupuesto_service import PresupuestoService
+from src.domain.models.presupuesto import DEFAULT_UMBRAL_NO_REPETITIVO, DEFAULT_UMBRAL_ESTACIONAL, DEFAULT_UMBRAL_PARETO
 from src.infrastructure.api.dependencies import (
     get_presupuesto_repository,
     get_presupuesto_detalle_repository,
@@ -32,7 +33,10 @@ class PresupuestoCreateDTO(BaseModel):
     semaforo_amarillo_hasta: float
     umbral_minimo_mensual: float = 0.0
     umbral_minimo_anual: float = 0.0
-    umbral_no_repetitivo: int = 4
+    umbral_no_repetitivo: int = DEFAULT_UMBRAL_NO_REPETITIVO
+    umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL
+    umbral_pareto: float = DEFAULT_UMBRAL_PARETO
+    cifras_en_millones: bool = False
 
 class PresupuestoUpdateDTO(BaseModel):
     nombre: Optional[str] = None
@@ -42,6 +46,9 @@ class PresupuestoUpdateDTO(BaseModel):
     umbral_minimo_mensual: Optional[float] = None
     umbral_minimo_anual: Optional[float] = None
     umbral_no_repetitivo: Optional[int] = None
+    umbral_estacional: Optional[int] = None
+    umbral_pareto: Optional[float] = None
+    cifras_en_millones: Optional[bool] = None
 
 class PresupuestoResponse(BaseModel):
     id: int
@@ -53,13 +60,18 @@ class PresupuestoResponse(BaseModel):
     semaforo_amarillo_hasta: float
     umbral_minimo_mensual: float = 0.0
     umbral_minimo_anual: float = 0.0
-    umbral_no_repetitivo: int = 4
+    umbral_no_repetitivo: int = DEFAULT_UMBRAL_NO_REPETITIVO
+    umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL
+    umbral_pareto: float = DEFAULT_UMBRAL_PARETO
+    cifras_en_millones: bool = False
+    version_actual: int = 1
     created_at: Optional[str] = None
 
 class GenerarDTO(BaseModel):
     anio_fuente: int
     centros_costos_excluidos: Optional[List[int]] = None
     umbral: Optional[int] = None
+    umbral_estacional: Optional[int] = None
     no_repetitivos_incluidos: Optional[List[dict]] = None
     montos_fijos: Optional[List[dict]] = None
 
@@ -67,6 +79,19 @@ class PrevisualizarDTO(BaseModel):
     anio_fuente: int
     centros_costos_excluidos: Optional[List[int]] = None
     umbral: Optional[int] = None
+    umbral_estacional: Optional[int] = None
+
+class SimularReglasDTO(BaseModel):
+    anio_fuente: Optional[int] = None
+    centros_costos_excluidos: Optional[List[int]] = None
+
+class RegenerarDTO(BaseModel):
+    anio_fuente: Optional[int] = None
+    centros_costos_excluidos: Optional[List[int]] = None
+    umbral: Optional[int] = None
+    umbral_estacional: Optional[int] = None
+    no_repetitivos_incluidos: Optional[List[dict]] = None
+    montos_fijos: Optional[List[dict]] = None
 
 class DetalleCreateDTO(BaseModel):
     centro_costo_id: int
@@ -115,6 +140,10 @@ def listar_presupuestos(
             "umbral_minimo_mensual": p.umbral_minimo_mensual,
             "umbral_minimo_anual": p.umbral_minimo_anual,
             "umbral_no_repetitivo": p.umbral_no_repetitivo,
+            "umbral_estacional": p.umbral_estacional,
+            "umbral_pareto": p.umbral_pareto,
+            "cifras_en_millones": p.cifras_en_millones,
+            "version_actual": p.version_actual,
             "created_at": str(p.created_at) if p.created_at else None
         }
         for p in presupuestos
@@ -169,6 +198,11 @@ def obtener_presupuesto(
         "semaforo_amarillo_hasta": p.semaforo_amarillo_hasta,
         "umbral_minimo_mensual": p.umbral_minimo_mensual,
         "umbral_minimo_anual": p.umbral_minimo_anual,
+        "umbral_no_repetitivo": p.umbral_no_repetitivo,
+        "umbral_estacional": p.umbral_estacional,
+        "umbral_pareto": p.umbral_pareto,
+        "cifras_en_millones": p.cifras_en_millones,
+        "version_actual": p.version_actual,
         "created_at": str(p.created_at) if p.created_at else None
     }
 
@@ -184,7 +218,10 @@ def crear_presupuesto(
             semaforo_amarillo_hasta=dto.semaforo_amarillo_hasta,
             umbral_minimo_mensual=dto.umbral_minimo_mensual,
             umbral_minimo_anual=dto.umbral_minimo_anual,
-            umbral_no_repetitivo=dto.umbral_no_repetitivo
+            umbral_no_repetitivo=dto.umbral_no_repetitivo,
+            umbral_estacional=dto.umbral_estacional,
+            umbral_pareto=dto.umbral_pareto,
+            cifras_en_millones=dto.cifras_en_millones
         )
         return {
             "id": p.id, "anio": p.anio, "nombre": p.nombre,
@@ -194,6 +231,9 @@ def crear_presupuesto(
             "umbral_minimo_mensual": p.umbral_minimo_mensual,
             "umbral_minimo_anual": p.umbral_minimo_anual,
             "umbral_no_repetitivo": p.umbral_no_repetitivo,
+            "umbral_estacional": p.umbral_estacional,
+            "umbral_pareto": p.umbral_pareto,
+            "cifras_en_millones": p.cifras_en_millones,
             "created_at": str(p.created_at) if p.created_at else None
         }
     except ValueError as ve:
@@ -227,6 +267,12 @@ def actualizar_presupuesto(
         p.umbral_minimo_anual = dto.umbral_minimo_anual
     if dto.umbral_no_repetitivo is not None:
         p.umbral_no_repetitivo = dto.umbral_no_repetitivo
+    if dto.umbral_estacional is not None:
+        p.umbral_estacional = dto.umbral_estacional
+    if dto.umbral_pareto is not None:
+        p.umbral_pareto = dto.umbral_pareto
+    if dto.cifras_en_millones is not None:
+        p.cifras_en_millones = dto.cifras_en_millones
     try:
         guardado = repo.guardar(p)
         return {
@@ -236,6 +282,10 @@ def actualizar_presupuesto(
             "semaforo_amarillo_hasta": guardado.semaforo_amarillo_hasta,
             "umbral_minimo_mensual": guardado.umbral_minimo_mensual,
             "umbral_minimo_anual": guardado.umbral_minimo_anual,
+            "umbral_no_repetitivo": guardado.umbral_no_repetitivo,
+            "umbral_estacional": guardado.umbral_estacional,
+            "umbral_pareto": guardado.umbral_pareto,
+            "cifras_en_millones": guardado.cifras_en_millones,
             "created_at": str(guardado.created_at) if guardado.created_at else None
         }
     except Exception as e:
@@ -274,6 +324,63 @@ def cerrar_presupuesto(
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
 
+@router.post("/{presupuesto_id}/revertir")
+def revertir_presupuesto(
+    presupuesto_id: int,
+    service: PresupuestoService = Depends(get_presupuesto_service)
+):
+    try:
+        p = service.revertir_presupuesto(presupuesto_id)
+        return {"id": p.id, "estado": p.estado, "mensaje": "Presupuesto revertido a borrador"}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+
+# --- Simulación de Impacto ---
+
+@router.post("/{presupuesto_id}/simular-reglas")
+def simular_impacto_reglas(
+    presupuesto_id: int,
+    dto: SimularReglasDTO = SimularReglasDTO(),
+    service: PresupuestoService = Depends(get_presupuesto_service)
+):
+    """Simula el impacto de las reglas actuales sobre el presupuesto"""
+    try:
+        return service.simular_impacto_reglas(
+            presupuesto_id=presupuesto_id,
+            anio_fuente=dto.anio_fuente,
+            centros_costos_excluidos=dto.centros_costos_excluidos
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error simulando impacto de reglas: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{presupuesto_id}/regenerar")
+def regenerar_presupuesto(
+    presupuesto_id: int,
+    dto: RegenerarDTO = RegenerarDTO(),
+    service: PresupuestoService = Depends(get_presupuesto_service)
+):
+    """Regenera el presupuesto: crea nueva versión sin borrar las anteriores"""
+    try:
+        return service.regenerar_presupuesto(
+            presupuesto_id=presupuesto_id,
+            anio_fuente=dto.anio_fuente,
+            centros_costos_excluidos=dto.centros_costos_excluidos,
+            umbral=dto.umbral,
+            umbral_estacional=dto.umbral_estacional,
+            no_repetitivos_incluidos=dto.no_repetitivos_incluidos,
+            montos_fijos=dto.montos_fijos
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error regenerando presupuesto: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- Generación ---
 
@@ -289,7 +396,8 @@ def previsualizar_generacion(
             presupuesto_id=presupuesto_id,
             anio_fuente=dto.anio_fuente,
             centros_costos_excluidos=dto.centros_costos_excluidos,
-            umbral=dto.umbral
+            umbral=dto.umbral,
+            umbral_estacional=dto.umbral_estacional
         )
         return {
             "regulares": len(result.regulares),
@@ -317,6 +425,7 @@ def generar_presupuesto(
             anio_fuente=dto.anio_fuente,
             centros_costos_excluidos=dto.centros_costos_excluidos,
             umbral=dto.umbral,
+            umbral_estacional=dto.umbral_estacional,
             no_repetitivos_incluidos=dto.no_repetitivos_incluidos,
             montos_fijos=dto.montos_fijos
         )
@@ -328,6 +437,34 @@ def generar_presupuesto(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- Versiones ---
+
+@router.get("/{presupuesto_id}/versiones")
+def listar_versiones(
+    presupuesto_id: int,
+    repo: PresupuestoDetalleRepository = Depends(get_presupuesto_detalle_repository)
+):
+    """Lista todas las versiones de un presupuesto con metadatos"""
+    return repo.obtener_versiones(presupuesto_id)
+
+
+@router.get("/{presupuesto_id}/comparar-versiones")
+def comparar_versiones(
+    presupuesto_id: int,
+    version_a: int = Query(..., description="Primera versión a comparar"),
+    version_b: int = Query(..., description="Segunda versión a comparar"),
+    nivel: str = Query("centro_costo", description="Nivel de agrupación: centro_costo, concepto, tercero"),
+    centro_costo_id: Optional[int] = Query(None),
+    concepto_id: Optional[int] = Query(None),
+    repo: PresupuestoDetalleRepository = Depends(get_presupuesto_detalle_repository)
+):
+    """Compara dos versiones de un presupuesto agrupando por nivel"""
+    return repo.comparar_versiones(
+        presupuesto_id, version_a, version_b,
+        nivel, centro_costo_id, concepto_id
+    )
+
+
 # --- Detalle CRUD ---
 
 @router.get("/{presupuesto_id}/detalle")
@@ -337,6 +474,7 @@ def listar_detalle(
     concepto_id: Optional[int] = None,
     tercero_id: Optional[int] = None,
     mes: Optional[int] = None,
+    version: Optional[int] = None,
     repo: PresupuestoDetalleRepository = Depends(get_presupuesto_detalle_repository)
 ):
     detalles = repo.obtener_por_presupuesto(
@@ -344,7 +482,8 @@ def listar_detalle(
         centro_costo_id=centro_costo_id,
         concepto_id=concepto_id,
         tercero_id=tercero_id,
-        mes=mes
+        mes=mes,
+        version=version
     )
     return [
         {
@@ -488,6 +627,7 @@ def comparar_presupuesto_vs_real(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    excluir_estacionales: bool = False,
     service: PresupuestoService = Depends(get_presupuesto_service)
 ):
     try:
@@ -498,7 +638,8 @@ def comparar_presupuesto_vs_real(
             mes_fin=mes_fin,
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
-            centros_costos_excluidos=centros_costos_excluidos
+            centros_costos_excluidos=centros_costos_excluidos,
+            excluir_estacionales=excluir_estacionales
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -513,6 +654,7 @@ def comparar_resumen_mensual(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     tercero_id: Optional[int] = None,
+    excluir_estacionales: bool = False,
     repo_presupuesto: PresupuestoRepository = Depends(get_presupuesto_repository),
     repo_comparacion: PresupuestoComparacionRepository = Depends(get_presupuesto_comparacion_repository)
 ):
@@ -528,7 +670,8 @@ def comparar_resumen_mensual(
             concepto_id=concepto_id,
             tercero_id=tercero_id,
             verde_hasta=p.semaforo_verde_hasta,
-            amarillo_hasta=p.semaforo_amarillo_hasta
+            amarillo_hasta=p.semaforo_amarillo_hasta,
+            excluir_estacionales=excluir_estacionales
         )
     except Exception as e:
         logger.error(f"Error en resumen mensual: {e}", exc_info=True)

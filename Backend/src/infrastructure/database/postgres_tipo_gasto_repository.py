@@ -1,4 +1,6 @@
+import json
 from typing import List, Optional
+from psycopg2.extras import Json
 from src.domain.models.tipo_gasto import TipoGasto
 from src.domain.ports.tipo_gasto_repository import TipoGastoRepository
 
@@ -10,6 +12,9 @@ class PostgresTipoGastoRepository(TipoGastoRepository):
     def _row_to_entity(self, row) -> Optional[TipoGasto]:
         if not row:
             return None
+        keywords_raw = row[6]
+        if isinstance(keywords_raw, str):
+            keywords_raw = json.loads(keywords_raw)
         return TipoGasto(
             id=row[0],
             tipo=row[1],
@@ -17,10 +22,12 @@ class PostgresTipoGastoRepository(TipoGastoRepository):
             indicador_default=row[3],
             excluir_presupuesto=row[4],
             activo=row[5],
-            created_at=row[6]
+            keywords=keywords_raw or [],
+            prioridad=row[7] or 99,
+            created_at=row[8]
         )
 
-    _COLUMNS = "id, tipo, descripcion, indicador_default, excluir_presupuesto, activo, created_at"
+    _COLUMNS = "id, tipo, descripcion, indicador_default, excluir_presupuesto, activo, keywords, prioridad, created_at"
 
     def guardar(self, tipo_gasto: TipoGasto) -> TipoGasto:
         cursor = self.conn.cursor()
@@ -29,21 +36,24 @@ class PostgresTipoGastoRepository(TipoGastoRepository):
                 cursor.execute(
                     f"""UPDATE tipos_gasto
                        SET tipo = %s, descripcion = %s,
-                           indicador_default = %s, excluir_presupuesto = %s, activo = %s
+                           indicador_default = %s, excluir_presupuesto = %s, activo = %s,
+                           keywords = %s, prioridad = %s
                        WHERE id = %s
                        RETURNING {self._COLUMNS}""",
                     (tipo_gasto.tipo, tipo_gasto.descripcion,
                      tipo_gasto.indicador_default, tipo_gasto.excluir_presupuesto, tipo_gasto.activo,
+                     Json(tipo_gasto.keywords), tipo_gasto.prioridad,
                      tipo_gasto.id)
                 )
             else:
                 cursor.execute(
                     f"""INSERT INTO tipos_gasto
-                       (tipo, descripcion, indicador_default, excluir_presupuesto, activo)
-                       VALUES (%s, %s, %s, %s, %s)
+                       (tipo, descripcion, indicador_default, excluir_presupuesto, activo, keywords, prioridad)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING {self._COLUMNS}""",
                     (tipo_gasto.tipo, tipo_gasto.descripcion,
-                     tipo_gasto.indicador_default, tipo_gasto.excluir_presupuesto, tipo_gasto.activo)
+                     tipo_gasto.indicador_default, tipo_gasto.excluir_presupuesto, tipo_gasto.activo,
+                     Json(tipo_gasto.keywords), tipo_gasto.prioridad)
                 )
             row = cursor.fetchone()
             self.conn.commit()
@@ -56,7 +66,7 @@ class PostgresTipoGastoRepository(TipoGastoRepository):
 
     def obtener_todos(self) -> List[TipoGasto]:
         cursor = self.conn.cursor()
-        cursor.execute(f"SELECT {self._COLUMNS} FROM tipos_gasto WHERE activo = TRUE ORDER BY id")
+        cursor.execute(f"SELECT {self._COLUMNS} FROM tipos_gasto WHERE activo = TRUE ORDER BY prioridad ASC, id")
         rows = cursor.fetchall()
         cursor.close()
         return [self._row_to_entity(r) for r in rows]

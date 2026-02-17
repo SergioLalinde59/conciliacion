@@ -14,6 +14,12 @@ export const formatCurrency = (value: number | string | undefined | null, showDe
     }).format(numValue);
 };
 
+export const formatCompact = (n: number): string => {
+    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `$${Math.round(n / 1_000)}K`
+    return `$${n}`
+}
+
 export const getAmountColorClass = (value: number | string | undefined | null): string => {
     if (value === undefined || value === null) return "text-gray-900";
     const numValue = typeof value === 'string' ? parseFloat(value) : value;

@@ -31,7 +31,7 @@ export const PresupuestoConfigPage = () => {
         setModalOpen(true)
     }
 
-    const handleSave = async (data: { semaforo_verde_hasta: number; semaforo_amarillo_hasta: number; umbral_minimo_mensual: number; umbral_minimo_anual: number }) => {
+    const handleSave = async (data: { semaforo_verde_hasta: number; semaforo_amarillo_hasta: number; umbral_minimo_mensual: number; umbral_minimo_anual: number; cifras_en_millones: boolean }) => {
         if (!itemEditando) return
         try {
             await presupuestoService.actualizar(itemEditando.id, data)
@@ -74,6 +74,7 @@ export const PresupuestoConfigPage = () => {
                 <table className="w-full">
                     <thead>
                         <tr className="bg-gray-50 border-b border-gray-200">
+                            <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-2 py-3 w-10"></th>
                             <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Año</th>
                             <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Nombre</th>
                             <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Estado</th>
@@ -82,16 +83,24 @@ export const PresupuestoConfigPage = () => {
                             <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Rojo desde</th>
                             <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Umbral Mensual</th>
                             <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Umbral Anual</th>
-                            <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Acciones</th>
+                            <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Millones</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {loading ? (
-                            <tr><td colSpan={9} className="text-center py-8 text-gray-400">Cargando...</td></tr>
+                            <tr><td colSpan={10} className="text-center py-8 text-gray-400">Cargando...</td></tr>
                         ) : presupuestos.length === 0 ? (
-                            <tr><td colSpan={9} className="text-center py-8 text-gray-400">No hay presupuestos registrados</td></tr>
+                            <tr><td colSpan={10} className="text-center py-8 text-gray-400">No hay presupuestos registrados</td></tr>
                         ) : presupuestos.map(p => (
                             <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-2 py-3 text-center">
+                                    <Button
+                                        variant="ghost-warning"
+                                        size="sm"
+                                        icon={Pencil}
+                                        onClick={() => handleEdit(p)}
+                                    />
+                                </td>
                                 <td className="px-4 py-3 text-sm font-mono font-medium text-gray-700">{p.anio}</td>
                                 <td className="px-4 py-3 text-sm text-gray-700">{p.nombre}</td>
                                 <td className="px-4 py-3 text-center">{estadoBadge(p.estado)}</td>
@@ -114,15 +123,10 @@ export const PresupuestoConfigPage = () => {
                                         {p.umbral_minimo_anual > 0 ? `$${p.umbral_minimo_anual.toLocaleString()}` : '-'}
                                     </span>
                                 </td>
-                                <td className="px-4 py-3 text-right">
-                                    <Button
-                                        variant="ghost-warning"
-                                        size="sm"
-                                        icon={Pencil}
-                                        onClick={() => handleEdit(p)}
-                                    >
-                                        Editar
-                                    </Button>
+                                <td className="px-4 py-3 text-center">
+                                    <span className={`text-xs font-medium ${p.cifras_en_millones ? 'text-blue-600' : 'text-gray-400'}`}>
+                                        {p.cifras_en_millones ? 'Sí' : 'No'}
+                                    </span>
                                 </td>
                             </tr>
                         ))}

@@ -32,6 +32,7 @@ import { TiposCuentaPage } from './pages/TiposCuentaPage'
 
 import { ReconciliationResetPage } from './pages/ReconciliationResetPage'
 import { ReclasificarMovimientosPage } from './pages/mantenimiento/ReclasificarMovimientosPage'
+import { ExportarEstructuraPage } from './pages/mantenimiento/ExportarEstructuraPage'
 import { ResetDemoPage } from './pages/ResetDemoPage'
 import { PresupuestosPage } from './pages/PresupuestosPage'
 import { PresupuestoDetallePage } from './pages/PresupuestoDetallePage'
@@ -41,6 +42,9 @@ import { TiposGastoPage } from './pages/TiposGastoPage'
 import { IndicadoresEconomicosPage } from './pages/IndicadoresEconomicosPage'
 import { ReglasPresupuestoPage } from './pages/ReglasPresupuestoPage'
 import { ClasificacionGastosPreviewPage } from './pages/ClasificacionGastosPreviewPage'
+import { EjecucionMensualPage } from './pages/EjecucionMensualPage'
+import { ComparativoCifrasPage } from './pages/ComparativoCifrasPage'
+import { ComparacionVersionesPage } from './pages/ComparacionVersionesPage'
 
 
 function App() {
@@ -84,11 +88,15 @@ function App() {
                     <Route path="/admin/reset-demo" element={<ResetDemoPage />} />
                     <Route path="/presupuestos" element={<PresupuestosPage />} />
                     <Route path="/presupuestos/:id/detalle" element={<PresupuestoDetallePage />} />
+                    <Route path="/presupuestos/:id/comparar-versiones" element={<ComparacionVersionesPage />} />
                     <Route path="/presupuestos/tipos-gasto" element={<TiposGastoPage />} />
                     <Route path="/presupuestos/indicadores" element={<IndicadoresEconomicosPage />} />
                     <Route path="/presupuestos/reglas" element={<ReglasPresupuestoPage />} />
                     <Route path="/presupuestos/clasificacion" element={<ClasificacionGastosPreviewPage />} />
+                    <Route path="/presupuestos/ejecucion-mensual" element={<EjecucionMensualPage />} />
+                    <Route path="/presupuestos/comparativo-cifras" element={<ComparativoCifrasPage />} />
                     <Route path="/reportes/presupuesto-vs-real" element={<PresupuestoVsRealPage />} />
+                    <Route path="/herramientas/mantenimiento/exportar-estructura" element={<ExportarEstructuraPage />} />
                     <Route path="/herramientas/mantenimiento/:categoria" element={<CentroControlDatosPage />} />
                     <Route path="/mvtos/*" element={
                         <div className="p-8">

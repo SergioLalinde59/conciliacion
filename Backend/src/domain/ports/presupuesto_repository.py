@@ -34,3 +34,8 @@ class PresupuestoRepository(ABC):
     def cambiar_estado(self, presupuesto_id: int, nuevo_estado: str) -> Presupuesto:
         """Cambia el estado de un presupuesto"""
         pass
+
+    @abstractmethod
+    def incrementar_version(self, presupuesto_id: int) -> int:
+        """Incrementa version_actual y retorna el nuevo número de versión"""
+        pass

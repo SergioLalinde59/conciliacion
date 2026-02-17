@@ -77,6 +77,13 @@ export const getAnioYTD = () => {
     return { inicio: formatDateISO(inicio), fin: formatDateISO(fin) }
 }
 
+export const getAnioCompleto = () => {
+    const ahora = new Date()
+    const inicio = new Date(ahora.getFullYear(), 0, 1)
+    const fin = new Date(ahora.getFullYear(), 11, 31)
+    return { inicio: formatDateISO(inicio), fin: formatDateISO(fin) }
+}
+
 export const getAnioAnterior = () => {
     const ahora = new Date()
     const inicio = new Date(ahora.getFullYear() - 1, 0, 1)

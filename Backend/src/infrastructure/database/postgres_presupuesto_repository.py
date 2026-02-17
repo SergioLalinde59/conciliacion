@@ -2,7 +2,7 @@ from typing import List, Optional
 from src.domain.models.presupuesto import Presupuesto
 from src.domain.ports.presupuesto_repository import PresupuestoRepository
 
-_COLUMNS = "id, anio, nombre, estado, notas, semaforo_verde_hasta, semaforo_amarillo_hasta, created_at, umbral_minimo_mensual, umbral_minimo_anual, umbral_no_repetitivo"
+_COLUMNS = "id, anio, nombre, estado, notas, semaforo_verde_hasta, semaforo_amarillo_hasta, created_at, umbral_minimo_mensual, umbral_minimo_anual, umbral_no_repetitivo, umbral_estacional, umbral_pareto, version_actual, cifras_en_millones"
 
 
 class PostgresPresupuestoRepository(PresupuestoRepository):
@@ -21,6 +21,10 @@ class PostgresPresupuestoRepository(PresupuestoRepository):
             umbral_minimo_mensual=float(row[8]) if row[8] is not None else 0.0,
             umbral_minimo_anual=float(row[9]) if row[9] is not None else 0.0,
             umbral_no_repetitivo=int(row[10]) if row[10] is not None else 4,
+            umbral_estacional=int(row[11]) if row[11] is not None else 4,
+            umbral_pareto=float(row[12]) if row[12] is not None else 5_000_000.0,
+            version_actual=int(row[13]) if row[13] is not None else 1,
+            cifras_en_millones=bool(row[14]) if row[14] is not None else False,
             estado=row[3],
             notas=row[4],
             created_at=row[7]
@@ -35,14 +39,18 @@ class PostgresPresupuestoRepository(PresupuestoRepository):
                        SET anio = %s, nombre = %s, estado = %s, notas = %s,
                            semaforo_verde_hasta = %s, semaforo_amarillo_hasta = %s,
                            umbral_minimo_mensual = %s, umbral_minimo_anual = %s,
-                           umbral_no_repetitivo = %s
+                           umbral_no_repetitivo = %s, umbral_estacional = %s,
+                           umbral_pareto = %s, version_actual = %s,
+                           cifras_en_millones = %s
                        WHERE id = %s
                        RETURNING id, created_at""",
                     (presupuesto.anio, presupuesto.nombre, presupuesto.estado,
                      presupuesto.notas, presupuesto.semaforo_verde_hasta,
                      presupuesto.semaforo_amarillo_hasta,
                      presupuesto.umbral_minimo_mensual, presupuesto.umbral_minimo_anual,
-                     presupuesto.umbral_no_repetitivo,
+                     presupuesto.umbral_no_repetitivo, presupuesto.umbral_estacional,
+                     presupuesto.umbral_pareto, presupuesto.version_actual,
+                     presupuesto.cifras_en_millones,
                      presupuesto.id)
                 )
                 result = cursor.fetchone()
@@ -53,14 +61,17 @@ class PostgresPresupuestoRepository(PresupuestoRepository):
                     """INSERT INTO presupuestos (anio, nombre, estado, notas,
                            semaforo_verde_hasta, semaforo_amarillo_hasta,
                            umbral_minimo_mensual, umbral_minimo_anual,
-                           umbral_no_repetitivo)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           umbral_no_repetitivo, umbral_estacional,
+                           umbral_pareto, version_actual, cifras_en_millones)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        RETURNING id, created_at""",
                     (presupuesto.anio, presupuesto.nombre, presupuesto.estado,
                      presupuesto.notas, presupuesto.semaforo_verde_hasta,
                      presupuesto.semaforo_amarillo_hasta,
                      presupuesto.umbral_minimo_mensual, presupuesto.umbral_minimo_anual,
-                     presupuesto.umbral_no_repetitivo)
+                     presupuesto.umbral_no_repetitivo, presupuesto.umbral_estacional,
+                     presupuesto.umbral_pareto, presupuesto.version_actual,
+                     presupuesto.cifras_en_millones)
                 )
                 result = cursor.fetchone()
                 presupuesto.id = result[0]
@@ -139,6 +150,25 @@ class PostgresPresupuestoRepository(PresupuestoRepository):
                 raise ValueError("Presupuesto no encontrado")
             self.conn.commit()
             return self._row_to_entity(row)
+        except Exception as e:
+            self.conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+
+    def incrementar_version(self, presupuesto_id: int) -> int:
+        """Incrementa version_actual y retorna el nuevo número de versión."""
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE presupuestos SET version_actual = version_actual + 1 WHERE id = %s RETURNING version_actual",
+                (presupuesto_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError("Presupuesto no encontrado")
+            self.conn.commit()
+            return row[0]
         except Exception as e:
             self.conn.rollback()
             raise e

@@ -1,33 +1,11 @@
 from typing import List, Dict, Tuple, Optional
 from decimal import Decimal
+from src.domain.models.presupuesto import DEFAULT_UMBRAL_NO_REPETITIVO, DEFAULT_UMBRAL_ESTACIONAL
 from src.domain.models.presupuesto_detalle import PresupuestoDetalle
 from src.domain.models.regla_presupuesto import ReglaPresupuesto
 from src.domain.models.indicador_economico import IndicadorEconomico
 from src.domain.models.generacion_result import GeneracionResult
-
-# --- Patrones de palabras clave para auto-clasificación ---
-_KW_SALARIAL = [
-    'salario', 'sueldo', 'nómina', 'nomina', 'seguridad social',
-]
-_KW_FIJO_CONCEPTO = [
-    'administración', 'administracion',
-    'prepagada',
-    'sura', 'seguro',
-    'netflix', 'spotify', 'youtube', 'prime',
-    'adobe', 'coursera', 'github', 'openai', 'gemini',
-    'cuota de manejo', 'cuota manejo',
-    'tigo', 'claro', 'movistar',
-    'celular e internet',
-    'diezmo',
-    'corpaul',
-    'suscripci',
-    '4xmil', '4x1000',
-]
-_KW_FIJO_CC = ['suscripciones', 'donaciones', 'bancolombia']
-_KW_ESTACIONAL_CONCEPTO = [
-    'predial', 'soat', 'tecno mecánica', 'tecno mecanica', 'impuesto',
-]
-_KW_ESTACIONAL_CC = ['impuestos']
+from src.domain.models.tipo_gasto import TipoGasto
 
 
 class PresupuestoGeneracionDomainService:
@@ -35,7 +13,7 @@ class PresupuestoGeneracionDomainService:
     Sin dependencias de infraestructura."""
 
     def detectar_no_repetitivos(
-        self, lineas: List[PresupuestoDetalle], umbral: int = 4
+        self, lineas: List[PresupuestoDetalle], umbral: int = DEFAULT_UMBRAL_NO_REPETITIVO
     ) -> Tuple[List[PresupuestoDetalle], List[PresupuestoDetalle]]:
         """Separa líneas en repetitivas y no repetitivas basándose en meses activos.
 
@@ -66,44 +44,47 @@ class PresupuestoGeneracionDomainService:
         concepto_nombre: str,
         cc_nombre: str,
         meses_activos: int,
-        umbral_no_repetitivo: int = 4
+        tipos_gasto: List[TipoGasto],
+        umbral_no_repetitivo: int = DEFAULT_UMBRAL_NO_REPETITIVO,
+        umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL
     ) -> str:
-        """Auto-clasifica el tipo de gasto basándose en patrones del nombre y frecuencia.
+        """Auto-clasifica el tipo de gasto usando parejas CC-Concepto de la BD.
 
-        Jerarquía de detección:
-        1. Salarial (keywords en concepto)
-        2. Fijo (keywords en concepto o CC)
-        3. Estacional (keywords + pocos meses)
-        4. No Repetitivo (≤ umbral meses sin keyword específico)
-        5. Variable (default)
+        Recorre tipos_gasto ordenados por prioridad. Cada tipo tiene parejas
+        {concepto, centro_costo} — ambos campos son obligatorios (match AND).
+
+        Fallback por frecuencia:
+        - ≤ umbral meses → No Repetitivo
+        - Default → Variable
         """
         concepto = (concepto_nombre or '').lower().strip()
         cc = (cc_nombre or '').lower().strip()
 
-        # 1. Salarial
-        if any(kw in concepto for kw in _KW_SALARIAL):
-            return 'Salarial'
+        for tipo in tipos_gasto:
+            kw_list = tipo.keywords or []
+            if not kw_list:
+                continue
 
-        # 2. Fijo por concepto
-        if any(kw in concepto for kw in _KW_FIJO_CONCEPTO):
-            return 'Fijo'
+            for par in kw_list:
+                kw_concepto = par.get("concepto")
+                kw_cc = par.get("centro_costo")
 
-        # 3. Fijo por centro de costo
-        if any(kw in cc for kw in _KW_FIJO_CC):
-            return 'Fijo'
+                # Ambos campos son obligatorios
+                if not kw_concepto or not kw_cc:
+                    continue
 
-        # 4. Estacional (keywords + pocos meses)
-        if meses_activos <= 4 and (
-            any(kw in concepto for kw in _KW_ESTACIONAL_CONCEPTO) or
-            any(kw in cc for kw in _KW_ESTACIONAL_CC)
-        ):
-            return 'Estacional'
+                if kw_concepto not in concepto or kw_cc not in cc:
+                    continue
 
-        # 5. No Repetitivo
+                # Estacional requiere frecuencia baja
+                if tipo.tipo == 'Estacional' and meses_activos > umbral_estacional:
+                    continue
+
+                return tipo.tipo
+
+        # Fallback por frecuencia
         if meses_activos <= umbral_no_repetitivo:
             return 'No Repetitivo'
-
-        # 6. Default
         return 'Variable'
 
     def resolver_regla(
@@ -156,7 +137,7 @@ class PresupuestoGeneracionDomainService:
         reglas: List[ReglaPresupuesto],
         indicadores: Dict[str, Decimal],
         tipos_excluidos: List[str],
-        umbral: int = 4
+        umbral: int = DEFAULT_UMBRAL_NO_REPETITIVO
     ) -> GeneracionResult:
         """Proceso completo de generación inteligente.
 
@@ -188,8 +169,13 @@ class PresupuestoGeneracionDomainService:
                     and regla.monto_fijo_mensual is None
                     and regla.id is None)
 
+        # Tracking para Fijos con monto_fijo_mensual: clave a nivel CC+Concepto (sin tercero)
+        fijo_monto_conceptos: Dict[tuple, dict] = {}
+        # Tracking para Estacionales: acumular total anual por CC+Concepto para prorrateo
+        estacional_conceptos: Dict[tuple, dict] = {}
+
         def _procesar_linea(linea: PresupuestoDetalle, regla: ReglaPresupuesto) -> None:
-            """Aplica aumento y acumula resumen."""
+            """Aplica aumento y acumula resumen. Solo para items sin monto_fijo_mensual."""
             nonlocal total_base, total_presupuestado
             self._aplicar_aumento(linea, regla, indicadores)
             resumen_tipos[regla.tipo_gasto] = resumen_tipos.get(regla.tipo_gasto, 0) + 1
@@ -215,24 +201,127 @@ class PresupuestoGeneracionDomainService:
                 fijos_sin_monto_info.append(self._linea_to_fijo_info(linea, regla))
                 continue
 
+            # Monto fijo: registrar a nivel CC+Concepto, NO agregar líneas per-tercero
+            if regla.monto_fijo_mensual is not None:
+                key = (linea.centro_costo_id, linea.concepto_id)
+                if key not in fijo_monto_conceptos:
+                    fijo_monto_conceptos[key] = {"regla": regla, "sample": linea}
+                continue
+
+            # Estacional sin monto fijo: acumular por mes histórico (sin indicador)
+            if regla.tipo_gasto == 'Estacional':
+                key = (linea.centro_costo_id, linea.concepto_id)
+                if key not in estacional_conceptos:
+                    estacional_conceptos[key] = {"meses": {}, "sample": linea}
+                m = linea.mes
+                estacional_conceptos[key]["meses"][m] = estacional_conceptos[key]["meses"].get(m, Decimal('0')) + linea.monto_presupuestado
+                continue
+
             _procesar_linea(linea, regla)
 
         # Procesar no repetitivas auto-detectadas
         for linea in no_rep_auto:
             regla = self.resolver_regla(linea.centro_costo_id, linea.concepto_id, reglas)
 
+            # Estacional: siempre incluir con distribución histórica, aunque sea no-repetitivo por frecuencia
+            if regla.tipo_gasto == 'Estacional' and regla.tipo_gasto not in tipos_excluidos:
+                key = (linea.centro_costo_id, linea.concepto_id)
+                if key not in estacional_conceptos:
+                    estacional_conceptos[key] = {"meses": {}, "sample": linea}
+                m = linea.mes
+                estacional_conceptos[key]["meses"][m] = estacional_conceptos[key]["meses"].get(m, Decimal('0')) + linea.monto_presupuestado
+                continue
+
             # Si tiene regla explícita (no default) y no es tipo excluido → override, incluir
             if regla.id is not None and regla.tipo_gasto not in tipos_excluidos:
+                # Monto fijo: registrar a nivel CC+Concepto, NO agregar líneas per-tercero
+                if regla.monto_fijo_mensual is not None:
+                    key = (linea.centro_costo_id, linea.concepto_id)
+                    if key not in fijo_monto_conceptos:
+                        fijo_monto_conceptos[key] = {"regla": regla, "sample": linea}
+                    continue
                 _procesar_linea(linea, regla)
             else:
                 no_repetitivos_info.append(self._linea_to_no_rep_info(
                     linea, regla, "Auto-detectado (≤{} meses)".format(umbral)
                 ))
 
+        # Paso 3: Crear 12 líneas mensuales por CC+Concepto con monto_fijo_mensual
+        # El monto fijo es a nivel concepto (sin tercero), siempre 12 meses
+        # monto_base = monto_fijo (sin aumento), para que el % aumento promedio sea coherente
+        for (cc_id, concepto_id), info in fijo_monto_conceptos.items():
+            regla = info["regla"]
+            sample = info["sample"]
+            for mes in range(1, 13):
+                new_line = PresupuestoDetalle(
+                    presupuesto_id=sample.presupuesto_id,
+                    centro_costo_id=cc_id,
+                    concepto_id=concepto_id,
+                    tercero_id=None,
+                    mes=mes,
+                    monto_presupuestado=regla.monto_fijo_mensual,
+                    monto_base=regla.monto_fijo_mensual,
+                    tipo=regla.tipo_gasto,
+                    centro_costo_nombre=sample.centro_costo_nombre,
+                    concepto_nombre=sample.concepto_nombre,
+                    tercero_nombre=None,
+                )
+                regulares.append(new_line)
+                total_base += new_line.monto_base
+                total_presupuestado += new_line.monto_presupuestado
+                resumen_tipos[regla.tipo_gasto] = resumen_tipos.get(regla.tipo_gasto, 0) + 1
+                resumen_indicadores['Monto Fijo'] = resumen_indicadores.get('Monto Fijo', 0) + 1
+
+        # Paso 4: Crear 12 líneas mensuales por CC+Concepto para estacionales
+        # Prorrateo uniforme: total anual / 12 en cada mes
+        for (cc_id, concepto_id), info in estacional_conceptos.items():
+            meses_hist = info["meses"]
+            sample = info["sample"]
+            total_anual = sum(meses_hist.values())
+            monto_mensual = (total_anual / 12).quantize(Decimal('0.01'))
+            for mes in range(1, 13):
+                new_line = PresupuestoDetalle(
+                    presupuesto_id=sample.presupuesto_id,
+                    centro_costo_id=cc_id,
+                    concepto_id=concepto_id,
+                    tercero_id=None,
+                    mes=mes,
+                    monto_presupuestado=monto_mensual,
+                    monto_base=monto_mensual,
+                    tipo='Estacional',
+                    centro_costo_nombre=sample.centro_costo_nombre,
+                    concepto_nombre=sample.concepto_nombre,
+                    tercero_nombre=None,
+                )
+                regulares.append(new_line)
+                total_base += new_line.monto_base
+                total_presupuestado += new_line.monto_presupuestado
+                resumen_tipos['Estacional'] = resumen_tipos.get('Estacional', 0) + 1
+                resumen_indicadores['Prorrateo Anual'] = resumen_indicadores.get('Prorrateo Anual', 0) + 1
+
         # Calcular resumen
         pct_aumento = (
             float((total_presupuestado - total_base) / total_base * 100)
             if total_base > 0 else 0
+        )
+
+        # Agregar por centro de costo (para Pareto visual)
+        cc_totales: Dict[int, dict] = {}
+        for linea in regulares:
+            cc_id = linea.centro_costo_id
+            if cc_id not in cc_totales:
+                cc_totales[cc_id] = {
+                    "centro_costo_id": cc_id,
+                    "centro_costo_nombre": linea.centro_costo_nombre or str(cc_id),
+                    "monto_presupuestado": 0.0,
+                    "lineas": 0,
+                }
+            cc_totales[cc_id]["monto_presupuestado"] += float(linea.monto_presupuestado)
+            cc_totales[cc_id]["lineas"] += 1
+        por_centro_costo = sorted(
+            cc_totales.values(),
+            key=lambda x: x["monto_presupuestado"],
+            reverse=True
         )
 
         resumen = {
@@ -244,6 +333,7 @@ class PresupuestoGeneracionDomainService:
             "pct_aumento_promedio": round(pct_aumento, 2),
             "por_tipo": resumen_tipos,
             "por_indicador": resumen_indicadores,
+            "por_centro_costo": por_centro_costo,
         }
 
         return GeneracionResult(

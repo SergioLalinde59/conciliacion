@@ -26,6 +26,8 @@ interface CurrencyDisplayProps {
     decimals?: number
     /** Justificar a la derecha. Por defecto true cuando colorize es true */
     alignRight?: boolean
+    /** Mostrar en formato compacto: $1.5M, $150K */
+    compact?: boolean
 }
 
 /**
@@ -110,7 +112,7 @@ export const getNumberColorClass = (value: number): string => {
  * fmt(50.25, 'USD')  // "$50.25"
  */
 import { useSettings } from '../../context/SettingsContext'
-import { getAmountColorClass } from '../../utils/formatters'
+import { getAmountColorClass, formatCompact } from '../../utils/formatters'
 
 export const useFormatCurrency = () => {
     const { showDecimals } = useSettings()
@@ -145,7 +147,8 @@ export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
     colorize = true,
     showPlusSign = false,
     decimals,
-    alignRight
+    alignRight,
+    compact = false
 }) => {
     const { showDecimals } = useSettings();
 
@@ -159,18 +162,22 @@ export const CurrencyDisplay: React.FC<CurrencyDisplayProps> = ({
     const shouldAlignRight = alignRight ?? colorize
     const alignClass = shouldAlignRight ? 'block w-full text-right' : ''
 
+    // Modo compacto: usar formatCompact ($1.5M, $150K)
+    if (compact) {
+        const compactValue = formatCompact(Math.abs(value))
+        const displayValue = value < 0 ? `-${compactValue}` : (showPlusSign && value > 0 ? `+${compactValue}` : compactValue)
+        return (
+            <span className={`${colorClass} ${alignClass} ${className}`.trim()}>
+                {displayValue}
+            </span>
+        )
+    }
+
     // Determine decimal places
-    // If decimals is explicitly provided, use it.
-    // Otherwise, use context preference.
     let effectiveDecimals = decimals;
     if (effectiveDecimals === undefined) {
         effectiveDecimals = showDecimals ? 2 : 0;
     }
-
-    // Reuse the util if applicable, or keep internal logic if complex currency support is needed.
-    // The util supports simple COP formatting. For USD/TRM we might need the internal logic or update the util.
-    // The util I created is simple. The existing component has specific logic for USD/TRM.
-    // I will adapt the existing logic to use effectiveDecimals.
 
     const config = CURRENCY_CONFIG[currency]
     const numValue = Number(value)

@@ -66,6 +66,7 @@ class MovimientoResponse(BaseModel):
     valor_filtrado: Optional[float] = None  # Valor parcial cuando hay filtros por centro_costo/concepto
     usd: Optional[float]
     trm: Optional[float]
+    trm_provisional: Optional[bool] = None
     moneda_id: Optional[int]
     cuenta_id: Optional[int]
     tercero_id: Optional[int]
@@ -121,6 +122,7 @@ def _to_response(mov: Movimiento) -> MovimientoResponse:
         valor_filtrado=float(mov.valor_filtrado) if mov.valor_filtrado is not None else None,
         usd=float(mov.usd) if mov.usd else None,
         trm=float(mov.trm) if mov.trm else None,
+        trm_provisional=mov.trm_provisional,
         moneda_id=mov.moneda_id,
         cuenta_id=mov.cuenta_id,
         tercero_id=mov.tercero_id,

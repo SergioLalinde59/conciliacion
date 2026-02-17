@@ -1,21 +1,26 @@
-import { useState, useMemo } from 'react'
-import { Sparkles, ChevronRight, ChevronLeft, CheckCircle2, XCircle, Eye, ArrowRight } from 'lucide-react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { Sparkles, ChevronRight, ChevronLeft, CheckCircle2, XCircle, Eye, ArrowRight, X, Search } from 'lucide-react'
 import { Modal } from '../../molecules/Modal'
 import { Button } from '../../atoms/Button'
 import { Input } from '../../atoms/Input'
 import { presupuestoService } from '../../../services/presupuesto.service'
 import { useIndicadores } from '../../../hooks/useIndicadores'
-import type { Presupuesto, GeneracionPreview, GeneracionResult, NoRepetitivoInfo, FijoSinMontoInfo } from '../../../types/Presupuesto'
+import { useTiposGasto } from '../../../hooks/useTiposGasto'
+import { useConfiguracionExclusion } from '../../../hooks/useReportes'
+import type { Presupuesto, GeneracionPreview, GeneracionResult } from '../../../types/Presupuesto'
+import type { TipoGasto } from '../../../types/TipoGasto'
 import { useQuery } from '@tanstack/react-query'
 import { API_BASE_URL, handleResponse } from '../../../services/httpClient'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
+import { formatCompact } from '../../../utils/formatters'
 
 interface Props {
     isOpen: boolean
     presupuesto: Presupuesto
     onClose: () => void
     onSuccess: () => void
+    mode?: 'generar' | 'regenerar'
 }
 
 type Step = 1 | 2 | 3
@@ -29,19 +34,31 @@ const STEP_TITLES: Record<Step, string> = {
 const formatMoney = (n: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
 
-export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSuccess }: Props) => {
+export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSuccess, mode = 'generar' }: Props) => {
     const navigate = useNavigate()
     const [step, setStep] = useState<Step>(1)
     const [anioFuente, setAnioFuente] = useState(presupuesto.anio - 1)
-    const [umbral, setUmbral] = useState(presupuesto.umbral_no_repetitivo || 4)
+    const [umbral, setUmbral] = useState(presupuesto.umbral_no_repetitivo)
+    const [umbralEstacional, setUmbralEstacional] = useState(presupuesto.umbral_estacional)
+    const [umbralPareto, setUmbralPareto] = useState(presupuesto.umbral_pareto)
     const [ccExcluidos, setCcExcluidos] = useState<number[]>([])
     const [loading, setLoading] = useState(false)
     const [preview, setPreview] = useState<GeneracionPreview | null>(null)
     const [result, setResult] = useState<GeneracionResult | null>(null)
-    const [noRepIncluidos, setNoRepIncluidos] = useState<Set<string>>(new Set())
-    const [montosFijos, setMontosFijos] = useState<Record<string, number>>({})
 
     const { data: indicadores = [] } = useIndicadores(presupuesto.anio)
+    const { data: tiposGasto = [] } = useTiposGasto()
+    const { data: configExclusion = [] } = useConfiguracionExclusion()
+
+    // Precargar CC excluidos desde filtros avanzados
+    useEffect(() => {
+        if (configExclusion.length > 0 && ccExcluidos.length === 0) {
+            const defaults = configExclusion
+                .filter(c => c.activo_por_defecto)
+                .map(c => c.centro_costo_id)
+            if (defaults.length > 0) setCcExcluidos(defaults)
+        }
+    }, [configExclusion])
 
     const { data: centrosCosto = [] } = useQuery({
         queryKey: ['centros-costo-select'],
@@ -64,8 +81,11 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
         setStep(1)
         setPreview(null)
         setResult(null)
-        setNoRepIncluidos(new Set())
-        setMontosFijos({})
+        // Restaurar CC excluidos desde filtros avanzados
+        const defaults = configExclusion
+            .filter(c => c.activo_por_defecto)
+            .map(c => c.centro_costo_id)
+        setCcExcluidos(defaults)
     }
 
     const handleClose = () => {
@@ -81,9 +101,9 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
                 anio_fuente: anioFuente,
                 centros_costos_excluidos: ccExcluidos.length > 0 ? ccExcluidos : undefined,
                 umbral,
+                umbral_estacional: umbralEstacional,
             })
             setPreview(data)
-            setNoRepIncluidos(new Set())
             setStep(2)
         } catch (err: any) {
             toast.error(err.message || 'Error al previsualizar')
@@ -92,74 +112,27 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
         }
     }
 
-    // --- Step 2: Generar ---
+    // --- Step 2: Generar / Regenerar ---
     const handleGenerar = async () => {
         if (!preview) return
         setLoading(true)
         try {
-            // Construir lista de no-repetitivos incluidos manualmente
-            const incluidos = preview.no_repetitivos
-                .filter(nr => noRepIncluidos.has(nrKey(nr)))
-                .map(nr => ({
-                    centro_costo_id: nr.centro_costo_id,
-                    concepto_id: nr.concepto_id,
-                    tercero_id: nr.tercero_id,
-                    mes: nr.mes,
-                    monto: nr.monto,
-                }))
-
-            // Construir lista de montos fijos (agrupados por CC/Concepto/Tercero)
-            const montosFijosPayload = preview.fijos_sin_monto?.length
-                ? [...new Set(preview.fijos_sin_monto.map(fijoGroupKey))].map(key => {
-                    const sample = preview.fijos_sin_monto.find(f => fijoGroupKey(f) === key)!
-                    return {
-                        centro_costo_id: sample.centro_costo_id,
-                        concepto_id: sample.concepto_id,
-                        tercero_id: sample.tercero_id,
-                        monto_fijo: montosFijos[key] ?? 0,
-                    }
-                })
-                : undefined
-
-            const data = await presupuestoService.generar(presupuesto.id, {
+            const params = {
                 anio_fuente: anioFuente,
                 centros_costos_excluidos: ccExcluidos.length > 0 ? ccExcluidos : undefined,
                 umbral,
-                no_repetitivos_incluidos: incluidos.length > 0 ? incluidos : undefined,
-                montos_fijos: montosFijosPayload,
-            })
+                umbral_estacional: umbralEstacional,
+            }
+            const data = mode === 'regenerar'
+                ? await presupuestoService.regenerar(presupuesto.id, params)
+                : await presupuestoService.generar(presupuesto.id, params)
             setResult(data)
             setStep(3)
             onSuccess()
         } catch (err: any) {
-            toast.error(err.message || 'Error al generar')
+            toast.error(err.message || `Error al ${mode === 'regenerar' ? 'regenerar' : 'generar'}`)
         } finally {
             setLoading(false)
-        }
-    }
-
-    const nrKey = (nr: NoRepetitivoInfo) =>
-        `${nr.centro_costo_id}-${nr.concepto_id ?? 'x'}-${nr.tercero_id ?? 'x'}-${nr.mes}`
-
-    const fijoGroupKey = (f: FijoSinMontoInfo) =>
-        `${f.centro_costo_id}-${f.concepto_id ?? 'x'}-${f.tercero_id ?? 'x'}`
-
-    const toggleNoRep = (nr: NoRepetitivoInfo) => {
-        const key = nrKey(nr)
-        setNoRepIncluidos(prev => {
-            const next = new Set(prev)
-            if (next.has(key)) next.delete(key)
-            else next.add(key)
-            return next
-        })
-    }
-
-    const toggleAllNoRep = () => {
-        if (!preview) return
-        if (noRepIncluidos.size === preview.no_repetitivos.length) {
-            setNoRepIncluidos(new Set())
-        } else {
-            setNoRepIncluidos(new Set(preview.no_repetitivos.map(nrKey)))
         }
     }
 
@@ -189,7 +162,7 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
                         <ChevronLeft size={16} className="mr-1" /> Volver
                     </Button>
                     <Button onClick={handleGenerar} icon={Sparkles} isLoading={loading}>
-                        Generar Presupuesto
+                        {mode === 'regenerar' ? 'Regenerar Presupuesto' : 'Generar Presupuesto'}
                     </Button>
                 </>
             )
@@ -210,7 +183,7 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
             onClose={handleClose}
             title={
                 <div className="flex items-center gap-3">
-                    <span>Generar Presupuesto</span>
+                    <span>{mode === 'regenerar' ? 'Regenerar Presupuesto' : 'Generar Presupuesto'}</span>
                     <div className="flex items-center gap-1 text-xs">
                         {([1, 2, 3] as Step[]).map(s => (
                             <div key={s} className={`flex items-center gap-1 ${s <= step ? 'text-blue-600' : 'text-slate-400'}`}>
@@ -234,20 +207,20 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
                 setAnioFuente={setAnioFuente}
                 umbral={umbral}
                 setUmbral={setUmbral}
+                umbralEstacional={umbralEstacional}
+                setUmbralEstacional={setUmbralEstacional}
+                umbralPareto={umbralPareto}
+                setUmbralPareto={setUmbralPareto}
                 ccExcluidos={ccExcluidos}
                 toggleCcExcluido={toggleCcExcluido}
                 centrosCosto={centrosCosto}
                 indicadoresMap={indicadoresMap}
+                tiposGasto={tiposGasto}
             />}
             {step === 2 && preview && <Step2Preview
                 preview={preview}
-                noRepIncluidos={noRepIncluidos}
-                toggleNoRep={toggleNoRep}
-                toggleAllNoRep={toggleAllNoRep}
-                nrKey={nrKey}
-                montosFijos={montosFijos}
-                setMontosFijos={setMontosFijos}
-                fijoGroupKey={fijoGroupKey}
+                presupuesto={presupuesto}
+                umbralPareto={umbralPareto}
             />}
             {step === 3 && result && <Step3Result result={result} />}
         </Modal>
@@ -257,102 +230,186 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
 // ==========================================
 // Step 1: Configuración
 // ==========================================
-function Step1Config({ presupuesto, anioFuente, setAnioFuente, umbral, setUmbral, ccExcluidos, toggleCcExcluido, centrosCosto, indicadoresMap }: {
+
+function Step1Config({ presupuesto, anioFuente, setAnioFuente, umbral, setUmbral, umbralEstacional, setUmbralEstacional, umbralPareto, setUmbralPareto, ccExcluidos, toggleCcExcluido, centrosCosto, indicadoresMap, tiposGasto }: {
     presupuesto: Presupuesto
     anioFuente: number
     setAnioFuente: (v: number) => void
     umbral: number
     setUmbral: (v: number) => void
+    umbralEstacional: number
+    setUmbralEstacional: (v: number) => void
+    umbralPareto: number
+    setUmbralPareto: (v: number) => void
     ccExcluidos: number[]
     toggleCcExcluido: (id: number) => void
     centrosCosto: { id: number; nombre: string }[]
     indicadoresMap: Record<string, { nombre: string; valor: number }>
+    tiposGasto: TipoGasto[]
 }) {
     const tieneIndicadores = Object.keys(indicadoresMap).length > 0
 
+    // Indicadores salariales: todos los que NO son IPC ni null
+    const ipcNombre = tiposGasto.find(t => t.tipo === 'Variable')?.indicador_default
+    const indicadoresSalariales = useMemo(() => {
+        return Object.values(indicadoresMap)
+            .filter(ind => ind.nombre !== ipcNombre)
+            .sort((a, b) => b.valor - a.valor)
+    }, [indicadoresMap, ipcNombre])
+
+    const ipcValor = ipcNombre ? indicadoresMap[ipcNombre]?.valor : null
+    const tieneMaterialidad = presupuesto.umbral_minimo_mensual > 0 || presupuesto.umbral_minimo_anual > 0
+
     return (
         <div className="space-y-5">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
-                Se tomarán los egresos reales del año fuente, se clasificarán por tipo de gasto
-                y se aplicarán aumentos según indicadores económicos para generar <strong>{presupuesto.nombre}</strong>.
-            </div>
+            {/* Error: sin indicadores */}
+            {!tieneIndicadores && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
+                    <XCircle size={16} className="text-red-500 shrink-0" />
+                    No hay indicadores para {presupuesto.anio}. Configure indicadores antes de generar.
+                </div>
+            )}
 
-            {/* Indicadores panel */}
-            <div>
-                <h4 className="text-sm font-semibold text-slate-700 mb-2">Indicadores configurados para {presupuesto.anio}</h4>
-                {tieneIndicadores ? (
-                    <div className="grid grid-cols-2 gap-2">
-                        {Object.entries(indicadoresMap).map(([nombre, info]) => (
-                            <div key={nombre} className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm">
-                                <CheckCircle2 size={16} className="text-green-500 shrink-0" />
-                                <span className="font-medium text-green-700">{nombre}</span>
-                                <span className="text-green-600">+{info.valor}%</span>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
-                        <XCircle size={16} className="text-red-500" />
-                        No hay indicadores para {presupuesto.anio}. Configure indicadores antes de generar.
-                    </div>
-                )}
-            </div>
-
-            {/* Año fuente + Umbral */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Año fuente */}
+            <div className="max-w-48">
                 <Input
-                    label="Año Fuente (datos reales)"
+                    label="Año Fuente"
                     type="number"
                     value={anioFuente}
                     onChange={e => setAnioFuente(parseInt(e.target.value) || presupuesto.anio - 1)}
                     min={2020}
                     max={presupuesto.anio}
                 />
-                <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider ml-0.5">
-                        Umbral No Repetitivos
-                    </label>
-                    <div className="mt-1">
+            </div>
+
+            {/* Cinta infográfica: tipos de gasto */}
+            {tieneIndicadores && (
+                <div className="flex items-stretch bg-slate-50 rounded-lg border border-slate-200 divide-x divide-slate-200 text-center">
+                    {/* Variable */}
+                    <div className="flex-1 py-2.5 px-1">
+                        <div className="text-[10px] text-slate-500 font-medium">Variable</div>
+                        <div className="text-sm font-bold text-emerald-600 mt-0.5">+{ipcValor ?? '?'}%</div>
+                    </div>
+                    {/* Salarial */}
+                    <div className="flex-1 py-2.5 px-1">
+                        <div className="text-[10px] text-slate-500 font-medium">Salarial</div>
+                        <div className="mt-0.5 space-y-px">
+                            {indicadoresSalariales.map(ind => {
+                                const label = ind.nombre.replace('Aumento ', '').replace('Salario ', '')
+                                return (
+                                    <div key={ind.nombre} className="text-[11px] leading-tight">
+                                        <span className="text-slate-400">{label}</span>{' '}
+                                        <span className="font-semibold text-purple-600">+{ind.valor}%</span>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                    {/* Fijo */}
+                    <div className="flex-1 py-2.5 px-1">
+                        <div className="text-[10px] text-slate-500 font-medium">Fijo</div>
+                        <div className="text-sm font-bold text-blue-600 mt-0.5">$/mes</div>
+                    </div>
+                    {/* Estacional */}
+                    <div className="flex-1 py-2.5 px-1">
+                        <div className="text-[10px] text-slate-500 font-medium">Estacional</div>
+                        <div className="text-sm font-bold text-amber-600 mt-0.5">+{ipcValor ?? '?'}%</div>
+                    </div>
+                    {/* Monto Mín */}
+                    <div className="flex-1 py-2.5 px-1">
+                        <div className="text-[10px] text-slate-500 font-medium">Monto Mín</div>
+                        {tieneMaterialidad ? (
+                            <div className="mt-0.5 space-y-px">
+                                {presupuesto.umbral_minimo_mensual > 0 && (
+                                    <div className="text-[11px] font-semibold text-slate-600 leading-tight">
+                                        {formatCompact(presupuesto.umbral_minimo_mensual)}/mes
+                                    </div>
+                                )}
+                                {presupuesto.umbral_minimo_anual > 0 && (
+                                    <div className="text-[11px] font-semibold text-slate-600 leading-tight">
+                                        {formatCompact(presupuesto.umbral_minimo_anual)}/año
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-sm font-bold text-slate-400 mt-0.5">—</div>
+                        )}
+                    </div>
+                    {/* No Repetitivo */}
+                    <div className="flex-1 py-2.5 px-1">
+                        <div className="text-[10px] text-slate-500 font-medium">No Repet.</div>
+                        <div className="text-sm font-bold text-slate-400 mt-0.5">Excluido</div>
+                    </div>
+                </div>
+            )}
+
+            {/* Umbrales de clasificación */}
+            <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider ml-0.5">
+                    Clasificación (meses)
+                </label>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                    <div>
+                        <label className="text-[10px] text-slate-500 font-medium ml-0.5">No Repetitivo (≤ N meses)</label>
                         <input
                             type="range" min={1} max={6} value={umbral}
                             onChange={e => setUmbral(Number(e.target.value))}
                             className="w-full accent-blue-600"
                         />
-                        <div className="flex justify-between text-xs text-slate-500 mt-1">
-                            <span>1 mes</span>
+                        <div className="flex justify-between text-xs text-slate-500">
+                            <span>1</span>
                             <span className="font-semibold text-blue-600">{umbral} meses</span>
-                            <span>6 meses</span>
+                            <span>6</span>
                         </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">Gastos con actividad en ≤{umbral} meses se excluyen</p>
+                    <div>
+                        <label className="text-[10px] text-slate-500 font-medium ml-0.5">Estacional (≤ N meses + keywords)</label>
+                        <input
+                            type="range" min={1} max={6} value={umbralEstacional}
+                            onChange={e => setUmbralEstacional(Number(e.target.value))}
+                            className="w-full accent-blue-600"
+                        />
+                        <div className="flex justify-between text-xs text-slate-500">
+                            <span>1</span>
+                            <span className="font-semibold text-blue-600">{umbralEstacional} meses</span>
+                            <span>6</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Umbral Pareto (Top CC) */}
+            <div>
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider ml-0.5">
+                    Top Centros de Costo
+                </label>
+                <p className="text-[11px] text-slate-400 ml-0.5 mt-0.5 mb-2">
+                    Monto mínimo anual para aparecer en el gráfico de vista previa
+                </p>
+                <div className="max-w-64">
+                    <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                        <input
+                            type="text"
+                            value={umbralPareto.toLocaleString('es-CO', { maximumFractionDigits: 0 })}
+                            onChange={e => {
+                                const raw = e.target.value.replace(/\D/g, '')
+                                setUmbralPareto(raw ? parseInt(raw) : 0)
+                            }}
+                            className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-lg text-sm font-mono outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300 transition-all bg-white text-right"
+                        />
+                    </div>
                 </div>
             </div>
 
             {/* CC a excluir */}
             {centrosCosto.length > 0 && (
-                <div>
-                    <h4 className="text-sm font-semibold text-slate-700 mb-2">Centros de Costo a excluir</h4>
-                    <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-1">
-                        {centrosCosto.map(cc => (
-                            <label key={cc.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-slate-50 px-2 py-1 rounded">
-                                <input
-                                    type="checkbox"
-                                    checked={ccExcluidos.includes(cc.id)}
-                                    onChange={() => toggleCcExcluido(cc.id)}
-                                    className="rounded border-slate-300"
-                                />
-                                <span className={ccExcluidos.includes(cc.id) ? 'text-slate-400 line-through' : ''}>
-                                    {cc.nombre}
-                                </span>
-                            </label>
-                        ))}
-                    </div>
-                </div>
+                <CcExcluirCombobox
+                    centrosCosto={centrosCosto}
+                    ccExcluidos={ccExcluidos}
+                    toggleCcExcluido={toggleCcExcluido}
+                />
             )}
-
-            <div className="text-xs text-gray-500">
-                Las líneas existentes con la misma combinación CC/Concepto/Tercero/Mes se actualizarán.
-            </div>
         </div>
     )
 }
@@ -360,203 +417,147 @@ function Step1Config({ presupuesto, anioFuente, setAnioFuente, umbral, setUmbral
 // ==========================================
 // Step 2: Vista Previa
 // ==========================================
-function Step2Preview({ preview, noRepIncluidos, toggleNoRep, toggleAllNoRep, nrKey, montosFijos, setMontosFijos, fijoGroupKey }: {
+function Step2Preview({ preview, presupuesto, umbralPareto }: {
     preview: GeneracionPreview
-    noRepIncluidos: Set<string>
-    toggleNoRep: (nr: NoRepetitivoInfo) => void
-    toggleAllNoRep: () => void
-    nrKey: (nr: NoRepetitivoInfo) => string
-    montosFijos: Record<string, number>
-    setMontosFijos: React.Dispatch<React.SetStateAction<Record<string, number>>>
-    fijoGroupKey: (f: FijoSinMontoInfo) => string
+    presupuesto: Presupuesto
+    umbralPareto: number
 }) {
-    const { resumen, no_repetitivos, fijos_sin_monto = [] } = preview
+    const { resumen, no_repetitivos } = preview
 
-    // Agrupar fijos por (CC, Concepto, Tercero) para mostrar UN input por grupo
-    const fijosAgrupados = useMemo(() => {
-        const groups: Record<string, { key: string; sample: FijoSinMontoInfo; meses: number; montoPromedio: number }> = {}
-        for (const f of fijos_sin_monto) {
-            const key = fijoGroupKey(f)
-            if (!groups[key]) {
-                groups[key] = { key, sample: f, meses: 0, montoPromedio: 0 }
-            }
-            groups[key].meses++
-            groups[key].montoPromedio += f.monto_base
-        }
-        for (const g of Object.values(groups)) {
-            g.montoPromedio = g.montoPromedio / g.meses
-        }
-        return Object.values(groups)
-    }, [fijos_sin_monto, fijoGroupKey])
+    const tieneMaterialidad = presupuesto.umbral_minimo_mensual > 0 || presupuesto.umbral_minimo_anual > 0
 
-    const tipoBadgeColor: Record<string, string> = {
-        fijo: 'bg-blue-100 text-blue-700',
-        variable: 'bg-green-100 text-green-700',
-        salarial: 'bg-purple-100 text-purple-700',
-        estacional: 'bg-amber-100 text-amber-700',
-        no_repetitivo: 'bg-red-100 text-red-700',
+    const tipoColor: Record<string, string> = {
+        variable: 'text-emerald-600',
+        fijo: 'text-blue-600',
+        salarial: 'text-purple-600',
+        estacional: 'text-amber-600',
     }
+
+    const tipoLabel: Record<string, string> = {
+        variable: 'Variable',
+        fijo: 'Fijo',
+        salarial: 'Salarial',
+        estacional: 'Estacional',
+    }
+
+    // Pareto: datos por CC con acumulado
+    const ccData = resumen.por_centro_costo || []
+    const maxMonto = Math.max(...ccData.map(cc => cc.monto_presupuestado), 1)
+
+    const ccWithPareto = useMemo(() => {
+        let cumPct = 0
+        return ccData.map(cc => {
+            const pct = resumen.total_presupuestado > 0
+                ? (cc.monto_presupuestado / resumen.total_presupuestado) * 100
+                : 0
+            cumPct += pct
+            return { ...cc, pct, cumPct, isTop: cc.monto_presupuestado >= umbralPareto }
+        })
+    }, [ccData, resumen.total_presupuestado, umbralPareto])
 
     return (
         <div className="space-y-4">
-            {/* Resumen superior */}
-            <div className="grid grid-cols-4 gap-3">
-                <div className="bg-slate-50 rounded-lg p-3 text-center">
-                    <div className="text-2xl font-bold text-slate-800">{resumen.total_lineas}</div>
-                    <div className="text-xs text-slate-500">Líneas regulares</div>
+            {/* Resumen compacto */}
+            <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+                <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-semibold text-slate-700">{presupuesto.nombre}</span>
+                    <span className="text-lg font-bold text-blue-700">{formatMoney(resumen.total_presupuestado)}</span>
                 </div>
-                <div className="bg-slate-50 rounded-lg p-3 text-center">
-                    <div className="text-sm font-bold text-slate-800">{formatMoney(resumen.total_base)}</div>
-                    <div className="text-xs text-slate-500">Monto base</div>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-3 text-center">
-                    <div className="text-sm font-bold text-blue-700">{formatMoney(resumen.total_presupuestado)}</div>
-                    <div className="text-xs text-slate-500">Presupuestado</div>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-3 text-center">
-                    <div className="text-2xl font-bold text-green-600">+{resumen.pct_aumento_promedio.toFixed(1)}%</div>
-                    <div className="text-xs text-slate-500">Aumento promedio</div>
-                </div>
-            </div>
 
-            {/* Desglose por tipo */}
-            <div>
-                <h4 className="text-sm font-semibold text-slate-700 mb-2">Por tipo de gasto</h4>
-                <div className="flex flex-wrap gap-2">
+                {/* Cinta infográfica: resultado por tipo */}
+                <div className="flex items-stretch bg-white rounded-lg border border-slate-200 divide-x divide-slate-200 text-center">
                     {Object.entries(resumen.por_tipo).map(([tipo, count]) => (
-                        <span key={tipo} className={`px-3 py-1 rounded-full text-xs font-medium ${tipoBadgeColor[tipo] || 'bg-slate-100 text-slate-700'}`}>
-                            {tipo}: {count}
-                        </span>
+                        <div key={tipo} className="flex-1 py-2 px-1">
+                            <div className="text-[10px] text-slate-500 font-medium">{tipoLabel[tipo] || tipo}</div>
+                            <div className={`text-sm font-bold mt-0.5 ${tipoColor[tipo] || 'text-slate-600'}`}>{count}</div>
+                        </div>
                     ))}
-                </div>
-            </div>
-
-            {/* Desglose por indicador */}
-            {resumen.indicadores && Object.keys(resumen.indicadores).length > 0 && (
-                <div>
-                    <h4 className="text-sm font-semibold text-slate-700 mb-2">Indicadores aplicados</h4>
-                    <div className="flex flex-wrap gap-2">
-                        {Object.entries(resumen.indicadores).map(([nombre, info]) => (
-                            <span key={nombre} className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-medium">
-                                {nombre} +{info.valor}% → {resumen.por_indicador?.[nombre] || 0} líneas
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Gastos fijos pendientes de monto */}
-            {fijosAgrupados.length > 0 && (
-                <div>
-                    <h4 className="text-sm font-semibold text-amber-700 mb-2">
-                        Gastos fijos sin monto configurado ({fijosAgrupados.length})
-                    </h4>
-                    <p className="text-xs text-slate-500 mb-2">
-                        Ingrese el monto mensual conocido. Si deja vacio, se usara el monto del ano anterior sin aumento.
-                    </p>
-                    <div className="max-h-48 overflow-y-auto border rounded-lg">
-                        <table className="w-full text-xs">
-                            <thead className="bg-amber-50 text-amber-700 sticky top-0">
-                                <tr>
-                                    <th className="px-2 py-1.5 text-left">Centro Costo</th>
-                                    <th className="px-2 py-1.5 text-left">Concepto</th>
-                                    <th className="px-2 py-1.5 text-left">Tercero</th>
-                                    <th className="px-2 py-1.5 text-center">Meses</th>
-                                    <th className="px-2 py-1.5 text-right">Monto Anterior</th>
-                                    <th className="px-2 py-1.5 text-right">Monto Nuevo</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-amber-50">
-                                {fijosAgrupados.map(g => (
-                                    <tr key={g.key} className="hover:bg-slate-50">
-                                        <td className="px-2 py-1.5">{g.sample.centro_costo_nombre || g.sample.centro_costo_id}</td>
-                                        <td className="px-2 py-1.5">{g.sample.concepto_nombre || '-'}</td>
-                                        <td className="px-2 py-1.5">{g.sample.tercero_nombre || '-'}</td>
-                                        <td className="px-2 py-1.5 text-center">{g.meses}</td>
-                                        <td className="px-2 py-1.5 text-right font-mono">{formatMoney(g.montoPromedio)}</td>
-                                        <td className="px-2 py-1.5 text-right">
-                                            <input
-                                                type="number"
-                                                placeholder={Math.round(g.montoPromedio).toString()}
-                                                value={montosFijos[g.key] ?? ''}
-                                                onChange={e => setMontosFijos(prev => ({
-                                                    ...prev,
-                                                    [g.key]: e.target.value ? Number(e.target.value) : undefined as unknown as number
-                                                }))}
-                                                className="w-28 border rounded px-2 py-1 text-right text-xs"
-                                            />
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
-
-            {/* No repetitivos */}
-            {no_repetitivos.length > 0 && (
-                <div>
-                    <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-semibold text-red-700">
-                            Gastos no repetitivos excluidos ({no_repetitivos.length})
-                        </h4>
-                        <button onClick={toggleAllNoRep}
-                            className="text-xs text-blue-600 hover:underline">
-                            {noRepIncluidos.size === no_repetitivos.length ? 'Deseleccionar todos' : 'Incluir todos'}
-                        </button>
-                    </div>
-                    <div className="max-h-48 overflow-y-auto border rounded-lg">
-                        <table className="w-full text-xs">
-                            <thead className="bg-red-50 text-red-700 sticky top-0">
-                                <tr>
-                                    <th className="px-2 py-1.5 text-left">Incluir</th>
-                                    <th className="px-2 py-1.5 text-left">Centro Costo</th>
-                                    <th className="px-2 py-1.5 text-left">Concepto</th>
-                                    <th className="px-2 py-1.5 text-left">Tercero</th>
-                                    <th className="px-2 py-1.5 text-center">Mes</th>
-                                    <th className="px-2 py-1.5 text-right">Monto</th>
-                                    <th className="px-2 py-1.5 text-left">Razón</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-red-50">
-                                {no_repetitivos.map(nr => {
-                                    const key = nrKey(nr)
-                                    return (
-                                        <tr key={key} className={`hover:bg-slate-50 ${noRepIncluidos.has(key) ? 'bg-green-50' : ''}`}>
-                                            <td className="px-2 py-1.5 text-center">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={noRepIncluidos.has(key)}
-                                                    onChange={() => toggleNoRep(nr)}
-                                                    className="rounded border-slate-300"
-                                                />
-                                            </td>
-                                            <td className="px-2 py-1.5">{nr.centro_costo_nombre || nr.centro_costo_id}</td>
-                                            <td className="px-2 py-1.5">{nr.concepto_nombre || '-'}</td>
-                                            <td className="px-2 py-1.5">{nr.tercero_nombre || '-'}</td>
-                                            <td className="px-2 py-1.5 text-center">{nr.mes}</td>
-                                            <td className="px-2 py-1.5 text-right font-mono">{formatMoney(nr.monto)}</td>
-                                            <td className="px-2 py-1.5 text-slate-500">{nr.razon}</td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                    {noRepIncluidos.size > 0 && (
-                        <p className="text-xs text-green-600 mt-1">
-                            {noRepIncluidos.size} gasto(s) se incluirán manualmente en el presupuesto
-                        </p>
+                    {resumen.pct_aumento_promedio > 0 && (
+                        <div className="flex-1 py-2 px-1">
+                            <div className="text-[10px] text-slate-500 font-medium">Aumento</div>
+                            <div className="text-sm font-bold text-green-600 mt-0.5">+{resumen.pct_aumento_promedio.toFixed(1)}%</div>
+                        </div>
+                    )}
+                    {no_repetitivos.length > 0 && (
+                        <div className="flex-1 py-2 px-1">
+                            <div className="text-[10px] text-slate-500 font-medium">No Repet.</div>
+                            <div className="text-sm font-bold text-slate-400 mt-0.5">{no_repetitivos.length} excl.</div>
+                        </div>
                     )}
                 </div>
-            )}
 
-            {no_repetitivos.length === 0 && (
-                <div className="text-sm text-slate-500 bg-slate-50 rounded-lg p-3">
-                    No se detectaron gastos no repetitivos. Todas las líneas se incluirán.
+                {/* Footnotes */}
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span>{resumen.total_lineas} líneas</span>
+                    {tieneMaterialidad && (
+                        <>
+                            <span className="text-slate-300">|</span>
+                            <span>
+                                Materialidad: {presupuesto.umbral_minimo_mensual > 0 && `≥${formatCompact(presupuesto.umbral_minimo_mensual)}/mes`}
+                                {presupuesto.umbral_minimo_mensual > 0 && presupuesto.umbral_minimo_anual > 0 && ' • '}
+                                {presupuesto.umbral_minimo_anual > 0 && `≥${formatCompact(presupuesto.umbral_minimo_anual)}/año`}
+                            </span>
+                        </>
+                    )}
                 </div>
-            )}
+            </div>
+
+            {/* Pareto por Centro de Costo (solo el 80%) */}
+            {ccWithPareto.length > 0 && (() => {
+                const top = ccWithPareto.filter(cc => cc.isTop)
+                const rest = ccWithPareto.filter(cc => !cc.isTop)
+                const restTotal = rest.reduce((s, cc) => s + cc.monto_presupuestado, 0)
+                return (
+                    <div>
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                            Top Centros de Costo ({top.length} de {ccWithPareto.length}) <span className="normal-case font-normal text-slate-400">&ge; {formatCompact(umbralPareto)}/año</span>
+                        </h4>
+                        <div className="space-y-1">
+                            {top.map(cc => (
+                                <div key={cc.centro_costo_id} className="flex items-center gap-2 text-xs">
+                                    <span className="w-36 truncate text-slate-700 font-medium shrink-0"
+                                        title={`${cc.centro_costo_id} - ${cc.centro_costo_nombre}`}
+                                    >
+                                        {cc.centro_costo_id} - {cc.centro_costo_nombre}
+                                    </span>
+                                    <div className="flex-1 bg-slate-100 rounded-full h-3.5 overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full bg-blue-500"
+                                            style={{ width: `${(cc.monto_presupuestado / maxMonto) * 100}%` }}
+                                        />
+                                    </div>
+                                    <span className="w-16 text-right font-mono text-slate-600 shrink-0">
+                                        {formatCompact(cc.monto_presupuestado)}
+                                    </span>
+                                    <span className="w-8 text-right font-mono text-slate-400 shrink-0">
+                                        {cc.pct.toFixed(0)}%
+                                    </span>
+                                    <span className="w-10 text-right font-mono text-blue-500 shrink-0">
+                                        {cc.cumPct.toFixed(0)}%
+                                    </span>
+                                </div>
+                            ))}
+                            {rest.length > 0 && (
+                                <div className="flex items-center gap-2 text-xs text-slate-400 pt-1 border-t border-slate-100">
+                                    <span className="w-36 truncate font-medium shrink-0">
+                                        Otros ({rest.length})
+                                    </span>
+                                    <div className="flex-1" />
+                                    <span className="w-16 text-right font-mono shrink-0">
+                                        {formatCompact(restTotal)}
+                                    </span>
+                                    <span className="w-8 text-right font-mono shrink-0">
+                                        {(100 - (top[top.length - 1]?.cumPct || 0)).toFixed(0)}%
+                                    </span>
+                                    <span className="w-10 text-right font-mono shrink-0">
+                                        100%
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            })()}
         </div>
     )
 }
@@ -569,45 +570,152 @@ function Step3Result({ result }: { result: GeneracionResult }) {
         <div className="space-y-4">
             <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
                 <CheckCircle2 size={48} className="text-green-500 mx-auto mb-3" />
-                <h3 className="text-xl font-bold text-green-800 mb-1">Presupuesto generado exitosamente</h3>
-                <p className="text-green-600 text-sm">
-                    Se procesaron las líneas según clasificación e indicadores económicos
-                </p>
+                <h3 className="text-xl font-bold text-green-800 mb-1">
+                    Presupuesto {result.version ? 'regenerado' : 'generado'}
+                </h3>
+                {result.version && (
+                    <p className="text-sm text-green-600">Versión {result.version}</p>
+                )}
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
-                <div className="bg-blue-50 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-blue-700">{result.lineas_generadas}</div>
-                    <div className="text-xs text-blue-500 mt-1">Lineas generadas</div>
+            <div className="bg-slate-50 rounded-lg p-4 space-y-1.5 text-sm">
+                {result.resumen && (
+                    <div className="flex justify-between">
+                        <span className="text-slate-600">Total presupuestado:</span>
+                        <span className="font-mono font-bold text-blue-700">{formatMoney(result.resumen.total_presupuestado)}</span>
+                    </div>
+                )}
+                <div className="flex justify-between text-slate-500">
+                    <span>Líneas generadas</span>
+                    <span className="font-mono">{result.lineas_generadas}</span>
                 </div>
-                <div className="bg-red-50 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-red-600">{result.lineas_excluidas}</div>
-                    <div className="text-xs text-red-500 mt-1">Excluidas</div>
-                </div>
-                <div className="bg-green-50 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-green-600">{result.incluidos_manualmente}</div>
-                    <div className="text-xs text-green-500 mt-1">Incluidas manual</div>
-                </div>
-                <div className="bg-amber-50 rounded-lg p-4 text-center">
-                    <div className="text-3xl font-bold text-amber-600">{result.fijos_incluidos || 0}</div>
-                    <div className="text-xs text-amber-500 mt-1">Fijos con monto</div>
-                </div>
+                {result.lineas_excluidas > 0 && (
+                    <div className="flex justify-between text-slate-500">
+                        <span>No repetitivos excluidos</span>
+                        <span className="font-mono">{result.lineas_excluidas}</span>
+                    </div>
+                )}
+                {result.incluidos_manualmente > 0 && (
+                    <div className="flex justify-between text-slate-500">
+                        <span>Incluidos manualmente</span>
+                        <span className="font-mono">{result.incluidos_manualmente}</span>
+                    </div>
+                )}
             </div>
+        </div>
+    )
+}
 
-            {result.resumen && (
-                <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
-                    <div className="flex justify-between">
-                        <span className="text-slate-600">Monto base total:</span>
-                        <span className="font-mono font-medium">{formatMoney(result.resumen.total_base)}</span>
+// ==========================================
+// Combobox para CC a excluir
+// ==========================================
+function CcExcluirCombobox({ centrosCosto, ccExcluidos, toggleCcExcluido }: {
+    centrosCosto: { id: number; nombre: string }[]
+    ccExcluidos: number[]
+    toggleCcExcluido: (id: number) => void
+}) {
+    const [busqueda, setBusqueda] = useState('')
+    const [abierto, setAbierto] = useState(false)
+    const containerRef = useRef<HTMLDivElement>(null)
+    const inputRef = useRef<HTMLInputElement>(null)
+    const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
+
+    const disponibles = useMemo(() => {
+        const filtro = busqueda.trim().toLowerCase()
+        return centrosCosto
+            .filter(cc => !ccExcluidos.includes(cc.id))
+            .filter(cc => !filtro || cc.id.toString().includes(filtro) || cc.nombre.toLowerCase().includes(filtro))
+    }, [centrosCosto, ccExcluidos, busqueda])
+
+    // Calcular posición fixed del dropdown
+    const actualizarPosicion = () => {
+        if (!inputRef.current) return
+        const rect = inputRef.current.getBoundingClientRect()
+        setDropdownStyle({
+            position: 'fixed',
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: rect.width,
+            zIndex: 9999,
+        })
+    }
+
+    const abrirDropdown = () => {
+        actualizarPosicion()
+        setAbierto(true)
+    }
+
+    // Cerrar dropdown al hacer click fuera
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                setAbierto(false)
+            }
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [])
+
+    const seleccionar = (id: number) => {
+        toggleCcExcluido(id)
+        setBusqueda('')
+        setAbierto(false)
+    }
+
+    return (
+        <div>
+            <h4 className="text-sm font-semibold text-slate-700 mb-2">Centros de Costo a excluir</h4>
+            <div ref={containerRef}>
+                <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={busqueda}
+                        onChange={e => { setBusqueda(e.target.value); abrirDropdown() }}
+                        onFocus={abrirDropdown}
+                        placeholder="Buscar por número o nombre..."
+                        className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 hover:border-gray-300 transition-all bg-white"
+                    />
+                </div>
+                {abierto && disponibles.length > 0 && (
+                    <div style={dropdownStyle} className="bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {disponibles.map(cc => (
+                            <button
+                                key={cc.id}
+                                type="button"
+                                onClick={() => seleccionar(cc.id)}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors flex items-center gap-2"
+                            >
+                                <span className="text-gray-400 font-mono text-xs w-6 text-right shrink-0">{cc.id}</span>
+                                <span className="text-gray-700">{cc.nombre}</span>
+                            </button>
+                        ))}
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-slate-600">Monto presupuestado:</span>
-                        <span className="font-mono font-medium text-blue-700">{formatMoney(result.resumen.total_presupuestado)}</span>
+                )}
+                {abierto && busqueda && disponibles.length === 0 && (
+                    <div style={dropdownStyle} className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-3 text-sm text-gray-400">
+                        Sin resultados
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-slate-600">Aumento promedio:</span>
-                        <span className="font-medium text-green-600">+{result.resumen.pct_aumento_promedio.toFixed(1)}%</span>
-                    </div>
+                )}
+            </div>
+            {ccExcluidos.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                    {ccExcluidos.map(id => {
+                        const cc = centrosCosto.find(c => c.id === id)
+                        return (
+                            <span key={id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
+                                {cc ? `${cc.id} - ${cc.nombre}` : id}
+                                <button
+                                    type="button"
+                                    onClick={() => toggleCcExcluido(id)}
+                                    className="p-0.5 rounded-full hover:bg-slate-300 transition-colors"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </span>
+                        )
+                    })}
                 </div>
             )}
         </div>

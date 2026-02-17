@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Save, RefreshCw, ArrowLeft, FileText } from 'lucide-react';
+import { MessageModal } from '../components/molecules/MessageModal';
 
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte';
 import { useCatalogo } from '../hooks/useCatalogo';
@@ -15,6 +16,8 @@ import { monedaColumn } from '../components/atoms/columnHelpers';
 import { ConciliacionMovimientosTab } from '../components/organisms/ConciliacionMovimientosTab';
 
 export const ConciliacionPage = () => {
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success' | 'info'} | null>(null);
+
     // State for filters
     const [desde, setDesde] = useState(getMesActual().inicio);
     const [hasta, setHasta] = useState(getMesActual().fin);
@@ -95,7 +98,7 @@ export const ConciliacionPage = () => {
             }));
         },
         onError: (error: any) => {
-            alert("Error al cerrar: " + (error.message || "Error desconocido"));
+            setMsgModal({ message: "Error al cerrar: " + (error.message || "Error desconocido"), type: 'error' });
         }
     });
 
@@ -386,6 +389,7 @@ export const ConciliacionPage = () => {
                         }));
                     }}
                 />
+                <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
             </div>
         );
     }
@@ -428,6 +432,7 @@ export const ConciliacionPage = () => {
                     rounded={false}
                 />
             </div>
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     );
 };

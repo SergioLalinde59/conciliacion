@@ -425,9 +425,9 @@ class ClasificacionService:
             significativas = [p for p in palabras if p.lower() not in palabras_ignorar and len(p) >= 2]
             
             patrones = []
+            if len(significativas) >= 5: patrones.append(" ".join(significativas[:5]))
             if len(significativas) >= 3: patrones.append(" ".join(significativas[:3]))
             if len(significativas) >= 2: patrones.append(" ".join(significativas[:2]))
-            if significativas: patrones.append(significativas[0])
             
             for patron in patrones:
                 if len(patron) < 3: continue

@@ -2,6 +2,11 @@ from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime
 
+# Constantes de umbrales — Única fuente de verdad para los defaults
+DEFAULT_UMBRAL_NO_REPETITIVO = 4
+DEFAULT_UMBRAL_ESTACIONAL = 4
+DEFAULT_UMBRAL_PARETO = 5_000_000.0
+
 
 @dataclass
 class Presupuesto:
@@ -12,7 +17,11 @@ class Presupuesto:
     semaforo_amarillo_hasta: float
     umbral_minimo_mensual: float = 0.0
     umbral_minimo_anual: float = 0.0
-    umbral_no_repetitivo: int = 4
+    umbral_no_repetitivo: int = DEFAULT_UMBRAL_NO_REPETITIVO
+    umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL
+    umbral_pareto: float = DEFAULT_UMBRAL_PARETO
+    cifras_en_millones: bool = False
+    version_actual: int = 1
     estado: str = 'borrador'
     id: Optional[int] = None
     notas: Optional[str] = None
@@ -50,3 +59,9 @@ class Presupuesto:
         if self.estado != 'activo':
             raise ValueError("Solo un presupuesto activo puede cerrarse")
         self.estado = 'cerrado'
+
+    def revertir(self):
+        """Revierte a borrador. Solo desde activo."""
+        if self.estado != 'activo':
+            raise ValueError("Solo un presupuesto activo puede revertirse a borrador")
+        self.estado = 'borrador'

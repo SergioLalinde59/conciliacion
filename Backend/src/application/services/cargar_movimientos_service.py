@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from src.domain.models.movimiento import Movimiento
 from src.domain.ports.movimiento_repository import MovimientoRepository
 from src.domain.ports.moneda_repository import MonedaRepository
@@ -6,21 +6,43 @@ from src.domain.ports.cuenta_extractor_repository import CuentaExtractorReposito
 import importlib
 import traceback
 from datetime import date
+from decimal import Decimal
 from src.infrastructure.extractors.utils import extraer_periodo_de_movimientos
 from src.infrastructure.logging.config import logger
+
+if TYPE_CHECKING:
+    from src.application.services.trm_application_service import TrmApplicationService
 
 class CargarMovimientosService:
     """
     Servicio especializado en la carga mecánica de movimientos diarios (PDFs diarios, CSV, Excel).
     """
-    def __init__(self, 
-                 movimiento_repo: MovimientoRepository, 
+    def __init__(self,
+                 movimiento_repo: MovimientoRepository,
                  moneda_repo: MonedaRepository,
-                 cuenta_extractor_repo: Optional[CuentaExtractorRepository] = None):
+                 cuenta_extractor_repo: Optional[CuentaExtractorRepository] = None,
+                 trm_service: Optional['TrmApplicationService'] = None):
         self.movimiento_repo = movimiento_repo
         self.moneda_repo = moneda_repo
         self.cuenta_extractor_repo = cuenta_extractor_repo
+        self.trm_service = trm_service
         self._monedas_cache = {}
+        self._trm_cache: Dict[date, Decimal] = {}  # Cache TRM por fecha para evitar llamadas repetidas
+
+    def _obtener_trm_provisional(self, fecha: date) -> Optional[Decimal]:
+        """Obtiene TRM provisional para una fecha. Usa cache local para evitar llamadas repetidas."""
+        if not self.trm_service:
+            return None
+        if fecha in self._trm_cache:
+            return self._trm_cache[fecha]
+        try:
+            trm_obj = self.trm_service.obtener_trm(fecha)
+            if trm_obj:
+                self._trm_cache[fecha] = trm_obj.valor
+                return trm_obj.valor
+        except Exception as e:
+            logger.warning(f"No se pudo obtener TRM para {fecha}: {e}")
+        return None
 
     def _obtener_id_moneda(self, codigo_iso: str) -> int:
         """Resuelve el ID de moneda. Default: 1 (COP)."""
@@ -265,10 +287,18 @@ class CargarMovimientosService:
                 fecha_obj = date.fromisoformat(raw['fecha'])
                 fecha_corte_obj = date.fromisoformat(raw['fecha_corte']) if raw.get('fecha_corte') else None
 
+                # TRM provisional para movimientos USD
+                trm_val = None
+                if es_usd and usd_val:
+                    trm_val = self._obtener_trm_provisional(fecha_obj)
+                    if trm_val:
+                        valor_para_bd = float(Decimal(str(usd_val)) * trm_val)
+
                 nuevo_mov = Movimiento(
                     fecha=fecha_obj, descripcion=raw['descripcion'],
                     referencia=raw.get('referencia', ''), valor=valor_para_bd,
                     moneda_id=moneda_id, cuenta_id=cuenta_id, usd=usd_val,
+                    trm=trm_val, trm_provisional=True if trm_val else None,
                     fecha_corte=fecha_corte_obj
                 )
                 self.movimiento_repo.guardar(nuevo_mov)

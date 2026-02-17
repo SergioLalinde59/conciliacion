@@ -4,6 +4,7 @@ import type { TipoMovimiento } from '../types'
 import { TiposMovimientoTable } from '../components/organisms/tables/TiposMovimientoTable'
 import { TipoMovimientoModal } from '../components/organisms/modals/TipoMovimientoModal'
 import { CsvExportButton } from '../components/molecules/CsvExportButton'
+import { MessageModal } from '../components/molecules/MessageModal'
 import { API_BASE_URL } from '../config'
 
 export const TiposMovimientoPage = () => {
@@ -11,6 +12,7 @@ export const TiposMovimientoPage = () => {
     const [loading, setLoading] = useState(true)
     const [modalOpen, setModalOpen] = useState(false)
     const [itemEditando, setItemEditando] = useState<TipoMovimiento | null>(null)
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success' | 'info'} | null>(null)
 
     const cargar = () => {
         setLoading(true)
@@ -26,7 +28,7 @@ export const TiposMovimientoPage = () => {
     const handleEdit = (item: TipoMovimiento) => { setItemEditando(item); setModalOpen(true) }
     const handleDelete = (id: number) => {
         fetch(`${API_BASE_URL}/api/tipos-movimiento/${id}`, { method: 'DELETE' })
-            .then(async res => { if (res.ok) cargar(); else alert("Error al eliminar") })
+            .then(async res => { if (res.ok) cargar(); else setMsgModal({ message: "Error al eliminar", type: 'error' }) })
     }
 
     const handleSave = (nombre: string) => {
@@ -41,7 +43,7 @@ export const TiposMovimientoPage = () => {
             body: JSON.stringify({ tipomov: nombre })
         }).then(res => {
             if (res.ok) { setModalOpen(false); cargar() }
-            else alert("Error al guardar")
+            else setMsgModal({ message: "Error al guardar", type: 'error' })
         })
     }
 
@@ -66,6 +68,7 @@ export const TiposMovimientoPage = () => {
                 <TiposMovimientoTable tipos={tipos} loading={loading} onEdit={handleEdit} onDelete={handleDelete} />
             </div>
             <TipoMovimientoModal isOpen={modalOpen} tipo={itemEditando} onClose={() => setModalOpen(false)} onSave={handleSave} />
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     )
 }

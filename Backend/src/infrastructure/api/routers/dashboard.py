@@ -84,13 +84,6 @@ def obtener_widget_presupuesto(
 
         verde_hasta = presupuesto.semaforo_verde_hasta
         amarillo_hasta = presupuesto.semaforo_amarillo_hasta
-        umbral_mes = presupuesto.umbral_minimo_mensual
-        umbral_anual = presupuesto.umbral_minimo_anual
-        usar_materialidad = umbral_mes > 0 or umbral_anual > 0
-
-        def _es_no_material(pres: float) -> bool:
-            return (umbral_mes > 0 and pres < umbral_mes) or \
-                   (umbral_anual > 0 and pres * 12 < umbral_anual)
 
         def _calcular_semaforo(pct: float) -> str:
             if pct <= (100 + verde_hasta):
@@ -100,28 +93,12 @@ def obtener_widget_presupuesto(
             return "rojo"
 
         def _totales_mes(m: int) -> tuple:
-            """Retorna (presupuestado, ejecutado) para un mes, filtrando no-materiales."""
-            if usar_materialidad:
-                detalle = repo_comparacion.comparar_por_centro_costo(
-                    presupuesto_id=presupuesto.id,
-                    anio=anio_actual,
-                    mes_inicio=m,
-                    mes_fin=m,
-                    centros_costos_excluidos=centros_costos_excluidos,
-                    verde_hasta=verde_hasta,
-                    amarillo_hasta=amarillo_hasta
-                )
-                materiales = [r for r in detalle if not _es_no_material(r["presupuestado"])]
-                return (
-                    sum(r["presupuestado"] for r in materiales),
-                    sum(r["ejecutado"] for r in materiales),
-                )
-            else:
-                m_data = next((r for r in resumen if r["mes"] == m), None)
-                return (
-                    m_data["presupuestado"] if m_data else 0,
-                    m_data["ejecutado"] if m_data else 0,
-                )
+            """Retorna (presupuestado, ejecutado) para un mes — sin filtro de materialidad."""
+            m_data = next((r for r in resumen if r["mes"] == m), None)
+            return (
+                m_data["presupuestado"] if m_data else 0,
+                m_data["ejecutado"] if m_data else 0,
+            )
 
         resumen = repo_comparacion.comparar_resumen_mensual(
             presupuesto_id=presupuesto.id,
@@ -157,6 +134,7 @@ def obtener_widget_presupuesto(
             "tiene_presupuesto": True,
             "presupuesto_id": presupuesto.id,
             "presupuesto_nombre": presupuesto.nombre,
+            "cifras_en_millones": presupuesto.cifras_en_millones,
             "presupuesto_mes_actual": presupuestado,
             "ejecutado_mes_actual": ejecutado,
             "porcentaje_consumido": porcentaje,

@@ -12,6 +12,8 @@ export const PRESUPUESTO_KEYS = {
     widget: (params?: Record<string, unknown>) => [...PRESUPUESTO_KEYS.all, 'widget', params] as const,
     clasificacionPreview: (anio: number, excluidos?: number[]) => [...PRESUPUESTO_KEYS.all, 'clasificacion-preview', anio, excluidos] as const,
     detalleMensual: (anio: number, ccId: number, conceptoId?: number | null) => [...PRESUPUESTO_KEYS.all, 'detalle-mensual', anio, ccId, conceptoId] as const,
+    simulacion: (id: number, version: number) => [...PRESUPUESTO_KEYS.all, 'simulacion', id, version] as const,
+    versiones: (id: number) => [...PRESUPUESTO_KEYS.all, 'versiones', id] as const,
 }
 
 export const usePresupuestos = (anio?: number) =>
@@ -34,7 +36,8 @@ export const usePresupuestoDetalle = (id: number, params?: {
 export const usePresupuestoComparacion = (id: number, params: {
     nivel?: string; mes_inicio?: number; mes_fin?: number;
     centro_costo_id?: number; concepto_id?: number;
-    centros_costos_excluidos?: number[]
+    centros_costos_excluidos?: number[];
+    excluir_estacionales?: boolean
 }) =>
     useQuery({
         queryKey: PRESUPUESTO_KEYS.comparacion(id, params as Record<string, unknown>),
@@ -45,7 +48,8 @@ export const usePresupuestoComparacion = (id: number, params: {
 
 export const usePresupuestoComparacionMensual = (id: number, params?: {
     centros_costos_excluidos?: number[]
-    centro_costo_id?: number; concepto_id?: number; tercero_id?: number
+    centro_costo_id?: number; concepto_id?: number; tercero_id?: number;
+    excluir_estacionales?: boolean
 }) =>
     useQuery({
         queryKey: PRESUPUESTO_KEYS.comparacionMensual(id, params as Record<string, unknown>),
@@ -78,4 +82,12 @@ export const useDetalleMensual = (anio: number, centroCostoId: number, conceptoI
         queryFn: () => presupuestoService.detalleMensual(anio, centroCostoId, conceptoId),
         staleTime: 5 * 60 * 1000,
         enabled: !!anio && !!centroCostoId,
+    })
+
+export const usePresupuestoVersiones = (id: number) =>
+    useQuery({
+        queryKey: PRESUPUESTO_KEYS.versiones(id),
+        queryFn: () => presupuestoService.listarVersiones(id),
+        staleTime: 5 * 60 * 1000,
+        enabled: !!id,
     })

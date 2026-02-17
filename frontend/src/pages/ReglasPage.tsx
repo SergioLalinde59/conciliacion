@@ -7,6 +7,7 @@ import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 import { CsvExportButton } from '../components/molecules/CsvExportButton'
 import { DataTable } from '../components/molecules/DataTable'
 import type { Column } from '../components/molecules/DataTable'
+import { MessageModal } from '../components/molecules/MessageModal'
 
 export const ReglasPage: React.FC = () => {
     const [reglas, setReglas] = useState<ReglaClasificacion[]>([])
@@ -26,6 +27,7 @@ export const ReglasPage: React.FC = () => {
     const [selectedConceptoId, setSelectedConceptoId] = useState<number | null>(null)
     const [descripcion, setDescripcion] = useState('')
     const [editingId, setEditingId] = useState<number | null>(null)
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning'} | null>(null)
 
     useEffect(() => {
         loadData()
@@ -53,13 +55,13 @@ export const ReglasPage: React.FC = () => {
     const handleGuardar = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!selectedCentroCostoId || !selectedConceptoId) {
-            alert('Complete Centro de Clasificación y Concepto')
+            setMsgModal({message: 'Complete Centro de Clasificación y Concepto', type: 'warning'})
             return
         }
 
         // Validación para Nueva Regla: Tercero es requerido para obtener el patrón
         if (!editingId && !selectedTerceroId) {
-            alert('Para crear una nueva regla, debe seleccionar un Tercero (el nombre del tercero será el patrón)')
+            setMsgModal({message: 'Para crear una nueva regla, debe seleccionar un Tercero (el nombre del tercero será el patrón)', type: 'warning'})
             return
         }
 
@@ -73,7 +75,7 @@ export const ReglasPage: React.FC = () => {
         }
 
         if (!finalPatron.trim()) {
-            alert('No se pudo determinar el patrón del tercero')
+            setMsgModal({message: 'No se pudo determinar el patrón del tercero', type: 'error'})
             return
         }
 
@@ -97,7 +99,7 @@ export const ReglasPage: React.FC = () => {
             }
             limpiarForm()
         } catch (error) {
-            alert('Error guardando regla')
+            setMsgModal({message: 'Error guardando regla', type: 'error'})
         }
     }
 
@@ -128,7 +130,7 @@ export const ReglasPage: React.FC = () => {
             await apiService.reglas.eliminar(id)
             setReglas(reglas.filter(r => r.id !== id))
         } catch (error) {
-            alert('Error eliminando regla')
+            setMsgModal({message: 'Error eliminando regla', type: 'error'})
         }
     }
 
@@ -343,6 +345,7 @@ export const ReglasPage: React.FC = () => {
                     emptyMessage="No hay reglas definidas"
                 />
             </div>
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     )
 }

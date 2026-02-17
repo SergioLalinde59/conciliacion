@@ -12,6 +12,7 @@ class PresupuestoDetalle:
     mes: int
     monto_presupuestado: Decimal
     tipo: str = 'variable'
+    version: int = 1
 
     id: Optional[int] = None
     concepto_id: Optional[int] = None

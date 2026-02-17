@@ -15,6 +15,7 @@ export interface StatCardProps {
     isCurrency?: boolean
     currency?: CurrencyType
     subtitle?: string
+    compact?: boolean
 }
 
 export const StatCard = ({
@@ -29,7 +30,8 @@ export const StatCard = ({
     secondaryValue = null,
     isCurrency = true,
     currency = 'COP',
-    subtitle
+    subtitle,
+    compact = false
 }: StatCardProps) => {
     const isPositive = (trend ?? 0) > 0
     const isNearZero = Math.abs(trend ?? 0) < 0.1
@@ -64,7 +66,7 @@ export const StatCard = ({
             </div>
             <div className={`text-2xl font-black font-mono tracking-tight ${colorClass} flex items-baseline`}>
                 {isCurrency && typeof value === 'number'
-                    ? <CurrencyDisplay value={value} colorize={false} currency={currency} />
+                    ? <CurrencyDisplay value={value} colorize={false} currency={currency} compact={compact} />
                     : <span>{value}</span>
                 }
                 {secondaryValue !== null && (

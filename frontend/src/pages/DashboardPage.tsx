@@ -1,246 +1,180 @@
-
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { DashboardSummaryRibbon } from '../components/organisms/dashboard/DashboardSummaryRibbon'
-import { DashboardAccountChart } from '../components/organisms/dashboard/DashboardAccountChart'
-import { DashboardAccountStats } from '../components/organisms/dashboard/DashboardAccountStats'
-import { CostCenterDetailsModal } from '../components/organisms/dashboard/CostCenterDetailsModal'
-import { DashboardBudgetWidget } from '../components/organisms/dashboard/DashboardBudgetWidget'
-import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
+import { DashboardHero } from '../components/organisms/dashboard/DashboardHero'
+import { DashboardBudget3Months } from '../components/organisms/dashboard/DashboardBudget3Months'
+import { DashboardCashFlowChart } from '../components/organisms/dashboard/DashboardCashFlowChart'
+import { DashboardTopExpenses } from '../components/organisms/dashboard/DashboardTopExpenses'
+import { DashboardBudgetVsReal } from '../components/organisms/dashboard/DashboardBudgetVsReal'
+import { dashboardService } from '../services/dashboard.service'
+import { presupuestoService } from '../services/presupuesto.service'
 import { apiService } from '../services/api'
 import { getAnioYTD } from '../utils/dateUtils'
-import type { DashboardStats } from '../services/dashboard.service'
-import type { ConfigFiltroExclusion } from '../types/filters'
-
-import { Button } from '../components/atoms/Button'
-import { RefreshCw } from 'lucide-react'
+import type { FlujoCajaMes, ClasificacionItem } from '../services/dashboard.service'
+import type { ComparacionPresupuesto, ResumenMensualPresupuesto, PresupuestoWidget } from '../types/Presupuesto'
 
 export const DashboardPage = () => {
-
-    const [stats, setStats] = useState<DashboardStats[]>([])
-    const [loadingStats, setLoadingStats] = useState(true)
-    const [configFiltrosExclusion, setConfigFiltrosExclusion] = useState<ConfigFiltroExclusion[]>([])
-
-    // ---- ESTADO DE FILTROS ----
+    // ---- ESTADO: solo fechas ----
     const [desde, setDesde] = useState(getAnioYTD().inicio)
     const [hasta, setHasta] = useState(getAnioYTD().fin)
 
-    // Selectores
-    const [cuentaId, setCuentaId] = useState('')
-    const [terceroId, setTerceroId] = useState('')
-    const [centroCostoId, setCentroCostoId] = useState('')
-    const [conceptoId, setConceptoId] = useState('')
+    // ---- EXCLUSIONES (préstamos, tita, traslados) ----
+    const [centrosExcluidos, setCentrosExcluidos] = useState<number[]>([])
+    const [exclusionesListas, setExclusionesListas] = useState(false)
 
-    // Toggles
-    const [mostrarIngresos, setMostrarIngresos] = useState(true)
-    const [mostrarEgresos, setMostrarEgresos] = useState(true)
-    // Inicialmente excluimos IDs típicos (ej: 0 o nulos si se quiere) o vacío
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[]>([])
+    // ---- DATA ----
+    const [flujoMensual, setFlujoMensual] = useState<FlujoCajaMes[]>([])
+    const [topEgresos, setTopEgresos] = useState<ClasificacionItem[]>([])
+    const [pptoVsReal, setPptoVsReal] = useState<ComparacionPresupuesto[]>([])
+    const [pptoMensual, setPptoMensual] = useState<ResumenMensualPresupuesto[]>([])
+    const [cifrasCompactas, setCifrasCompactas] = useState(false)
+    // ---- LOADING ----
+    const [loadingFlujo, setLoadingFlujo] = useState(true)
+    const [loadingTop, setLoadingTop] = useState(true)
+    const [loadingPpto, setLoadingPpto] = useState(true)
 
-    // ---- ESTADO MODALES ----
-    const [detailsModalOpen, setDetailsModalOpen] = useState(false)
-
-
-    // Cargadores de Datos
-
-
-    const cargarEstadisticas = useCallback(() => {
-        setLoadingStats(true)
-        apiService.dashboard.obtenerEstadisticas(desde, hasta)
-            .then(data => {
-                setStats(data)
-                setLoadingStats(false)
-            })
-            .catch(err => {
-                console.error("Error cargando estadísticas:", err)
-                setLoadingStats(false)
-            })
-    }, [desde, hasta])
-
-    const cargarConfigExclusion = useCallback(() => {
+    // ---- Cargar exclusiones al iniciar (gate: no cargar data hasta que estén listas) ----
+    useEffect(() => {
         apiService.movimientos.obtenerConfiguracionFiltrosExclusion()
             .then(configs => {
-                setConfigFiltrosExclusion(configs)
-                // Set default exclusions
-                const defaultExcluidos = configs
+                const defaults = configs
                     .filter(c => c.activo_por_defecto)
                     .map(c => c.centro_costo_id)
-                setCentrosCostosExcluidos(prev => {
-                    // Combine with any existing manual selection if needed, 
-                    // but on initial load usually we just want defaults.
-                    // If prev is empty, use defaults.
-                    return prev.length === 0 ? defaultExcluidos : prev
-                })
+                setCentrosExcluidos(defaults)
             })
             .catch(console.error)
+            .finally(() => setExclusionesListas(true))
     }, [])
 
-    // Efectos Iniciales
-    // Efectos Iniciales
-    useEffect(() => {
-        cargarConfigExclusion()
-    }, [cargarConfigExclusion])
-
-    useEffect(() => {
-        cargarEstadisticas()
-    }, [cargarEstadisticas])
-
-
-    // ---- FILTRADO DE ESTADÍSTICAS (Charts & Ribbon) ----
-    const filteredStats = useMemo(() => {
-        return stats.filter(stat => {
-            // 1. Filtro Cuenta
-            if (cuentaId && stat.cuenta_id.toString() !== cuentaId) return false
-
-            // 2. Filtro Centro Costo
-            if (centroCostoId && stat.centro_costo_id?.toString() !== centroCostoId) return false
-
-            // 3. Exclusiones por Centro de Costo (Checkboxes dinámicos)
-            if (stat.centro_costo_id && centrosCostosExcluidos.includes(stat.centro_costo_id)) return false
-
-            // 4. Ingresos / Egresos Visibilidad
-            // Se maneja a nivel de cálculo de valor, no de filtrado de registro, 
-            // a menos que ingreso y egreso sean 0 (que pasaría si ocultamos ambos)
-
-            return true
-        })
-    }, [stats, cuentaId, centroCostoId, centrosCostosExcluidos])
-
-    // Totales calculados sobre la data filtrada
+    // ---- Totales para Hero ----
     const totales = useMemo(() => {
-        return filteredStats.reduce((acc, curr) => {
-            // Aplicar visibilidad de Ingresos/Egresos
-            const ingresos = mostrarIngresos ? curr.ingresos : 0
-            const egresos = mostrarEgresos ? curr.egresos : 0
+        return flujoMensual.reduce(
+            (acc, m) => ({
+                ingresos: acc.ingresos + m.ingresos,
+                egresos: acc.egresos + m.egresos,
+                saldo: acc.saldo + m.saldo,
+            }),
+            { ingresos: 0, egresos: 0, saldo: 0 }
+        )
+    }, [flujoMensual])
 
-            return {
-                ingresos: acc.ingresos + ingresos,
-                egresos: acc.egresos + egresos,
-                saldo: acc.saldo + (ingresos - egresos)
-            }
-        }, { ingresos: 0, egresos: 0, saldo: 0 })
-    }, [filteredStats, mostrarIngresos, mostrarEgresos])
+    // ---- Rango de meses del presupuesto (clamp a año actual para rangos cross-year) ----
+    const { mesInicio, mesFin } = useMemo(() => {
+        const anioActual = new Date().getFullYear()
+        const desdeYear = parseInt(desde.substring(0, 4), 10)
+        const hastaYear = parseInt(hasta.substring(0, 4), 10)
+        return {
+            mesInicio: desdeYear < anioActual ? 1 : parseInt(desde.substring(5, 7), 10),
+            mesFin: hastaYear > anioActual ? 12 : parseInt(hasta.substring(5, 7), 10),
+        }
+    }, [desde, hasta])
 
-    // Data para Gráficos
-    const chartData = useMemo(() => {
-        // Mapeamos filteredStats pero aplicando la máscara de visibilidad de ingresos/egresos
-        return filteredStats.map(stat => ({
-            ...stat,
-            ingresos: mostrarIngresos ? stat.ingresos : 0,
-            egresos: mostrarEgresos ? stat.egresos : 0
-        }))
-    }, [filteredStats, mostrarIngresos, mostrarEgresos])
+    // ---- Presupuesto del período seleccionado ----
+    const presupuestoPeriodo = useMemo(() => {
+        if (!pptoMensual.length) return 0
+        return pptoMensual
+            .filter(m => m.mes >= mesInicio && m.mes <= mesFin)
+            .reduce((sum, m) => sum + m.presupuestado, 0)
+    }, [pptoMensual, mesInicio, mesFin])
 
+    // ---- CARGA DE DATOS (espera exclusiones + depende de fechas) ----
+    const cargarFlujo = useCallback(() => {
+        if (!exclusionesListas) return
+        setLoadingFlujo(true)
+        dashboardService.flujoMensual(desde, hasta, centrosExcluidos)
+            .then(setFlujoMensual)
+            .catch(err => console.error('Error flujo mensual:', err))
+            .finally(() => setLoadingFlujo(false))
+    }, [desde, hasta, centrosExcluidos, exclusionesListas])
 
+    const cargarTopEgresos = useCallback(() => {
+        if (!exclusionesListas) return
+        setLoadingTop(true)
+        dashboardService.topEgresos(desde, hasta, 'centro_costo', centrosExcluidos)
+            .then(setTopEgresos)
+            .catch(err => console.error('Error top egresos:', err))
+            .finally(() => setLoadingTop(false))
+    }, [desde, hasta, centrosExcluidos, exclusionesListas])
 
+    const cargarPresupuesto = useCallback(() => {
+        if (!exclusionesListas) return
+        const excluidos = centrosExcluidos.length ? centrosExcluidos : undefined
+        presupuestoService.widget({ centros_costos_excluidos: excluidos })
+            .then((widget: PresupuestoWidget) => {
+                setCifrasCompactas(widget?.cifras_en_millones ?? false)
+                if (widget?.tiene_presupuesto && widget.presupuesto_id) {
+                    setLoadingPpto(true)
+                    Promise.all([
+                        presupuestoService.comparar(widget.presupuesto_id, {
+                            nivel: 'centro_costo',
+                            mes_inicio: mesInicio,
+                            mes_fin: mesFin,
+                            centros_costos_excluidos: excluidos,
+                        }),
+                        presupuestoService.compararMensual(widget.presupuesto_id, {
+                            centros_costos_excluidos: excluidos,
+                        }),
+                    ])
+                        .then(([comparacion, mensual]) => {
+                            setPptoVsReal(comparacion)
+                            setPptoMensual(mensual)
+                        })
+                        .catch(err => console.error('Error presupuesto:', err))
+                        .finally(() => setLoadingPpto(false))
+                } else {
+                    setPptoVsReal([])
+                    setPptoMensual([])
+                    setLoadingPpto(false)
+                }
+            })
+            .catch(err => {
+                console.error('Error widget presupuesto:', err)
+                setLoadingPpto(false)
+            })
+    }, [desde, hasta, centrosExcluidos, exclusionesListas, mesInicio, mesFin])
 
-
-    // Handlers
-    const handleResetFilters = () => {
-        setDesde(getAnioYTD().inicio)
-        setHasta(getAnioYTD().fin)
-        setCuentaId('')
-        setTerceroId('')
-        setCentroCostoId('')
-        setConceptoId('')
-        setMostrarIngresos(true)
-        setMostrarEgresos(true)
-        setCentrosCostosExcluidos([])
-    }
-
-
+    // ---- EFECTOS: recargar al cambiar fechas o exclusiones ----
+    useEffect(() => { cargarFlujo() }, [cargarFlujo])
+    useEffect(() => { cargarTopEgresos() }, [cargarTopEgresos])
+    useEffect(() => { cargarPresupuesto() }, [cargarPresupuesto])
 
     return (
         <div className="max-w-7xl mx-auto space-y-6">
-            <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Dashboard Financiero</h1>
-                    <p className="text-gray-500">Resumen ejecutivo y gestión operativa</p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="secondary" onClick={() => { cargarEstadisticas(); }}>
-                        <RefreshCw size={16} className="mr-2" />
-                        Actualizar
-                    </Button>
-                </div>
-            </header>
-
-            {/* SECCIÓN SUPERIOR: FILTROS UNIFICADOS */}
-            <FiltrosReporte
+            {/* HERO: KPIs + Date Pills */}
+            <DashboardHero
+                presupuesto={presupuestoPeriodo}
+                ingresos={totales.ingresos}
+                egresos={totales.egresos}
+                flujoNeto={totales.saldo}
                 desde={desde}
                 hasta={hasta}
-                setDesde={setDesde}
-                setHasta={setHasta}
-                cuentaId={cuentaId}
-                setCuentaId={setCuentaId}
-                terceroId={terceroId}
-                setTerceroId={setTerceroId}
-                centroCostoId={centroCostoId}
-                setCentroCostoId={setCentroCostoId}
-                conceptoId={conceptoId}
-                setConceptoId={setConceptoId}
-                mostrarIngresos={mostrarIngresos}
-                setMostrarIngresos={setMostrarIngresos}
-                mostrarEgresos={mostrarEgresos}
-                setMostrarEgresos={setMostrarEgresos}
-                configuracionExclusion={configFiltrosExclusion}
-                centrosCostosExcluidos={centrosCostosExcluidos}
-                setCentrosCostosExcluidos={setCentrosCostosExcluidos}
-                onLimpiar={handleResetFilters}
-                soloConciliables={true}
+                onDesdeChange={setDesde}
+                onHastaChange={setHasta}
+                loading={loadingFlujo}
+                compact={cifrasCompactas}
             />
 
-            {/* WIDGET PRESUPUESTO */}
-            <DashboardBudgetWidget
-                centrosCostosExcluidos={centrosCostosExcluidos}
-                centroCostoId={centroCostoId}
-                conceptoId={conceptoId}
-                terceroId={terceroId}
+            {/* PRESUPUESTO: 3 Meses Móvil */}
+            <DashboardBudget3Months centrosExcluidos={centrosExcluidos} compact={cifrasCompactas} />
+
+            {/* FLUJO DE CAJA MENSUAL: Full width chart */}
+            <DashboardCashFlowChart
+                data={flujoMensual}
+                presupuestoMensual={pptoMensual}
+                isLoading={loadingFlujo}
+                compact={cifrasCompactas}
             />
 
-            {/* SECCIÓN 1: RIBBON Y GRÁFICOS (Stats) */}
-            <div className="space-y-4">
-                <DashboardSummaryRibbon
-                    ingresos={totales.ingresos}
-                    egresos={totales.egresos}
-                    saldo={totales.saldo}
+            {/* BOTTOM GRID: Top Egresos + Ppto vs Real */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <DashboardTopExpenses
+                    data={topEgresos}
+                    isLoading={loadingTop}
+                    compact={cifrasCompactas}
                 />
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-lg font-bold text-gray-800">Comportamiento por Cuenta</h2>
-                        {/* <Button variant="secondary" size="sm" onClick={() => setDetailsModalOpen(true)}>
-                            <List size={16} className="mr-2" />
-                            Ver Detalle por Centro de Costos
-                        </Button> */}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="min-h-[300px]">
-                            <DashboardAccountChart data={chartData} isLoading={loadingStats} />
-                        </div>
-                        <div className="border-l border-gray-100 pl-6 hidden lg:block overflow-y-auto max-h-[400px]">
-                            <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase">Resumen por Cuenta</h3>
-                            <DashboardAccountStats stats={filteredStats} loading={loadingStats} />
-                        </div>
-                    </div>
-                    {/* Mobile fallback for table */}
-                    <div className="mt-8 lg:hidden">
-                        <h3 className="text-sm font-semibold text-gray-500 mb-4 uppercase">Resumen por Cuenta</h3>
-                        <DashboardAccountStats stats={filteredStats} loading={loadingStats} />
-                    </div>
-                </div>
+                <DashboardBudgetVsReal
+                    data={pptoVsReal}
+                    isLoading={loadingPpto}
+                />
             </div>
-
-
-
-            {/* MODALES */}
-            <CostCenterDetailsModal
-                isOpen={detailsModalOpen}
-                onClose={() => setDetailsModalOpen(false)}
-                uniqueStats={chartData}
-            />
-
-
         </div>
     )
 }

@@ -9,6 +9,10 @@ export interface Presupuesto {
     umbral_minimo_mensual: number
     umbral_minimo_anual: number
     umbral_no_repetitivo: number
+    umbral_estacional: number
+    umbral_pareto: number
+    cifras_en_millones: boolean
+    version_actual: number
     created_at?: string | null
 }
 
@@ -62,6 +66,13 @@ export interface NoRepetitivoInfo {
     tercero_nombre?: string
 }
 
+export interface CentroCostoPreview {
+    centro_costo_id: number
+    centro_costo_nombre: string
+    monto_presupuestado: number
+    lineas: number
+}
+
 export interface GeneracionResumen {
     total_lineas: number
     total_excluidas: number
@@ -72,7 +83,7 @@ export interface GeneracionResumen {
     por_tipo: Record<string, number>
     por_indicador: Record<string, number>
     indicadores?: Record<string, { nombre: string; valor: number }>
-
+    por_centro_costo?: CentroCostoPreview[]
 }
 
 export interface GeneracionResult {
@@ -81,6 +92,28 @@ export interface GeneracionResult {
     incluidos_manualmente: number
     fijos_incluidos: number
     resumen: GeneracionResumen
+    version?: number
+    mensaje?: string
+}
+
+export interface PresupuestoVersionInfo {
+    id: number
+    version: number
+    created_at: string | null
+    notas: string | null
+    lineas_generadas: number
+    total_presupuestado: number
+    anio_fuente: number | null
+}
+
+export interface ComparacionVersion {
+    id: number | null
+    nombre: string
+    monto_version_a: number
+    monto_version_b: number
+    delta: number
+    delta_pct: number | null
+    status: 'changed' | 'new' | 'removed' | 'unchanged'
 }
 
 export interface ClasificacionPreviewItem {
@@ -98,15 +131,41 @@ export interface ClasificacionPreviewItem {
     monto_fijo_mensual: number | null
 }
 
+export interface SimulacionImpactoCC {
+    cc_id: number
+    cc_nombre: string
+    actual: number
+    proyectado: number
+    diferencia: number
+    diferencia_pct: number
+}
+
+export interface SimulacionImpacto {
+    presupuesto_id: number
+    presupuesto_nombre: string
+    presupuesto_estado: string
+    anio: number
+    anio_fuente: number
+    total_actual: number
+    total_proyectado: number
+    diferencia: number
+    diferencia_pct: number
+    detalle_por_cc: SimulacionImpactoCC[]
+    resumen_generacion?: Record<string, unknown>
+    error?: string
+}
+
 export interface ComparacionPresupuesto {
     id: number | null
     nombre: string
     presupuestado: number
     ejecutado: number
-    ejecutado_anterior: number
     variacion: number
     variacion_pct: number
     semaforo: 'verde' | 'amarillo' | 'rojo'
+    ejecutado_con_ppto?: number
+    ejecutado_sin_ppto?: number
+    es_estacional?: boolean
 }
 
 export interface ResumenMensualPresupuesto {
@@ -114,7 +173,6 @@ export interface ResumenMensualPresupuesto {
     mes_nombre: string
     presupuestado: number
     ejecutado: number
-    ejecutado_anterior: number
     variacion: number
     variacion_pct: number
     semaforo: 'verde' | 'amarillo' | 'rojo'
@@ -133,6 +191,7 @@ export interface PresupuestoWidget {
     tiene_presupuesto: boolean
     presupuesto_id?: number
     presupuesto_nombre?: string
+    cifras_en_millones?: boolean
     presupuesto_mes_actual: number
     ejecutado_mes_actual: number
     porcentaje_consumido: number

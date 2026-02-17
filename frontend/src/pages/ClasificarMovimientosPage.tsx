@@ -6,13 +6,15 @@ import { TerceroModal } from '../components/organisms/modals/TerceroModal'
 import { MovimientoModal } from '../components/organisms/modals/MovimientoModal'
 
 import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
-import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split, Trash2, RotateCcw } from 'lucide-react'
+import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split, Trash2, RotateCcw, Link, UserPlus } from 'lucide-react'
 import { DataTable } from '../components/molecules/DataTable'
 import { TableHeaderCell } from '../components/atoms/TableHeaderCell'
 import { fechaColumn, textoColumn, monedaColumn } from '../components/atoms/columnHelpers'
 import { BatchClassificationPreviewTable } from '../components/organisms/BatchClassificationPreviewTable'
 import { Button } from '../components/atoms/Button'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
+import { MessageModal } from '../components/molecules/MessageModal'
+import { extraerNombreTercero } from '../utils/textUtils'
 
 export const ClasificarMovimientosPage: React.FC = () => {
     // --- State ---
@@ -60,6 +62,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
     // Modal de confirmación de eliminación
     const [showDeleteModal, setShowDeleteModal] = useState(false)
     const [deleting, setDeleting] = useState(false)
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success'} | null>(null)
 
     // --- Effects ---
 
@@ -184,7 +187,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
             setShowDeleteModal(false)
         } catch (error) {
             console.error("Error eliminando:", error)
-            alert("Error al eliminar: " + error)
+            setMsgModal({message: "Error al eliminar: " + error, type: 'error'})
         } finally {
             setDeleting(false)
         }
@@ -192,7 +195,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
     const guardarClasificacion = async () => {
         if (!movimientoActual || !terceroId) {
-            alert("Por favor seleccione un Tercero (Identidad del Movimiento)")
+            setMsgModal({message: "Por favor seleccione un Tercero (Identidad del Movimiento)", type: 'warning'})
             return
         }
 
@@ -216,14 +219,14 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
         } catch (error) {
             console.error("Error guardando:", error)
-            alert("Error al guardar: " + error)
+            setMsgModal({message: "Error al guardar: " + error, type: 'error'})
         }
     }
 
     const abrirModalLote = async () => {
         if (!movimientoActual) return
         if (!terceroId || !centroCostoId || !conceptoId) {
-            alert("Por favor complete Tercero, Centro de Costo y Concepto antes de aplicar en lote")
+            setMsgModal({message: "Por favor complete Tercero, Centro de Costo y Concepto antes de aplicar en lote", type: 'warning'})
             return
         }
 
@@ -246,7 +249,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
             setBatchSelectedIds(new Set(preview.map(m => m.id)))
         } catch (error) {
             console.error("Error obteniendo preview:", error)
-            alert("Error al obtener preview: " + error)
+            setMsgModal({message: "Error al obtener preview: " + error, type: 'error'})
         } finally {
             setLoadingBatch(false)
         }
@@ -276,17 +279,32 @@ export const ClasificarMovimientosPage: React.FC = () => {
             cargarDatosIniciales()
             setMovimientoActual(null)
         } catch (error) {
-            alert("Error en lote: " + error)
+            setMsgModal({message: "Error en lote: " + error, type: 'error'})
         }
     }
 
     const abrirModalTercero = () => {
+        const nombreExtraido = extraerNombreTercero(movimientoActual?.descripcion || '')
         setModalInitialValues({
-            nombre: '',
+            nombre: nombreExtraido,
             alias: movimientoActual?.descripcion || '',
             referencia: movimientoActual?.referencia || ''
         })
         setShowTerceroModal(true)
+    }
+
+    const handleAsociarTercero = async () => {
+        if (!movimientoActual || !sugerenciaData?.sugerencia.tercero_id) return
+        try {
+            await apiService.terceros.crearDescripcion({
+                terceroid: sugerenciaData.sugerencia.tercero_id,
+                descripcion: movimientoActual.descripcion,
+                referencia: movimientoActual.referencia || undefined
+            })
+            setMsgModal({ message: "Referencia asociada al tercero exitosamente", type: 'success' })
+        } catch (error) {
+            setMsgModal({ message: "Error asociando referencia: " + error, type: 'error' })
+        }
     }
 
     const handleGuardarTercero = async (nombre: string, alias?: string) => {
@@ -313,7 +331,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
             setShowTerceroModal(false)
         } catch (error) {
             console.error(error)
-            alert("Error creando tercero")
+            setMsgModal({message: "Error creando tercero", type: 'error'})
         }
     }
 
@@ -327,7 +345,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
             setShowAdvancedModal(false)
         } catch (error) {
             console.error(error)
-            alert("Error guardando avanzado: " + error)
+            setMsgModal({message: "Error guardando avanzado: " + error, type: 'error'})
             throw error // Re-throw to let modal know it failed if needed
         }
     }
@@ -450,23 +468,61 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Alert: Tercero no existe para esta referencia */}
-                            {sugerenciaData?.referencia_no_existe && (
-                                <div className="bg-orange-50 px-4 py-3 rounded border border-orange-200 text-orange-800 text-sm flex items-center justify-between gap-4 mb-3">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-orange-500 font-bold text-lg">⚠</span>
-                                        <span>
-                                            <strong>Tercero no Existe</strong> para la referencia <code className="bg-orange-100 px-1 rounded">{sugerenciaData.referencia}</code>
-                                        </span>
+                            {/* Alert: Referencia nueva — con o sin tercero sugerido */}
+                            {sugerenciaData?.referencia_no_existe && (() => {
+                                const terceroSugeridoNombre = terceros.find(t => t.id === sugerenciaData.sugerencia.tercero_id)?.nombre
+                                const nombreExtraido = extraerNombreTercero(movimientoActual?.descripcion || '')
+
+                                if (terceroSugeridoNombre) {
+                                    // Case A: referencia nueva PERO hay un tercero sugerido por texto
+                                    return (
+                                        <div className="bg-amber-50 px-4 py-3 rounded border border-amber-200 text-amber-900 text-sm mb-3">
+                                            <div className="flex items-start gap-2 mb-2">
+                                                <span className="text-amber-500 font-bold text-lg leading-none mt-0.5">!</span>
+                                                <span>
+                                                    Referencia <code className="bg-amber-100 px-1 rounded font-mono">{sugerenciaData.referencia}</code> es nueva.
+                                                    El tercero <strong>{terceroSugeridoNombre}</strong> se sugiere por similitud de descripción.
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 ml-6">
+                                                <button
+                                                    onClick={handleAsociarTercero}
+                                                    className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition text-sm font-medium whitespace-nowrap flex items-center gap-1.5"
+                                                >
+                                                    <Link className="h-3.5 w-3.5" />
+                                                    Asociar a {terceroSugeridoNombre}
+                                                </button>
+                                                <button
+                                                    onClick={abrirModalTercero}
+                                                    className="bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600 transition text-sm font-medium whitespace-nowrap flex items-center gap-1.5"
+                                                >
+                                                    <UserPlus className="h-3.5 w-3.5" />
+                                                    Crear {nombreExtraido}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )
+                                }
+
+                                // Case B: referencia nueva Y no hay sugerencia de tercero
+                                return (
+                                    <div className="bg-orange-50 px-4 py-3 rounded border border-orange-200 text-orange-800 text-sm flex items-center justify-between gap-4 mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-orange-500 font-bold text-lg">⚠</span>
+                                            <span>
+                                                Tercero no encontrado para la referencia <code className="bg-orange-100 px-1 rounded font-mono">{sugerenciaData.referencia}</code>
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={abrirModalTercero}
+                                            className="bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600 transition text-sm font-medium whitespace-nowrap flex items-center gap-1.5"
+                                        >
+                                            <UserPlus className="h-3.5 w-3.5" />
+                                            Crear {nombreExtraido}
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={abrirModalTercero}
-                                        className="bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600 transition text-sm font-medium whitespace-nowrap"
-                                    >
-                                        ¿Quiere crearlo?
-                                    </button>
-                                </div>
-                            )}
+                                )
+                            })()}
 
                             {/* Form Area */}
                             <div className="space-y-1.5">
@@ -831,6 +887,8 @@ export const ClasificarMovimientosPage: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
 
             {/* Modal de Confirmación de Lote */}
             {showBatchModal && (

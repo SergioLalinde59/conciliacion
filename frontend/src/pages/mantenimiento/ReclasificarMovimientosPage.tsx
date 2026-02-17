@@ -20,10 +20,8 @@ import { TableHeaderCell } from '../../components/atoms/TableHeaderCell';
 import { Button } from '../../components/atoms/Button';
 import { ClassificationDisplay } from '../../components/molecules/entities/ClassificationDisplay';
 import { FiltrosReporte } from '../../components/organisms/FiltrosReporte';
-import { useFormatCurrency } from '../../components/atoms/CurrencyDisplay';
 
 export const ReclasificarMovimientosPage = () => {
-    const formatCurrency = useFormatCurrency()
     // Estado principal
     const [fecha, setFecha] = useState<string>(getMesActual().inicio);
     const [fechaFin, setFechaFin] = useState<string>(getMesActual().fin);
@@ -350,7 +348,7 @@ export const ReclasificarMovimientosPage = () => {
             cellClassName: '!py-0.5 !px-0.5',
             accessor: (row) => (
                 <span className={`font-mono text-xs font-bold ${row.valor < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                    {formatCurrency(row.valor)}
+                    {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(row.valor)}
                 </span>
             )
         },

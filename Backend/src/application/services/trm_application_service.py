@@ -95,6 +95,7 @@ class TrmApplicationService:
 
         for mov in usd_movimientos:
             mov.trm = trm_valor
+            mov.trm_provisional = False
             valor_cop = mov.usd * trm_valor
             mov.valor = valor_cop
 

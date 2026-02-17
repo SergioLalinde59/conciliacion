@@ -149,6 +149,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
         moneda_nombre = row[13] if len(row) > 13 else None
         tercero_nombre = row[14] if len(row) > 14 else None
         fecha_corte = row[15] if len(row) > 15 else None
+        trm_provisional = row[16] if len(row) > 16 else True
         
         # Instanciar Movimiento (sin clasificación detallada)
         if _id == 2232:
@@ -163,6 +164,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
             valor=valor,
             usd=usd,
             trm=trm,
+            trm_provisional=trm_provisional,
             fecha_corte=fecha_corte,
             moneda_id=moneda_id,
             cuenta_id=cuenta_id,
@@ -276,12 +278,12 @@ class PostgresMovimientoRepository(MovimientoRepository):
                 query = """
                     UPDATE movimientos_encabezado
                     SET Fecha=%s, Descripcion=%s, Referencia=%s, Valor=%s, USD=%s, TRM=%s,
-                        MonedaID=%s, CuentaID=%s, terceroid=%s, Detalle=%s, fecha_corte=%s
+                        trm_provisional=%s, MonedaID=%s, CuentaID=%s, terceroid=%s, Detalle=%s, fecha_corte=%s
                     WHERE Id=%s
                 """
                 cursor.execute(query, (
                     mov.fecha, mov.descripcion, mov.referencia, mov.valor, mov.usd, mov.trm,
-                    mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle, mov.fecha_corte,
+                    mov.trm_provisional, mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle, mov.fecha_corte,
                     mov.id
                 ))
             else:
@@ -289,13 +291,13 @@ class PostgresMovimientoRepository(MovimientoRepository):
                 query = """
                     INSERT INTO movimientos_encabezado (
                         Fecha, Descripcion, Referencia, Valor, USD, TRM,
-                        MonedaID, CuentaID, terceroid, Detalle, fecha_corte
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        trm_provisional, MonedaID, CuentaID, terceroid, Detalle, fecha_corte
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING Id, created_at
                 """
                 cursor.execute(query, (
                     mov.fecha, mov.descripcion, mov.referencia, mov.valor, mov.usd, mov.trm,
-                    mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle, mov.fecha_corte
+                    mov.trm_provisional, mov.moneda_id, mov.cuenta_id, mov.tercero_id, mov.detalle, mov.fecha_corte
                 ))
                 result = cursor.fetchone()
                 mov.id = result[0]
@@ -378,7 +380,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
                    t.tercero AS tercero_nombre,
-                   m.fecha_corte
+                   m.fecha_corte,
+                   m.trm_provisional
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -406,7 +409,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
                    t.tercero AS tercero_nombre,
-                   m.fecha_corte
+                   m.fecha_corte,
+                   m.trm_provisional
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -430,7 +434,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
                    t.tercero AS tercero_nombre,
-                   m.fecha_corte
+                   m.fecha_corte,
+                   m.trm_provisional
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -453,7 +458,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
                    t.tercero AS tercero_nombre,
-                   m.fecha_corte
+                   m.fecha_corte,
+                   m.trm_provisional
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -529,7 +535,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
                    t.tercero AS tercero_nombre,
-                   m.fecha_corte
+                   m.fecha_corte,
+                   m.trm_provisional
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -632,7 +639,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                        c.cuenta AS cuenta_nombre,
                        mon.moneda AS moneda_nombre,
                        t.tercero AS tercero_nombre,
-                   m.fecha_corte
+                   m.fecha_corte,
+                   m.trm_provisional
                 FROM movimientos_encabezado m
                 LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
                 LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -808,13 +816,14 @@ class PostgresMovimientoRepository(MovimientoRepository):
              raise ValueError("Tipo de agrupación debe ser 'centro_costo', 'tercero' o 'concepto'")
 
         # Query principal sobre DETALLES
+        # Siempre en COP: md.Valor ya incluye conversión USD*TRM
         val = "md.Valor"
         query = f"""
             SELECT
                 {group_field} as nombre,
-                SUM(CASE WHEN ({val}) > 0 THEN ({val}) ELSE 0 END) as ingresos,
-                SUM(CASE WHEN ({val}) < 0 THEN ABS({val}) ELSE 0 END) as egresos,
-                SUM({val}) as saldo
+                SUM(CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END) as ingresos,
+                SUM(CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END) as egresos,
+                SUM(md.Valor) as saldo
             FROM movimientos_encabezado m
             LEFT JOIN movimientos_detalle md ON m.Id = md.movimiento_id
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
@@ -861,7 +870,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
                    c.cuenta AS cuenta_nombre,
                    mon.moneda AS moneda_nombre,
                    t.tercero AS tercero_nombre,
-                   m.fecha_corte
+                   m.fecha_corte,
+                   m.trm_provisional
             FROM movimientos_encabezado m
             LEFT JOIN cuentas c ON m.CuentaID = c.cuentaid
             LEFT JOIN monedas mon ON m.MonedaID = mon.monedaid
@@ -979,6 +989,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
         cursor = self.conn.cursor()
         
         # Agregamos por Mes usando valores DE LOS DETALLES (md.Valor)
+        # Siempre en COP: m.valor ya incluye conversión USD*TRM (provisional o definitiva)
         query = """
             SELECT
                 TO_CHAR(m.Fecha, 'YYYY-MM') as mes,
@@ -1028,7 +1039,7 @@ class PostgresMovimientoRepository(MovimientoRepository):
         """
         cursor = self.conn.cursor()
         
-        # Query sobre DETALLES (md)
+        # Query sobre DETALLES (md) - siempre en COP
         query = """
             SELECT
                 md.TerceroID, t.tercero as TerceroNombre,
@@ -1260,14 +1271,14 @@ class PostgresMovimientoRepository(MovimientoRepository):
         if 'JOIN centro_costos' not in join_clause:
             joins_extra = " LEFT JOIN centro_costos g ON md.centro_costo_id = g.centro_costo_id"
             
-        val = "md.Valor"
+        # Siempre en COP: md.Valor ya incluye conversión USD*TRM
         query = f"""
             SELECT
                 {col_id} as id,
                 COALESCE({col_name}, 'Sin Clasificar') as nombre,
-                SUM(CASE WHEN ({val}) > 0 THEN ({val}) ELSE 0 END) as ingresos,
-                SUM(CASE WHEN ({val}) < 0 THEN ABS({val}) ELSE 0 END) as egresos,
-                SUM({val}) as saldo
+                SUM(CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END) as ingresos,
+                SUM(CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END) as egresos,
+                SUM(md.Valor) as saldo
             FROM movimientos_encabezado m
             LEFT JOIN movimientos_detalle md ON m.Id = md.movimiento_id
             {join_clause}

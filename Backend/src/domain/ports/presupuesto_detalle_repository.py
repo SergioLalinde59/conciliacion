@@ -30,9 +30,11 @@ class PresupuestoDetalleRepository(ABC):
         centro_costo_id: Optional[int] = None,
         concepto_id: Optional[int] = None,
         tercero_id: Optional[int] = None,
-        mes: Optional[int] = None
+        mes: Optional[int] = None,
+        version: Optional[int] = None
     ) -> List[PresupuestoDetalle]:
-        """Lista líneas de un presupuesto con filtros opcionales"""
+        """Lista líneas de un presupuesto con filtros opcionales.
+        Si version=None, usa la versión actual del presupuesto."""
         pass
 
     @abstractmethod
@@ -42,6 +44,11 @@ class PresupuestoDetalleRepository(ABC):
     @abstractmethod
     def eliminar_por_presupuesto(self, presupuesto_id: int) -> int:
         """Elimina todas las líneas de un presupuesto. Retorna cantidad eliminada."""
+        pass
+
+    @abstractmethod
+    def eliminar_por_version(self, presupuesto_id: int, version: int) -> int:
+        """Elimina las líneas de una versión específica. Retorna cantidad eliminada."""
         pass
 
     # --- Resúmenes agregados ---
@@ -92,4 +99,28 @@ class PresupuestoDetalleRepository(ABC):
     @abstractmethod
     def aplicar_ajuste_linea(self, detalle_id: int, monto: Decimal) -> PresupuestoDetalle:
         """Ajusta el monto de una línea específica"""
+        pass
+
+    # --- Versiones ---
+
+    @abstractmethod
+    def obtener_versiones(self, presupuesto_id: int) -> List[dict]:
+        """Lista versiones de un presupuesto con metadatos"""
+        pass
+
+    @abstractmethod
+    def guardar_version(self, presupuesto_id: int, version: int,
+                        lineas_generadas: int, total_presupuestado,
+                        anio_fuente: int, notas: str = None) -> None:
+        """Registra metadatos de una versión generada"""
+        pass
+
+    @abstractmethod
+    def comparar_versiones(
+        self, presupuesto_id: int, version_a: int, version_b: int,
+        nivel: str = 'centro_costo',
+        centro_costo_id: Optional[int] = None,
+        concepto_id: Optional[int] = None
+    ) -> List[dict]:
+        """Compara dos versiones de un presupuesto agrupando por nivel (centro_costo, concepto, tercero)"""
         pass

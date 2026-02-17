@@ -6,6 +6,7 @@ import { ConceptosTable } from '../components/organisms/tables/ConceptosTable'
 import { ConceptoModal } from '../components/organisms/modals/ConceptoModal'
 import { EntitySelector } from '../components/molecules/entities/EntitySelector'
 import { CsvExportButton } from '../components/molecules/CsvExportButton'
+import { MessageModal } from '../components/molecules/MessageModal'
 import { apiService } from '../services/api'
 
 export const ConceptosPage = () => {
@@ -15,6 +16,7 @@ export const ConceptosPage = () => {
     const [modalOpen, setModalOpen] = useState(false)
     const [itemEditando, setItemEditando] = useState<Concepto | null>(null)
     const [centroCostoFiltro, setCentroCostoFiltro] = useState<string>('') // Filtro por centro de costo
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success' | 'info'} | null>(null)
 
     const cargarCentrosCostos = async () => {
         try {
@@ -22,7 +24,7 @@ export const ConceptosPage = () => {
             setCentrosCostos(data)
         } catch (err) {
             console.error("Error cargando centros de costos:", err)
-            toast.error("Error al cargar centros de costos")
+            setMsgModal({ message: "Error al cargar centros de costos", type: 'error' })
         }
     }
 
@@ -35,7 +37,7 @@ export const ConceptosPage = () => {
             setConceptos(data)
         } catch (err) {
             console.error("Error cargando conceptos:", err)
-            toast.error("Error al cargar conceptos")
+            setMsgModal({ message: "Error al cargar conceptos", type: 'error' })
         } finally {
             setLoading(false)
         }
@@ -72,7 +74,7 @@ export const ConceptosPage = () => {
                 cargarConceptos(id)
             })
             .catch(err => {
-                toast.error("Error al eliminar: " + err.message)
+                setMsgModal({ message: "Error al eliminar: " + err.message, type: 'error' })
             })
     }
 
@@ -161,6 +163,7 @@ export const ConceptosPage = () => {
                 onClose={() => setModalOpen(false)}
                 onSave={handleSave}
             />
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     )
 }

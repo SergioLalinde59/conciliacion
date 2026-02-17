@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reglasPresupuestoService } from '../services/reglasPresupuesto.service'
+import { PRESUPUESTO_KEYS } from './usePresupuesto'
 import type { ReglaPresupuesto } from '../types/ReglaPresupuesto'
 
 const KEYS = {
@@ -16,7 +17,10 @@ export const useReglasPresupuesto = () =>
 
 export const useReglaPresupuestoMutations = () => {
     const qc = useQueryClient()
-    const invalidate = () => qc.invalidateQueries({ queryKey: KEYS.all })
+    const invalidate = () => {
+        qc.invalidateQueries({ queryKey: KEYS.all })
+        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.all })
+    }
 
     const crear = useMutation({
         mutationFn: (dto: Omit<ReglaPresupuesto, 'id' | 'centro_costo_nombre' | 'concepto_nombre'>) =>

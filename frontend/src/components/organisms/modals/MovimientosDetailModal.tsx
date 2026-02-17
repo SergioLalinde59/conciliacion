@@ -4,7 +4,7 @@ import { CurrencyDisplay } from '../../atoms/CurrencyDisplay';
 import { EntityDisplay } from '../../molecules/entities/EntityDisplay';
 import { ClassificationDisplay } from '../../molecules/entities/ClassificationDisplay';
 import { Modal } from '../../molecules/Modal';
-import { Calendar, Hash, Tag } from 'lucide-react';
+import { Calendar, Hash, Tag, DollarSign, ArrowRightLeft } from 'lucide-react';
 
 interface Props {
     isOpen: boolean;
@@ -48,8 +48,8 @@ export const MovimientosDetailModal: React.FC<Props> = ({
                     </div>
                     <div className="text-right">
                         <CurrencyDisplay
-                            value={isUsd ? (movimiento.usd || 0) : movimiento.valor}
-                            currency={isUsd ? 'USD' : 'COP'}
+                            value={movimiento.valor}
+                            currency="COP"
                             className="text-3xl font-black text-blue-700"
                         />
                         <p className="text-xs font-medium text-blue-500 uppercase tracking-widest mt-1">
@@ -57,6 +57,38 @@ export const MovimientosDetailModal: React.FC<Props> = ({
                         </p>
                     </div>
                 </div>
+
+                {/* Detalle USD: 3 cifras */}
+                {isUsd && movimiento.usd != null && (
+                    <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                            <DollarSign size={16} className="text-indigo-600" />
+                            <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Detalle USD</span>
+                            {movimiento.trm_provisional && (
+                                <span className="ml-auto text-[10px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                                    TRM Provisional
+                                </span>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">USD</p>
+                                <CurrencyDisplay value={movimiento.usd} currency="USD" className="text-lg font-bold text-indigo-700" />
+                            </div>
+                            <div className="flex flex-col items-center">
+                                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">TRM</p>
+                                <div className="flex items-center gap-1">
+                                    <ArrowRightLeft size={12} className="text-indigo-400" />
+                                    <CurrencyDisplay value={movimiento.trm || 0} currency="TRM" className="text-lg font-bold text-indigo-700" />
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">COP</p>
+                                <CurrencyDisplay value={movimiento.valor} className="text-lg font-bold text-indigo-700" />
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Grid de Información Básica */}
                 <div className="grid grid-cols-2 gap-6">

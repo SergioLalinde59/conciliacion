@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
@@ -11,6 +11,8 @@ class TipoGasto:
     indicador_default: Optional[str] = None
     excluir_presupuesto: bool = False
     activo: bool = True
+    keywords: List[Dict[str, Any]] = field(default_factory=list)
+    prioridad: int = 99
     id: Optional[int] = None
     created_at: Optional[datetime] = None
 

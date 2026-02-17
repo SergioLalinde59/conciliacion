@@ -13,6 +13,7 @@ import { movimientosService } from '../services/api'
 import { UnmatchedSystemTable } from '../components/organisms/UnmatchedSystemTable'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 import { useCatalogo } from '../hooks/useCatalogo'
+import { MessageModal } from '../components/molecules/MessageModal'
 
 export const ConciliacionMatchingPage = () => {
     // State para filtros principales - Por defecto mes anterior
@@ -37,6 +38,7 @@ export const ConciliacionMatchingPage = () => {
     // State para edición de movimiento de sistema (desde popover)
     const [editingSystemMov, setEditingSystemMov] = useState<Movimiento | null>(null)
     const [showEditSystemModal, setShowEditSystemModal] = useState(false)
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success'} | null>(null)
 
     const queryClient = useQueryClient()
     const { cuentas } = useCatalogo()
@@ -172,7 +174,7 @@ export const ConciliacionMatchingPage = () => {
         },
         onError: (error) => {
             console.error(error)
-            alert('Error al desvincular el movimiento')
+            setMsgModal({message: 'Error al desvincular el movimiento', type: 'error'})
         }
     })
 
@@ -183,7 +185,7 @@ export const ConciliacionMatchingPage = () => {
         },
         onError: (error) => {
             console.error(error)
-            alert('Error al desvincular todo el periodo')
+            setMsgModal({message: 'Error al desvincular todo el periodo', type: 'error'})
         }
     })
 
@@ -195,13 +197,13 @@ export const ConciliacionMatchingPage = () => {
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['matching', cuentaId, year, month] })
             if (data && data.errores && data.errores.length > 0) {
-                alert(`Atención: Se crearon ${data.creados} registros, pero hubo errores:\n${data.errores.join('\n')}`);
+                setMsgModal({message: `Atención: Se crearon ${data.creados} registros, pero hubo errores:\n${data.errores.join('\n')}`, type: 'warning'});
             }
         },
         onError: (error: any) => {
             console.error(error)
             const msg = error.response?.data?.detail || error.message || 'Error desconocido';
-            alert(`Error al crear movimientos: ${msg}`)
+            setMsgModal({message: `Error al crear movimientos: ${msg}`, type: 'error'})
         }
     })
 
@@ -217,7 +219,7 @@ export const ConciliacionMatchingPage = () => {
         },
         onError: (error) => {
             console.error(error)
-            alert('Error al invalidar matches incorrectos')
+            setMsgModal({message: 'Error al invalidar matches incorrectos', type: 'error'})
         }
     })
 
@@ -229,7 +231,7 @@ export const ConciliacionMatchingPage = () => {
         },
         onError: (error) => {
             console.error(error)
-            alert('Error al eliminar movimiento del sistema')
+            setMsgModal({message: 'Error al eliminar movimiento del sistema', type: 'error'})
         }
     })
 
@@ -242,7 +244,7 @@ export const ConciliacionMatchingPage = () => {
         },
         onError: (error) => {
             console.error(error)
-            alert('Error al actualizar movimiento')
+            setMsgModal({message: 'Error al actualizar movimiento', type: 'error'})
         }
     })
 
@@ -250,10 +252,10 @@ export const ConciliacionMatchingPage = () => {
         mutationFn: () => conciliacionService.cerrarConciliacion(cuentaId!, year, month),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['conciliacion', cuentaId, year, month] })
-            alert("Conciliación cerrada y bloqueada exitosamente. 🟢")
+            setMsgModal({message: "Conciliación cerrada y bloqueada exitosamente", type: 'success'})
         },
         onError: (error: any) => {
-            alert("Error al cerrar: " + (error.message || "Error desconocido"));
+            setMsgModal({message: "Error al cerrar: " + (error.message || "Error desconocido"), type: 'error'});
         }
     })
 
@@ -631,6 +633,8 @@ export const ConciliacionMatchingPage = () => {
                     isLoading={invalidarMatches1aMuchosMutation.isPending}
                 />
             )}
+
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
 
             {/* Modal de Edición de Sistema */}
             {showEditSystemModal && editingSystemMov && (

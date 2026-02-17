@@ -6,6 +6,7 @@ import type { Tercero } from '../types'
 import { TercerosTable } from '../components/organisms/tables/TercerosTable'
 import { TerceroModal } from '../components/organisms/modals/TerceroModal'
 import { CsvExportButton } from '../components/molecules/CsvExportButton'
+import { MessageModal } from '../components/molecules/MessageModal'
 import { API_BASE_URL } from '../config'
 
 export const TercerosPage = () => {
@@ -17,6 +18,7 @@ export const TercerosPage = () => {
     const [modalOpen, setModalOpen] = useState(false)
     const [itemEditando, setItemEditando] = useState<Tercero | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success' | 'info'} | null>(null)
 
     // Estado para mostrar el prompt de crear alias después de guardar
     const [terceroRecienCreado, setTerceroRecienCreado] = useState<Tercero | null>(null)
@@ -58,7 +60,7 @@ export const TercerosPage = () => {
                     toast.success('Tercero eliminado')
                     cargar()
                 } else {
-                    toast.error("Error al eliminar el tercero")
+                    setMsgModal({ message: "Error al eliminar el tercero", type: 'error' })
                 }
             })
     }
@@ -183,6 +185,7 @@ export const TercerosPage = () => {
                     </div>
                 </div>
             )}
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
         </div>
     )
 }

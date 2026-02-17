@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Movimiento, ItemCatalogo, ClasificacionManual } from '../../../types'
 import { CurrencyDisplay } from '../../atoms/CurrencyDisplay'
+import { MessageModal } from '../../molecules/MessageModal'
 
 interface Props {
     isOpen: boolean
@@ -20,6 +21,7 @@ export const ClassificationModal = ({
         centro_costo_id: 0,
         concepto_id: 0
     })
+    const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success' | 'info'} | null>(null)
 
     // Reiniciar form al abrir modal
     useEffect(() => {
@@ -41,7 +43,7 @@ export const ClassificationModal = ({
 
     const handleSubmit = () => {
         if (!formValues.tercero_id || !formValues.centro_costo_id || !formValues.concepto_id) {
-            alert("Por favor seleccione todos los campos")
+            setMsgModal({ message: "Por favor seleccione todos los campos", type: 'warning' })
             return
         }
         onSave(formValues)
@@ -113,6 +115,7 @@ export const ClassificationModal = ({
                         Guardar Clasificación
                     </button>
                 </div>
+                <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
             </div>
         </div>
     )

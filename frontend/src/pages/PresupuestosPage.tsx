@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Play, Lock, Eye, Calculator } from 'lucide-react'
+import { Plus, Pencil, Trash2, Play, Lock, Eye, Calculator, Undo2, RefreshCcw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import type { Presupuesto } from '../types/Presupuesto'
 import { presupuestoService } from '../services/presupuesto.service'
 import { Modal } from '../components/molecules/Modal'
+import { MessageModal } from '../components/molecules/MessageModal'
 import { Button } from '../components/atoms/Button'
 import { Input } from '../components/atoms/Input'
 import { CsvExportButton } from '../components/molecules/CsvExportButton'
@@ -18,7 +19,22 @@ export const PresupuestosPage = () => {
     const [generarModalOpen, setGenerarModalOpen] = useState(false)
     const [itemEditando, setItemEditando] = useState<Presupuesto | null>(null)
     const [presupuestoGenerar, setPresupuestoGenerar] = useState<Presupuesto | null>(null)
+    const [generarMode, setGenerarMode] = useState<'generar' | 'regenerar'>('generar')
     const [filtroAnio, setFiltroAnio] = useState<string>('')
+
+    // Confirm modal state
+    const [confirmMsg, setConfirmMsg] = useState<string | null>(null)
+    const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null)
+
+    const showConfirm = useCallback((msg: string, action: () => void) => {
+        setConfirmMsg(msg)
+        setConfirmAction(() => action)
+    }, [])
+
+    const closeConfirm = useCallback(() => {
+        setConfirmMsg(null)
+        setConfirmAction(null)
+    }, [])
 
     // Form state
     const [formAnio, setFormAnio] = useState(new Date().getFullYear())
@@ -102,7 +118,7 @@ export const PresupuestosPage = () => {
                     semaforo_verde_hasta: formVerdeHasta,
                     semaforo_amarillo_hasta: formAmarilloHasta,
                     umbral_minimo_mensual: formUmbralMensual,
-                    umbral_minimo_anual: formUmbralAnual
+                    umbral_minimo_anual: formUmbralAnual,
                 })
                 toast.success('Presupuesto actualizado')
             } else {
@@ -113,7 +129,7 @@ export const PresupuestosPage = () => {
                     semaforo_verde_hasta: formVerdeHasta,
                     semaforo_amarillo_hasta: formAmarilloHasta,
                     umbral_minimo_mensual: formUmbralMensual,
-                    umbral_minimo_anual: formUmbralAnual
+                    umbral_minimo_anual: formUmbralAnual,
                 })
                 toast.success('Presupuesto creado')
             }
@@ -124,45 +140,65 @@ export const PresupuestosPage = () => {
         }
     }
 
-    const handleDelete = async (p: Presupuesto) => {
+    const handleDelete = (p: Presupuesto) => {
         if (p.estado !== 'borrador') {
             toast.error('Solo se pueden eliminar presupuestos en borrador')
             return
         }
-        if (!confirm(`¿Eliminar presupuesto "${p.nombre}"?`)) return
-        try {
-            await presupuestoService.eliminar(p.id)
-            toast.success('Presupuesto eliminado')
-            cargarPresupuestos()
-        } catch (err: any) {
-            toast.error(err.message || 'Error al eliminar')
-        }
+        showConfirm(`¿Eliminar presupuesto "${p.nombre}"?`, async () => {
+            closeConfirm()
+            try {
+                await presupuestoService.eliminar(p.id)
+                toast.success('Presupuesto eliminado')
+                cargarPresupuestos()
+            } catch (err: any) {
+                toast.error(err.message || 'Error al eliminar')
+            }
+        })
     }
 
-    const handleActivar = async (p: Presupuesto) => {
-        if (!confirm(`¿Activar presupuesto "${p.nombre}"? Solo puede haber uno activo por año.`)) return
-        try {
-            await presupuestoService.activar(p.id)
-            toast.success('Presupuesto activado')
-            cargarPresupuestos()
-        } catch (err: any) {
-            toast.error(err.message || 'Error al activar')
-        }
+    const handleActivar = (p: Presupuesto) => {
+        showConfirm(`¿Activar presupuesto "${p.nombre}"?\nSolo puede haber uno activo por año.`, async () => {
+            closeConfirm()
+            try {
+                await presupuestoService.activar(p.id)
+                toast.success('Presupuesto activado')
+                cargarPresupuestos()
+            } catch (err: any) {
+                toast.error(err.message || 'Error al activar')
+            }
+        })
     }
 
-    const handleCerrar = async (p: Presupuesto) => {
-        if (!confirm(`¿Cerrar presupuesto "${p.nombre}"? No se podrá modificar.`)) return
-        try {
-            await presupuestoService.cerrar(p.id)
-            toast.success('Presupuesto cerrado')
-            cargarPresupuestos()
-        } catch (err: any) {
-            toast.error(err.message || 'Error al cerrar')
-        }
+    const handleCerrar = (p: Presupuesto) => {
+        showConfirm(`¿Cerrar presupuesto "${p.nombre}"?\nNo se podrá modificar.`, async () => {
+            closeConfirm()
+            try {
+                await presupuestoService.cerrar(p.id)
+                toast.success('Presupuesto cerrado')
+                cargarPresupuestos()
+            } catch (err: any) {
+                toast.error(err.message || 'Error al cerrar')
+            }
+        })
+    }
+
+    const handleRevertir = (p: Presupuesto) => {
+        showConfirm(`¿Revertir "${p.nombre}" a borrador?\nPodrá editar y regenerar líneas.`, async () => {
+            closeConfirm()
+            try {
+                await presupuestoService.revertir(p.id)
+                toast.success('Presupuesto revertido a borrador')
+                cargarPresupuestos()
+            } catch (err: any) {
+                toast.error(err.message || 'Error al revertir')
+            }
+        })
     }
 
     const handleGenerar = (p: Presupuesto) => {
         setPresupuestoGenerar(p)
+        setGenerarMode(p.estado === 'activo' ? 'regenerar' : 'generar')
         setGenerarModalOpen(true)
     }
 
@@ -232,12 +268,12 @@ export const PresupuestosPage = () => {
                 <table className="w-full">
                     <thead>
                         <tr className="bg-gray-50 border-b border-gray-100">
+                            <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Acciones</th>
                             <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Año</th>
                             <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Nombre</th>
                             <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Estado</th>
                             <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Semáforo</th>
                             <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Notas</th>
-                            <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -247,19 +283,8 @@ export const PresupuestosPage = () => {
                             <tr><td colSpan={6} className="text-center py-12 text-gray-400">No hay presupuestos</td></tr>
                         ) : presupuestos.map(p => (
                             <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                                <td className="px-4 py-3 text-sm font-medium text-gray-900">{p.anio}</td>
-                                <td className="px-4 py-3 text-sm text-gray-700">{p.nombre}</td>
-                                <td className="px-4 py-3">{estadoBadge(p.estado)}</td>
-                                <td className="px-4 py-3 text-center">
-                                    <span className="text-xs font-mono text-gray-600">
-                                        <span className="text-emerald-600">{p.semaforo_verde_hasta}%</span>
-                                        {' / '}
-                                        <span className="text-amber-600">{p.semaforo_amarillo_hasta}%</span>
-                                    </span>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{p.notas || '-'}</td>
                                 <td className="px-4 py-3">
-                                    <div className="flex items-center justify-end gap-1">
+                                    <div className="flex items-center justify-center gap-1">
                                         <button
                                             onClick={() => navigate(`/presupuestos/${p.id}/detalle`)}
                                             className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors"
@@ -300,16 +325,43 @@ export const PresupuestosPage = () => {
                                             </>
                                         )}
                                         {p.estado === 'activo' && (
-                                            <button
-                                                onClick={() => handleCerrar(p)}
-                                                className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600 transition-colors"
-                                                title="Cerrar presupuesto"
-                                            >
-                                                <Lock size={16} />
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={() => handleGenerar(p)}
+                                                    className="p-1.5 rounded-lg hover:bg-purple-50 text-purple-600 transition-colors"
+                                                    title="Regenerar presupuesto"
+                                                >
+                                                    <RefreshCcw size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleRevertir(p)}
+                                                    className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors"
+                                                    title="Revertir a borrador"
+                                                >
+                                                    <Undo2 size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleCerrar(p)}
+                                                    className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-600 transition-colors"
+                                                    title="Cerrar presupuesto"
+                                                >
+                                                    <Lock size={16} />
+                                                </button>
+                                            </>
                                         )}
                                     </div>
                                 </td>
+                                <td className="px-4 py-3 text-sm font-medium text-gray-900">{p.anio}</td>
+                                <td className="px-4 py-3 text-sm text-gray-700">{p.nombre}</td>
+                                <td className="px-4 py-3">{estadoBadge(p.estado)}</td>
+                                <td className="px-4 py-3 text-center">
+                                    <span className="text-xs font-mono text-gray-600">
+                                        <span className="text-emerald-600">{p.semaforo_verde_hasta}%</span>
+                                        {' / '}
+                                        <span className="text-amber-600">{p.semaforo_amarillo_hasta}%</span>
+                                    </span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{p.notas || '-'}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -457,8 +509,17 @@ export const PresupuestosPage = () => {
                     presupuesto={presupuestoGenerar}
                     onClose={() => setGenerarModalOpen(false)}
                     onSuccess={handleGenerarSuccess}
+                    mode={generarMode}
                 />
             )}
+
+            {/* Modal confirmación */}
+            <MessageModal
+                message={confirmMsg}
+                type="confirm"
+                onClose={closeConfirm}
+                onConfirm={confirmAction || undefined}
+            />
         </div>
     )
 }

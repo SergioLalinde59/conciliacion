@@ -8,7 +8,7 @@ interface Props {
     isOpen: boolean
     onClose: () => void
     item: Presupuesto | null
-    onSave: (data: { semaforo_verde_hasta: number; semaforo_amarillo_hasta: number; umbral_minimo_mensual: number; umbral_minimo_anual: number }) => void
+    onSave: (data: { semaforo_verde_hasta: number; semaforo_amarillo_hasta: number; umbral_minimo_mensual: number; umbral_minimo_anual: number; cifras_en_millones: boolean }) => void
 }
 
 const formatMiles = (n: number): string =>
@@ -24,6 +24,7 @@ export const PresupuestoSemaforoModal = ({ isOpen, onClose, item, onSave }: Prop
     const [amarilloHasta, setAmarilloHasta] = useState(15)
     const [umbralMensual, setUmbralMensual] = useState(0)
     const [umbralAnual, setUmbralAnual] = useState(0)
+    const [cifrasEnMillones, setCifrasEnMillones] = useState(false)
     const [error, setError] = useState('')
 
     useEffect(() => {
@@ -32,6 +33,7 @@ export const PresupuestoSemaforoModal = ({ isOpen, onClose, item, onSave }: Prop
             setAmarilloHasta(item.semaforo_amarillo_hasta)
             setUmbralMensual(item.umbral_minimo_mensual)
             setUmbralAnual(item.umbral_minimo_anual)
+            setCifrasEnMillones(item.cifras_en_millones ?? false)
             setError('')
         }
     }, [isOpen, item])
@@ -49,7 +51,7 @@ export const PresupuestoSemaforoModal = ({ isOpen, onClose, item, onSave }: Prop
             setError('Los umbrales de materialidad no pueden ser negativos')
             return
         }
-        onSave({ semaforo_verde_hasta: verdeHasta, semaforo_amarillo_hasta: amarilloHasta, umbral_minimo_mensual: umbralMensual, umbral_minimo_anual: umbralAnual })
+        onSave({ semaforo_verde_hasta: verdeHasta, semaforo_amarillo_hasta: amarilloHasta, umbral_minimo_mensual: umbralMensual, umbral_minimo_anual: umbralAnual, cifras_en_millones: cifrasEnMillones })
     }
 
     return (
@@ -127,6 +129,20 @@ export const PresupuestoSemaforoModal = ({ isOpen, onClose, item, onSave }: Prop
                             placeholder="0"
                         />
                     </div>
+                </div>
+
+                <div className="border-t border-gray-200 pt-4 mt-2">
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Visualización</label>
+                    <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={cifrasEnMillones}
+                            onChange={e => setCifrasEnMillones(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">Mostrar cifras en millones</span>
+                        <span className="text-xs text-gray-400">(ej: $1.5M, $150K)</span>
+                    </label>
                 </div>
 
                 {error && (

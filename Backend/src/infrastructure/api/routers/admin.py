@@ -1,6 +1,7 @@
 import os
 import csv
 import io
+import subprocess
 import zipfile
 from typing import List, Dict
 from datetime import datetime
@@ -37,7 +38,27 @@ ALLOWED_TABLES = [
     "reglas_clasificacion",
     "matching_alias",
     "cuenta_extractores",
-    "configuracion_matching"
+    "configuracion_matching",
+
+    # Presupuestos
+    "presupuestos",
+    "presupuesto_detalle",
+    "tipos_gasto",
+    "indicadores_economicos",
+    "presupuesto_versiones",
+    "reglas_presupuesto",
+]
+
+# Tablas operativas cuyos datos se excluyen al exportar estructura
+OPERATIONAL_TABLES = [
+    "movimiento_vinculaciones",
+    "movimientos_extracto",
+    "movimientos_detalle",
+    "movimientos_encabezado",
+    "conciliaciones",
+    "presupuesto_versiones",
+    "presupuesto_detalle",
+    "presupuestos",
 ]
 
 from dotenv import load_dotenv
@@ -60,9 +81,11 @@ else:
     SNAPSHOT_DIR = os.path.join(os.getcwd(), env_backup_path)
 
 RESTORE_DIR = os.path.join(SNAPSHOT_DIR, "restores")
+SQL_EXPORT_DIR = os.path.join(SNAPSHOT_DIR, os.getenv("SQL_EXPORT_DIR", "SQL"))
 
 # Asegurar directorios
 os.makedirs(RESTORE_DIR, exist_ok=True)
+os.makedirs(SQL_EXPORT_DIR, exist_ok=True)
 
 class BulkExportRequest(BaseModel):
     tables: List[str]
@@ -661,3 +684,82 @@ def reset_demo(request: ResetDemoRequest, conn=Depends(get_db_connection)):
         raise HTTPException(status_code=500, detail=f"Error en reset: {str(e)}")
     finally:
         cursor.close()
+
+
+# ============================================================
+# EXPORTAR ESTRUCTURA BD (clon limpio para otra máquina)
+# ============================================================
+
+@router.get("/exportar-estructura")
+def exportar_estructura():
+    """
+    Genera un script SQL completo con pg_dump:
+    - Estructura (CREATE TABLE) de TODAS las tablas
+    - Datos (INSERT) solo de tablas maestras/configuración
+    - Excluye datos de tablas operativas
+    La BD original NO se modifica.
+    """
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_port = os.getenv("DB_PORT", "5433")
+    db_name = os.getenv("DB_NAME", "Mvtos")
+    db_user = os.getenv("DB_USER", "postgres")
+    db_password = os.getenv("DB_PASSWORD", "")
+
+    cmd = [
+        "pg_dump",
+        "-h", db_host,
+        "-p", db_port,
+        "-U", db_user,
+        "-d", db_name,
+        "--no-owner",
+        "--no-privileges",
+    ]
+
+    for table in OPERATIONAL_TABLES:
+        cmd.extend(["--exclude-table-data", table])
+
+    logger.info(f"Exportar estructura: ejecutando pg_dump ({len(OPERATIONAL_TABLES)} tablas sin datos)")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PGPASSWORD": db_password},
+            timeout=120,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"pg_dump falló: {result.stderr}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error en pg_dump: {result.stderr[:500]}"
+            )
+
+        sql_content = result.stdout
+
+        # Guardar en SQL_EXPORT_DIR
+        fecha = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        filename = f"{fecha}_estructura_bd.sql"
+        full_path = os.path.join(SQL_EXPORT_DIR, filename)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(sql_content)
+
+        size_bytes = len(sql_content.encode("utf-8"))
+        logger.info(f"Estructura exportada: {full_path} ({size_bytes} bytes)")
+
+        return {
+            "mensaje": "Script SQL generado exitosamente",
+            "archivo": filename,
+            "ruta": full_path,
+            "size": size_bytes,
+        }
+
+    except subprocess.TimeoutExpired:
+        logger.error("pg_dump timeout (120s)")
+        raise HTTPException(status_code=504, detail="pg_dump excedió el tiempo límite")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exportando estructura: {e}")
+        raise HTTPException(status_code=500, detail=f"Error exportando estructura: {str(e)}")

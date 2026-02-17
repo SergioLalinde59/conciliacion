@@ -118,6 +118,7 @@ export interface Movimiento {
     valor_filtrado?: number | null  // Valor parcial cuando hay filtros por centro_costo/concepto
     usd?: number | null
     trm?: number | null
+    trm_provisional?: boolean | null
     moneda_id: number
     cuenta_id: number
     tercero_id?: number | null

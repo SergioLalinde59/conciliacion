@@ -32,7 +32,8 @@ import {
     Database,
     Calculator,
     Target,
-    Eye
+    Eye,
+    Calendar
 } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
 
@@ -42,23 +43,25 @@ export const Sidebar = () => {
 
     const sectionMenus: Record<string, { path: string }[]> = useMemo(() => ({
         movimientos: [
+            { path: '/movimientos' },
+            { path: '/movimientos/clasificar' },
             { path: '/movimientos/cargar' },
             { path: '/conciliacion/cargar-extracto' },
             { path: '/conciliacion/matching' },
             { path: '/herramientas/mantenimiento/reclasificar-movimientos' },
-            { path: '/movimientos/clasificar' },
-            { path: '/movimientos' },
             { path: '/movimientos/sugerencias' },
         ],
         reportes: [
-            { path: '/reportes/egresos-tercero' },
             { path: '/reportes/egresos-centro-costo' },
+            { path: '/reportes/egresos-tercero' },
             { path: '/reportes/ingresos-gastos' },
             { path: '/reportes/descargar' },
         ],
         presupuestos: [
             { path: '/reportes/presupuesto-vs-real' },
             { path: '/presupuestos' },
+            { path: '/presupuestos/ejecucion-mensual' },
+            { path: '/presupuestos/comparativo-cifras' },
             { path: '/presupuestos/clasificacion' },
             { path: '/presupuestos/reglas' },
             { path: '/presupuestos/indicadores' },
@@ -89,6 +92,8 @@ export const Sidebar = () => {
             { path: '/herramientas/mantenimiento/configuracion' },
             { path: '/herramientas/mantenimiento/backups' },
             { path: '/herramientas/mantenimiento/maestros' },
+            { path: '/herramientas/mantenimiento/presupuestos' },
+            { path: '/herramientas/mantenimiento/exportar-estructura' },
             { path: '/herramientas/mantenimiento/sistema' },
         ],
     }), []);
@@ -145,18 +150,18 @@ export const Sidebar = () => {
     ];
 
     const menuMovimientos = [
+        { name: 'Movimientos', path: '/movimientos', icon: Receipt },
+        { name: 'Por Clasificar', path: '/movimientos/clasificar', icon: ListTodo },
         { name: 'Cargar Movimiento', path: '/movimientos/cargar', icon: UploadCloud },
         { name: 'Cargar Extractos', path: '/conciliacion/cargar-extracto', icon: FileText },
         { name: 'Matching Inteligente', path: '/conciliacion/matching', icon: GitCompare },
         { name: 'Reclasificar Movimientos', path: '/herramientas/mantenimiento/reclasificar-movimientos', icon: Unlink },
-        { name: 'Por Clasificar', path: '/movimientos/clasificar', icon: ListTodo },
-        { name: 'Movimientos', path: '/movimientos', icon: Receipt },
         { name: 'Sugerencias Reclasif.', path: '/movimientos/sugerencias', icon: Sparkles },
     ];
 
     const menuReportes = [
-        { name: 'Egresos por Tercero', path: '/reportes/egresos-tercero', icon: PieChart },
         { name: 'Egresos por Centro Costo', path: '/reportes/egresos-centro-costo', icon: Layers },
+        { name: 'Egresos por Tercero', path: '/reportes/egresos-tercero', icon: PieChart },
         { name: 'Ingresos y Gastos', path: '/reportes/ingresos-gastos', icon: TrendingUp },
         { name: 'Descargar Movimientos', path: '/reportes/descargar', icon: Download },
     ];
@@ -164,6 +169,8 @@ export const Sidebar = () => {
     const menuPresupuestos = [
         { name: 'Ppto vs Real', path: '/reportes/presupuesto-vs-real', icon: Target },
         { name: 'Presupuestos', path: '/presupuestos', icon: Calculator },
+        { name: 'Ejecución Mensual', path: '/presupuestos/ejecucion-mensual', icon: Calendar },
+        { name: 'Comparativo Cifras', path: '/presupuestos/comparativo-cifras', icon: GitCompare },
         { name: 'Clasif. Gastos', path: '/presupuestos/clasificacion', icon: Eye },
         { name: 'Reglas Clasificación', path: '/presupuestos/reglas', icon: Zap },
         { name: 'Indicadores Económicos', path: '/presupuestos/indicadores', icon: TrendingUp },
@@ -177,6 +184,8 @@ export const Sidebar = () => {
         { name: 'Configuración', path: '/herramientas/mantenimiento/configuracion', icon: Settings },
         { name: 'Datos', path: '/herramientas/mantenimiento/backups', icon: Download },
         { name: 'Maestros', path: '/herramientas/mantenimiento/maestros', icon: Shield },
+        { name: 'Presupuestos', path: '/herramientas/mantenimiento/presupuestos', icon: Calculator },
+        { name: 'BD Estructura', path: '/herramientas/mantenimiento/exportar-estructura', icon: HardDrive },
         { name: 'Sistema Completo', path: '/herramientas/mantenimiento/sistema', icon: HardDrive },
     ];
 
