@@ -43,6 +43,7 @@ class ContextoClasificacionResponse(BaseModel):
     contexto: List[ContextoItemResponse]
     referencia_no_existe: bool = False
     referencia: Optional[str] = None
+    confianza: Optional[str] = None  # 'alta', 'media', 'baja'
 
 class ClasificacionLoteDTO(BaseModel):
     patron: Optional[str] = None
@@ -102,7 +103,8 @@ def obtener_sugerencia(
             sugerencia=SugerenciaSchema(**resultado['sugerencia']),
             contexto=contexto_dto,
             referencia_no_existe=resultado.get('referencia_no_existe', False),
-            referencia=resultado.get('referencia')
+            referencia=resultado.get('referencia'),
+            confianza=resultado.get('confianza')
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -187,6 +189,7 @@ def preview_similares(
 
 class PreviewLoteRequest(BaseModel):
     patron: str
+    referencia: Optional[str] = None
 
 @router.post("/preview-lote", response_model=List[MovimientoResponse])
 def preview_clasificacion_lote(
@@ -201,6 +204,7 @@ def preview_clasificacion_lote(
         # Usar buscar_avanzado que ya maneja la lógica de pendientes y el split de tablas
         movimientos, _ = mov_repo.buscar_avanzado(
             descripcion_contiene=dto.patron,
+            referencia=dto.referencia if dto.referencia else None,
             solo_pendientes=True,
             limit=50
         )

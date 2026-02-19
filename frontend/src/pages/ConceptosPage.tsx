@@ -160,6 +160,7 @@ export const ConceptosPage = () => {
                 concepto={itemEditando}
                 centrosCostos={centrosCostos}
                 conceptos={conceptos}
+                defaultCentroCostoId={centroCostoFiltro}
                 onClose={() => setModalOpen(false)}
                 onSave={handleSave}
             />

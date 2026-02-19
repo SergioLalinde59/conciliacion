@@ -159,11 +159,11 @@ export const clasificacionService = {
             body: JSON.stringify(dto)
         }).then(handleResponse),
 
-    previewLote: (patron: string): Promise<unknown[]> =>
+    previewLote: (patron: string, referencia?: string): Promise<unknown[]> =>
         fetch(`${API_BASE_URL}/api/clasificacion/preview-lote`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ patron })
+            body: JSON.stringify({ patron, referencia: referencia || null })
         }).then(handleResponse),
 
     previewSimilares: (movimientoId: number): Promise<{

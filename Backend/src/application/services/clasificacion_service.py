@@ -300,13 +300,20 @@ class ClasificacionService:
         [PIPELINE UNIFICADO]
         Calcula una sugerencia de clasificación usando múltiples estrategias simultáneas
         y un sistema de ranking/scoring unificado.
-        
+
         Score Final = (SimilitudTexto * 0.7) + (SimilitudValor * 0.3)
         """
         movimiento = self.movimiento_repo.obtener_por_id(movimiento_id)
         if not movimiento:
             raise ValueError(f"Movimiento {movimiento_id} no encontrado")
-            
+
+        # Quality gate thresholds (configurable via env vars)
+        UMBRAL_MINIMO_HISTORIAL = float(os.getenv('CLASIFICACION_UMBRAL_MINIMO_HISTORIAL', '40'))
+        UMBRAL_AUTO_SUGGEST = float(os.getenv('CLASIFICACION_UMBRAL_AUTO_SUGGEST', '50'))
+        UMBRAL_CONSISTENCIA_MIN = float(os.getenv('CLASIFICACION_UMBRAL_CONSISTENCIA_MINIMO', '30'))
+        BONUS_TERCERO_EXISTENTE = int(os.getenv('CLASIFICACION_BONUS_TERCERO_EXISTENTE_MAX', '5'))
+        MIN_TEXT_SIM_SUGGEST = float(os.getenv('CLASIFICACION_MIN_TEXT_SIMILARITY_SUGGEST', '20'))
+
         # Initialize suggestion with CURRENT movement values (preserve existing classification)
         sugerencia = {
             'tercero_id': movimiento.tercero_id, 
@@ -346,18 +353,15 @@ class ClasificacionService:
             for m in cands_tercero_existente:
                 if m.id != movimiento.id:
                     if m.id not in candidatos_map:
-                        candidatos_map[m.id] = {'mov': m, 'origen': {'tercero_existente'}, 'score_cobertura': 5}
+                        candidatos_map[m.id] = {'mov': m, 'origen': {'tercero_existente'}, 'score_cobertura': 0}
                     else:
                         candidatos_map[m.id]['origen'].add('tercero_existente')
-                        candidatos_map[m.id]['score_cobertura'] += 5
 
         # ============================================
-        # 0. ESTRATEGIA: REFERENCIA DEFINE TERCERO (configurado en tipo_cuenta)
+        # 0. ESTRATEGIA: REFERENCIA → TERCERO (SIEMPRE si hay referencia válida)
         # ============================================
-        # Si referencia_define_tercero = TRUE y hay referencia válida:
-        # - SOLO buscar movimientos con la misma referencia
-        # - El historial muestra únicamente movimientos con esa referencia
-        # - CC/Concepto puede variar (ej: Apple = Software o Hardware)
+        # Si el movimiento tiene referencia válida, SIEMPRE buscar tercero por referencia.
+        # referencia_define_tercero controla si se omiten las estrategias de texto posteriores.
 
         longitud_min_ref = pesos_cuenta.get('longitud_min_referencia', 8)
         tiene_referencia_valida = bool(
@@ -365,8 +369,8 @@ class ClasificacionService:
             and len(movimiento.referencia.strip()) >= longitud_min_ref
         )
 
-        if referencia_define_tercero and tiene_referencia_valida:
-            print(f"   🔑 referencia_define_tercero=TRUE, buscando solo por referencia: '{movimiento.referencia}'")
+        if tiene_referencia_valida:
+            print(f"   🔑 Buscando por referencia: '{movimiento.referencia}' (referencia_define_tercero={referencia_define_tercero})")
 
             # Buscar movimientos con la MISMA referencia
             cands_misma_ref, _ = self.movimiento_repo.buscar_avanzado(
@@ -377,7 +381,9 @@ class ClasificacionService:
             movs_con_misma_ref = [m for m in cands_misma_ref if m.id != movimiento.id and m.tercero_id]
 
             if movs_con_misma_ref:
-                match_referencia_encontrado = True
+                # Solo omitir estrategias de texto si referencia_define_tercero está activo
+                if referencia_define_tercero:
+                    match_referencia_encontrado = True
 
                 # Tomar el tercero del primer movimiento clasificado con esa referencia
                 primer_clasificado = movs_con_misma_ref[0]
@@ -402,22 +408,23 @@ class ClasificacionService:
                         sugerencia['tercero_id'] = td.terceroid
                         sugerencia['razon'] = f"Referencia: {movimiento.referencia}"
                         sugerencia['tipo_match'] = 'referencia_exacta'
-                        match_referencia_encontrado = True
+                        if referencia_define_tercero:
+                            match_referencia_encontrado = True
                     else:
                         print(f"   ⚠️ Referencia {movimiento.referencia} sin historial ni en catálogo")
                         referencia_no_existe = True
                 else:
                     print(f"   ⚠️ Referencia {movimiento.referencia} sin historial previo")
+                    if referencia_define_tercero:
+                        referencia_no_existe = True
 
         # ============================================
         # 1. ESTRATEGIA: PATRONES DE DESCRIPCIÓN (Catálogo Terceros)
         # ============================================
-        # Nota: La Estrategia 1 original (Ref Exacta) ya se ejecutó en auto_clasificar (paso 1.2 y 1.3)
-        # Aquí solo queda buscar patrones parciales si hay referencia.
-        
-        tiene_referencia = bool(movimiento.referencia and len(movimiento.referencia.strip()) > 0)
-        
-        if not match_referencia_encontrado and not sugerencia['tercero_id'] and tiene_referencia and self.tercero_descripcion_repo:
+        # Busca aliases/descripciones en el catálogo de terceros usando patrones de la descripción.
+        # Se ejecuta SIEMPRE que no haya match previo (con o sin referencia).
+
+        if not match_referencia_encontrado and not sugerencia['tercero_id'] and self.tercero_descripcion_repo:
             descripcion = movimiento.descripcion or ""
             palabras_ignorar = {'y', 'de', 'la', 'el', 'en', 'a', 'por', 'para', 'con', 'cop', 'usd'}
             palabras = descripcion.split()
@@ -441,6 +448,22 @@ class ClasificacionService:
                         sugerencia['tipo_match'] = 'descripcion_tercero'
                         print(f"   ✅ Match directo por patrón: {mejor.descripcion}")
                     break
+
+        # ============================================
+        # 1.5. ESTRATEGIA: MATCH DIRECTO POR NOMBRE DE TERCERO
+        # ============================================
+        # Busca terceros cuyo nombre aparece como palabra en la descripción.
+        # Útil para movimientos nuevos sin historial previo (ej: "Presto Las Vegas" → tercero "Presto")
+        if not match_referencia_encontrado and not sugerencia['tercero_id']:
+            descripcion_match = movimiento.descripcion or ""
+            if len(descripcion_match.strip()) >= 4:
+                terceros_match = self.tercero_repo.buscar_en_texto(descripcion_match)
+                if terceros_match:
+                    mejor = terceros_match[0]  # El más largo (más específico)
+                    sugerencia['tercero_id'] = mejor.terceroid
+                    sugerencia['razon'] = f"Nombre de tercero: {mejor.tercero}"
+                    sugerencia['tipo_match'] = 'nombre_tercero'
+                    print(f"   ✅ Match directo por nombre de tercero: {mejor.tercero} (ID {mejor.terceroid})")
 
         # ============================================
         # 2. ESTRATEGIA: BÚSQUEDA EXHAUSTIVA (MULTI-WORD)
@@ -566,8 +589,12 @@ class ClasificacionService:
                   and valor_min <= cand_valor_abs <= valor_max):
                 score_valor = 80  # Diferencia ≤20% (match cercano)
 
-            # Bonus por cobertura de palabras (Search Density)
-            bonus_cobertura = min(data['score_cobertura'] * 2, 10)  # Max 10 pts extra
+            # Bonus por cobertura de palabras (Search Density) — solo de búsqueda por palabras
+            bonus_cobertura = min(data['score_cobertura'] * 2, 10)
+
+            # Bonus separado y menor para tercero_existente (contexto, no evidencia textual)
+            if 'tercero_existente' in data['origen']:
+                bonus_cobertura = min(bonus_cobertura + BONUS_TERCERO_EXISTENTE, 10)
 
             # SCORE FINAL
             # Si hay match de referencia exacta → 100 puntos (no hay que buscar más)
@@ -605,11 +632,12 @@ class ClasificacionService:
             print(f"      {i+1}. [{res['score_final']:.1f} pts] ID {m.id} - '{m.descripcion}'")
             print(f"         Ref: {res['match_ref']} | Txt: {res['sim_texto']:.1f}% | Val: {res['score_valor']} | Origen: {res['origen']}")
             
-        # Seleccionar contexto top 5 con su score de coincidencia
+        # Seleccionar contexto top 5 con filtro de calidad mínima
         contexto_con_score = [
             {'movimiento': r['movimiento'], 'score': round(r['score_final'], 1)}
-            for r in resultados_scoring[:5]
-        ]
+            for r in resultados_scoring[:10]  # Pool más amplio para compensar filtrado
+            if r['score_final'] >= UMBRAL_MINIMO_HISTORIAL
+        ][:5]
         
         # ============================================
         # 5. INFERIR SUGERENCIAS DESDE EL GANADOR
@@ -617,8 +645,8 @@ class ClasificacionService:
         if not sugerencia['tercero_id'] and contexto_con_score:
             ganador = resultados_scoring[0]
             
-            # Umbral de confianza
-            if ganador['score_final'] >= 50:
+            # Umbral de confianza: score global + similitud de texto mínima
+            if ganador['score_final'] >= UMBRAL_AUTO_SUGGEST and ganador['sim_texto'] >= MIN_TEXT_SIM_SUGGEST:
                 mejor_match = ganador['movimiento']
                 sugerencia['tercero_id'] = mejor_match.tercero_id
                 
@@ -636,22 +664,27 @@ class ClasificacionService:
         # 6. SUGERIR TERCERO SI TODOS SON IGUALES (Consistencia)
         # ============================================
         if not sugerencia['tercero_id'] and contexto_con_score:
-            terceros_unicos = set(c['movimiento'].tercero_id for c in contexto_con_score if c['movimiento'].tercero_id)
-            if len(terceros_unicos) == 1:
-                tercero_comun_id = terceros_unicos.pop()
-                sugerencia['tercero_id'] = tercero_comun_id
-                sugerencia['razon'] = f"Historial consistente ({len(contexto_con_score)}/{len(contexto_con_score)})"
-                sugerencia['tipo_match'] = 'frecuencia_tercero'
+            # Solo candidatos con score significativo participan en la regla de consistencia
+            candidatos_significativos = [c for c in contexto_con_score if c['score'] >= UMBRAL_CONSISTENCIA_MIN]
+            if candidatos_significativos:
+                terceros_unicos = set(c['movimiento'].tercero_id for c in candidatos_significativos if c['movimiento'].tercero_id)
+                if len(terceros_unicos) == 1:
+                    tercero_comun_id = terceros_unicos.pop()
+                    sugerencia['tercero_id'] = tercero_comun_id
+                    count = len(candidatos_significativos)
+                    sugerencia['razon'] = f"Historial consistente ({count}/{count})"
+                    sugerencia['tipo_match'] = 'frecuencia_tercero'
 
         # ============================================
         # 7. INFERIR CC/CONCEPTO DEL HISTORIAL DEL TERCERO
         # ============================================
         # Si ya tenemos tercero pero no CC/Concepto, buscar en el historial de ese tercero
         if sugerencia['tercero_id'] and (not sugerencia['centro_costo_id'] or not sugerencia['concepto_id']):
-            # Filtrar candidatos que tengan el mismo tercero sugerido
+            # Filtrar candidatos que tengan el mismo tercero sugerido Y score significativo
             candidatos_tercero = [
                 c['movimiento'] for c in contexto_con_score
                 if c['movimiento'].tercero_id == sugerencia['tercero_id']
+                and c['score'] >= UMBRAL_CONSISTENCIA_MIN
             ]
 
             if candidatos_tercero:
@@ -688,13 +721,30 @@ class ClasificacionService:
         if sugerencia['tercero_id']:
             t = self.tercero_repo.obtener_por_id(sugerencia['tercero_id'])
             sugerencia['tercero_nombre'] = t.tercero if t else None
-            
+
+        # Calcular nivel de confianza para el frontend
+        confianza = None
+        if sugerencia['razon']:
+            if sugerencia['tipo_match'] == 'referencia_exacta':
+                confianza = 'alta'
+            elif contexto_con_score:
+                best_score = max(c['score'] for c in contexto_con_score)
+                if best_score >= 80:
+                    confianza = 'alta'
+                elif best_score >= 50:
+                    confianza = 'media'
+                else:
+                    confianza = 'baja'
+            else:
+                confianza = 'baja'
+
         return {
             'movimiento_id': movimiento.id,
             'sugerencia': sugerencia,
             'contexto': contexto_con_score,
             'referencia_no_existe': referencia_no_existe,
-            'referencia': movimiento.referencia if referencia_no_existe else None
+            'referencia': movimiento.referencia if referencia_no_existe else None,
+            'confianza': confianza
         }
 
     def aplicar_regla_lote(self, patron: str, tercero_id: int, centro_costo_id: int, concepto_id: int) -> int:

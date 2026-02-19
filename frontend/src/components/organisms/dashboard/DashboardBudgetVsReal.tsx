@@ -1,12 +1,17 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { SemaforoBadge } from '../../atoms/SemaforoBadge'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, AlertTriangle } from 'lucide-react'
-import { formatCompact } from '../../../utils/formatters'
+import { ArrowRight, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react'
+import { useBudgetFormat } from '../../atoms/CurrencyDisplay'
 import type { ComparacionPresupuesto } from '../../../types/Presupuesto'
 
 interface DashboardBudgetVsRealProps {
-    data: ComparacionPresupuesto[]
+    dataEgresos: ComparacionPresupuesto[]
+    dataIngresos: ComparacionPresupuesto[]
+    presupuestoEgresos: number
+    presupuestoIngresos: number
+    egresosReales: number
+    ingresosReales: number
     isLoading?: boolean
     maxItems?: number
 }
@@ -17,8 +22,17 @@ const semaforoGradient: Record<string, string> = {
     rojo: 'bg-gradient-to-r from-rose-400 to-rose-500',
 }
 
-export const DashboardBudgetVsReal = ({ data, isLoading, maxItems = 6 }: DashboardBudgetVsRealProps) => {
+export const DashboardBudgetVsReal = ({
+    dataEgresos, dataIngresos,
+    presupuestoEgresos, presupuestoIngresos,
+    egresosReales, ingresosReales,
+    isLoading, maxItems = 6
+}: DashboardBudgetVsRealProps) => {
     const navigate = useNavigate()
+    const fmt = useBudgetFormat()
+    const [direccion, setDireccion] = useState<'egreso' | 'ingreso'>('egreso')
+
+    const data = direccion === 'egreso' ? dataEgresos : dataIngresos
 
     const items = useMemo(() => {
         if (!data?.length) return []
@@ -39,9 +53,19 @@ export const DashboardBudgetVsReal = ({ data, isLoading, maxItems = 6 }: Dashboa
             ? Math.round(((totalConPpto - totalPpto) / totalPpto) * 1000) / 10
             : 0
         const semaforo: 'verde' | 'amarillo' | 'rojo' =
-            variPct <= 10 ? 'verde' : variPct <= 25 ? 'amarillo' : 'rojo'
+            direccion === 'egreso'
+                ? (variPct <= 10 ? 'verde' : variPct <= 25 ? 'amarillo' : 'rojo')
+                : (variPct >= -10 ? 'verde' : variPct >= -25 ? 'amarillo' : 'rojo')
         return { totalPpto, totalConPpto, totalSinPpto, variPct, semaforo }
-    }, [data])
+    }, [data, direccion])
+
+    // Net strip calculations
+    const netoReal = ingresosReales - egresosReales
+    const netoPpto = presupuestoIngresos - presupuestoEgresos
+    const diferenciaNeta = netoReal - netoPpto
+    const diferenciaPct = netoPpto !== 0 ? (diferenciaNeta / Math.abs(netoPpto)) * 100 : 0
+    const netoMejor = diferenciaNeta >= 0
+    const hasNetoData = presupuestoEgresos > 0 || presupuestoIngresos > 0
 
     const totalVisible = data
         ? data.filter(d => d.presupuestado > 0 || d.ejecutado > 0).length
@@ -82,13 +106,67 @@ export const DashboardBudgetVsReal = ({ data, isLoading, maxItems = 6 }: Dashboa
             </div>
             <p className="text-xs text-slate-400 mb-4">Por centro de costo</p>
 
+            {/* ── NET STRIP (always visible) ── */}
+            {hasNetoData && (
+                <div className="bg-gradient-to-r from-slate-50 to-indigo-50/50 rounded-lg px-3.5 py-3 mb-4 border border-slate-100">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Flujo Neto</span>
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${netoMejor ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${netoMejor ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                            {fmt(Math.abs(diferenciaNeta))} {netoMejor ? 'mejor' : 'peor'}
+                            <span className="text-[10px] opacity-70">
+                                ({diferenciaPct > 0 ? '+' : ''}{diferenciaPct.toFixed(0)}%)
+                            </span>
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-[11px]">
+                        <span className="text-slate-600">
+                            Real: <span className={`font-bold font-mono ${netoReal >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                                {fmt(netoReal)}
+                            </span>
+                        </span>
+                        <span className="text-slate-400">
+                            Ppto: <span className="font-mono font-medium text-slate-500">{fmt(netoPpto)}</span>
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* ── DIRECTION TABS ── */}
+            {dataIngresos.length > 0 && (
+                <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5 mb-4">
+                    <button
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-all ${
+                            direccion === 'egreso'
+                                ? 'bg-white shadow-sm text-slate-800'
+                                : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        onClick={() => setDireccion('egreso')}
+                    >
+                        <TrendingDown size={13} />
+                        Egresos
+                    </button>
+                    <button
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-all ${
+                            direccion === 'ingreso'
+                                ? 'bg-white shadow-sm text-slate-800'
+                                : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                        onClick={() => setDireccion('ingreso')}
+                    >
+                        <TrendingUp size={13} />
+                        Ingresos
+                    </button>
+                </div>
+            )}
+
             {/* Summary strip */}
             {summary && summary.totalPpto > 0 && (
                 <div className="bg-slate-50 rounded-lg px-3 py-2.5 mb-5">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-slate-500">
-                                {formatCompact(summary.totalConPpto)} de {formatCompact(summary.totalPpto)}
+                                {fmt(summary.totalConPpto)} de {fmt(summary.totalPpto)}
                             </span>
                             <SemaforoBadge
                                 valor={summary.semaforo}
@@ -99,7 +177,7 @@ export const DashboardBudgetVsReal = ({ data, isLoading, maxItems = 6 }: Dashboa
                         {summary.totalSinPpto > 0 && (
                             <span className="flex items-center gap-1 text-[11px] text-amber-600 font-medium">
                                 <AlertTriangle size={12} />
-                                {formatCompact(summary.totalSinPpto)} sin ppto
+                                {fmt(summary.totalSinPpto)} sin ppto
                             </span>
                         )}
                     </div>
@@ -132,13 +210,13 @@ export const DashboardBudgetVsReal = ({ data, isLoading, maxItems = 6 }: Dashboa
                                 {/* Line 1: Name + amounts + badge */}
                                 <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-sm font-medium text-slate-700 truncate max-w-[45%]">
-                                        {item.nombre}
+                                        {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
                                     </span>
                                     <div className="flex items-center gap-2">
                                         <span className="text-[11px] font-mono text-slate-400">
-                                            {formatCompact(conPpto)}
+                                            {fmt(conPpto)}
                                             <span className="text-slate-300"> / </span>
-                                            {formatCompact(ppto)}
+                                            {fmt(ppto)}
                                         </span>
                                         <SemaforoBadge
                                             valor={item.semaforo}
@@ -166,7 +244,7 @@ export const DashboardBudgetVsReal = ({ data, isLoading, maxItems = 6 }: Dashboa
                                 {sinPpto > 0 && (
                                     <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-500">
                                         <AlertTriangle size={11} className="shrink-0" />
-                                        <span>+{formatCompact(sinPpto)} sin presupuesto</span>
+                                        <span>+{fmt(sinPpto)} sin presupuesto</span>
                                     </div>
                                 )}
                             </div>

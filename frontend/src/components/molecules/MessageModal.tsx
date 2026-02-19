@@ -28,7 +28,7 @@ export const MessageModal = ({ message, onClose, onConfirm, type = 'error', titl
     const isConfirm = !!onConfirm
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]">
             <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
                 <div className="flex items-center gap-2 mb-3">
                     <Icon size={20} className={cfg.titleColor} />

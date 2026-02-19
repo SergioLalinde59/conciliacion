@@ -1,9 +1,8 @@
 import { useMemo } from 'react'
 import { Search, Loader2, FileSpreadsheet } from 'lucide-react'
 import { SemaforoBadge } from '../atoms/SemaforoBadge'
-import { SortPills } from '../molecules/SortPills'
 import { BudgetBarRow } from '../molecules/BudgetBarRow'
-import { formatCompact } from '../../utils/formatters'
+import { useBudgetFormat } from '../atoms/CurrencyDisplay'
 import type { ComparacionPresupuesto } from '../../types/Presupuesto'
 
 type SortDir = 'asc' | 'desc'
@@ -19,24 +18,17 @@ interface BudgetComparisonBarsProps {
     onSort?: (key: string) => void
     onRowClick: (item: ComparacionPresupuesto) => void
     onExport?: () => void
+    direccion?: string
 }
-
-const SORT_PILLS = [
-    { key: 'nombre', label: 'Nombre' },
-    { key: 'consumo', label: 'Consumo' },
-    { key: 'presupuestado', label: 'Ppto' },
-    { key: 'ejecutado', label: 'Ejecutado' },
-    { key: 'variacion_pct', label: 'Variación' },
-    { key: 'cumPct', label: 'Acumu' },
-]
 
 const getConsumo = (cc: ComparacionPresupuesto) =>
     cc.presupuestado > 0 ? cc.ejecutado / cc.presupuestado : (cc.ejecutado > 0 ? Infinity : 0)
 
 export const BudgetComparisonBars = ({
     data, loading, title, busqueda, setBusqueda,
-    sortKey, sortDir, onSort, onRowClick, onExport,
+    sortKey, sortDir, onSort, onRowClick, onExport, direccion,
 }: BudgetComparisonBarsProps) => {
+    const fmt = useBudgetFormat()
     const hasSearch = busqueda !== undefined && setBusqueda !== undefined
     const hasSort = sortKey !== undefined && sortDir !== undefined && onSort !== undefined
 
@@ -137,9 +129,6 @@ export const BudgetComparisonBars = ({
                         )}
                     </div>
                     <div className="flex items-center gap-3">
-                        {hasSort && (
-                            <SortPills pills={SORT_PILLS} sortKey={sortKey!} sortDir={sortDir!} onSort={onSort!} />
-                        )}
                         {onExport && (
                             <button onClick={onExport} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors" title="Exportar Excel">
                                 <FileSpreadsheet className="w-4 h-4" />
@@ -160,6 +149,7 @@ export const BudgetComparisonBars = ({
                                 key={cc.id}
                                 cc={cc}
                                 onClick={() => onRowClick(cc)}
+                                direccion={direccion}
                             />
                         ))}
                     </div>
@@ -172,10 +162,10 @@ export const BudgetComparisonBars = ({
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total</span>
                     <div className="flex items-center gap-3">
                         <span className="text-[11px] text-slate-400">
-                            Ppto <span className="font-mono text-blue-500">{formatCompact(totales.presupuestado)}</span>
+                            Ppto <span className="font-mono text-blue-500">{fmt(totales.presupuestado)}</span>
                         </span>
                         <span className="text-[11px] text-slate-400">
-                            Ejec <span className="font-mono text-rose-500 font-bold">{formatCompact(totales.ejecutado)}</span>
+                            Ejec <span className="font-mono text-rose-500 font-bold">{fmt(totales.ejecutado)}</span>
                         </span>
                         <span className="text-sm font-bold text-slate-700">
                             {consumoTotal}%
@@ -186,7 +176,7 @@ export const BudgetComparisonBars = ({
                             size="sm"
                         />
                         <span className="text-[11px] font-mono text-indigo-500 font-bold">
-                            {formatCompact(totales.ejecutado)} · 100%
+                            {fmt(totales.ejecutado)} · 100%
                         </span>
                     </div>
                 </div>

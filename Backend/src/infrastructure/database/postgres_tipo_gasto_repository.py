@@ -24,10 +24,11 @@ class PostgresTipoGastoRepository(TipoGastoRepository):
             activo=row[5],
             keywords=keywords_raw or [],
             prioridad=row[7] or 99,
-            created_at=row[8]
+            created_at=row[8],
+            direccion=row[9] if len(row) > 9 else 'egreso',
         )
 
-    _COLUMNS = "id, tipo, descripcion, indicador_default, excluir_presupuesto, activo, keywords, prioridad, created_at"
+    _COLUMNS = "id, tipo, descripcion, indicador_default, excluir_presupuesto, activo, keywords, prioridad, created_at, direccion"
 
     def guardar(self, tipo_gasto: TipoGasto) -> TipoGasto:
         cursor = self.conn.cursor()
@@ -37,23 +38,23 @@ class PostgresTipoGastoRepository(TipoGastoRepository):
                     f"""UPDATE tipos_gasto
                        SET tipo = %s, descripcion = %s,
                            indicador_default = %s, excluir_presupuesto = %s, activo = %s,
-                           keywords = %s, prioridad = %s
+                           keywords = %s, prioridad = %s, direccion = %s
                        WHERE id = %s
                        RETURNING {self._COLUMNS}""",
                     (tipo_gasto.tipo, tipo_gasto.descripcion,
                      tipo_gasto.indicador_default, tipo_gasto.excluir_presupuesto, tipo_gasto.activo,
-                     Json(tipo_gasto.keywords), tipo_gasto.prioridad,
+                     Json(tipo_gasto.keywords), tipo_gasto.prioridad, tipo_gasto.direccion,
                      tipo_gasto.id)
                 )
             else:
                 cursor.execute(
                     f"""INSERT INTO tipos_gasto
-                       (tipo, descripcion, indicador_default, excluir_presupuesto, activo, keywords, prioridad)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)
+                       (tipo, descripcion, indicador_default, excluir_presupuesto, activo, keywords, prioridad, direccion)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                        RETURNING {self._COLUMNS}""",
                     (tipo_gasto.tipo, tipo_gasto.descripcion,
                      tipo_gasto.indicador_default, tipo_gasto.excluir_presupuesto, tipo_gasto.activo,
-                     Json(tipo_gasto.keywords), tipo_gasto.prioridad)
+                     Json(tipo_gasto.keywords), tipo_gasto.prioridad, tipo_gasto.direccion)
                 )
             row = cursor.fetchone()
             self.conn.commit()

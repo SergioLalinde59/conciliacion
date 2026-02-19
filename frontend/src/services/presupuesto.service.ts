@@ -6,7 +6,8 @@ import type {
     ResumenMensualPresupuesto,
     PresupuestoWidget,
     ClasificacionPreviewItem,
-    SimulacionImpacto
+    SimulacionImpacto,
+    GastosSinPresupuestoResponse
 } from '../types/Presupuesto'
 
 export const presupuestoService = {
@@ -55,16 +56,16 @@ export const presupuestoService = {
 
     // --- Clasificación Preview ---
 
-    clasificacionPreview: async (anio: number, centrosCostosExcluidos?: number[]): Promise<ClasificacionPreviewItem[]> => {
-        let url = `${API_BASE_URL}/api/presupuestos/clasificacion-preview?anio=${anio}`
+    clasificacionPreview: async (anio: number, centrosCostosExcluidos?: number[], direccion: string = 'egreso'): Promise<ClasificacionPreviewItem[]> => {
+        let url = `${API_BASE_URL}/api/presupuestos/clasificacion-preview?anio=${anio}&direccion=${direccion}`
         if (centrosCostosExcluidos?.length) {
             url += centrosCostosExcluidos.map(id => `&centros_costos_excluidos=${id}`).join('')
         }
         return fetch(url).then(handleResponse)
     },
 
-    detalleMensual: async (anio: number, centroCostoId: number, conceptoId?: number | null): Promise<{ mes: number; monto: number }[]> => {
-        let url = `${API_BASE_URL}/api/presupuestos/clasificacion-preview/detalle-mensual?anio=${anio}&centro_costo_id=${centroCostoId}`
+    detalleMensual: async (anio: number, centroCostoId: number, conceptoId?: number | null, direccion: string = 'egreso'): Promise<{ mes: number; monto: number }[]> => {
+        let url = `${API_BASE_URL}/api/presupuestos/clasificacion-preview/detalle-mensual?anio=${anio}&centro_costo_id=${centroCostoId}&direccion=${direccion}`
         if (conceptoId != null) url += `&concepto_id=${conceptoId}`
         return fetch(url).then(handleResponse)
     },
@@ -157,7 +158,8 @@ export const presupuestoService = {
         nivel?: string; mes_inicio?: number; mes_fin?: number;
         centro_costo_id?: number; concepto_id?: number;
         centros_costos_excluidos?: number[];
-        excluir_estacionales?: boolean
+        excluir_estacionales?: boolean;
+        direccion?: string
     }): Promise<ComparacionPresupuesto[]> => {
         const qp = buildQueryParams(params as Record<string, unknown>)
         return fetch(`${API_BASE_URL}/api/presupuestos/${id}/comparacion?${qp}`).then(handleResponse)
@@ -166,7 +168,8 @@ export const presupuestoService = {
     compararMensual: async (id: number, params?: {
         centros_costos_excluidos?: number[]
         centro_costo_id?: number; concepto_id?: number; tercero_id?: number;
-        excluir_estacionales?: boolean
+        excluir_estacionales?: boolean;
+        direccion?: string
     }): Promise<ResumenMensualPresupuesto[]> => {
         const qp = params ? buildQueryParams(params as Record<string, unknown>) : ''
         const qs = qp.toString() ? `?${qp}` : ''
@@ -191,7 +194,7 @@ export const presupuestoService = {
 
     // --- Simulación e Impacto ---
 
-    simularReglas: async (id: number, dto?: { anio_fuente?: number; centros_costos_excluidos?: number[] }): Promise<SimulacionImpacto> => {
+    simularReglas: async (id: number, dto?: { anio_fuente?: number; centros_costos_excluidos?: number[]; direccion?: string }): Promise<SimulacionImpacto> => {
         return fetch(`${API_BASE_URL}/api/presupuestos/${id}/simular-reglas`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -222,11 +225,28 @@ export const presupuestoService = {
         return fetch(`${API_BASE_URL}/api/presupuestos/${id}/comparar-versiones${qp}`).then(handleResponse)
     },
 
+    // --- Reglas Pendientes ---
+
+    reglasPendientes: async (id: number): Promise<{ pendientes: number; detalle: { regla_id: number; centro_costo_nombre: string; concepto_nombre: string; tipo_gasto: string }[] }> => {
+        return fetch(`${API_BASE_URL}/api/presupuestos/${id}/reglas-pendientes`).then(handleResponse)
+    },
+
+    // --- Gastos Sin Presupuesto ---
+
+    gastosSinPresupuesto: async (id: number, centrosCostosExcluidos?: number[], direccion: string = 'egreso'): Promise<GastosSinPresupuestoResponse> => {
+        let url = `${API_BASE_URL}/api/presupuestos/${id}/gastos-sin-presupuesto?direccion=${direccion}`
+        if (centrosCostosExcluidos?.length) {
+            url += '&' + centrosCostosExcluidos.map(ccId => `centros_costos_excluidos=${ccId}`).join('&')
+        }
+        return fetch(url).then(handleResponse)
+    },
+
     // --- Widget Dashboard ---
 
     widget: async (params?: {
         centros_costos_excluidos?: number[]
         centro_costo_id?: number; concepto_id?: number; tercero_id?: number
+        direccion?: string
     }): Promise<PresupuestoWidget> => {
         const qp = params ? buildQueryParams(params as Record<string, unknown>) : ''
         const qs = qp.toString() ? `?${qp}` : ''

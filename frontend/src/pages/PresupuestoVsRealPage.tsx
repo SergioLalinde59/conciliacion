@@ -1,25 +1,35 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { presupuestoService } from '../services/presupuesto.service'
-import { usePresupuestos, usePresupuestoComparacion } from '../hooks/usePresupuesto'
+import { usePresupuestos, usePresupuestoComparacion, usePresupuestoVersiones } from '../hooks/usePresupuesto'
 import { useConfiguracionExclusion } from '../hooks/useReportes'
 import { SemaforoBadge } from '../components/atoms/SemaforoBadge'
-import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
-import { StatCard } from '../components/molecules/StatCard'
-import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
+import { useBudgetFormat } from '../components/atoms/CurrencyDisplay'
+import { DarkStatCard } from '../components/molecules/DarkStatCard'
+import { EntitySelector } from '../components/molecules/entities/EntitySelector'
 import { BudgetComparisonBars } from '../components/organisms/BudgetComparisonBars'
-import { ArrowLeft, X, Target, TrendingDown, TrendingUp, BarChart3, Eye } from 'lucide-react'
+import { PresupuestoDrilldownModal } from '../components/organisms/modals/PresupuestoDrilldownModal'
+import { MesesDrilldownModal } from '../components/organisms/modals/MesesDrilldownModal'
+import type { BreadcrumbItem } from '../components/organisms/modals/MesesDrilldownModal'
+import { useSettings } from '../context/SettingsContext'
+import { ReglasPendientesBanner } from '../components/molecules/ReglasPendientesBanner'
+import { Target, TrendingDown, TrendingUp, BarChart3, AlertTriangle, ChevronDown } from 'lucide-react'
 import { Button } from '../components/atoms/Button'
 import * as XLSX from 'xlsx'
-import type { ComparacionPresupuesto } from '../types/Presupuesto'
+import type { ComparacionPresupuesto, ResumenMensualPresupuesto } from '../types/Presupuesto'
 
 const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
 export const PresupuestoVsRealPage = () => {
+    const navigate = useNavigate()
+    const fmt = useBudgetFormat()
     const { data: presupuestos = [] } = usePresupuestos()
     const { data: configExclusion = [], isFetched: exclusionConfigLoaded } = useConfiguracionExclusion()
-
     // Estado presupuesto
     const [presupuestoId, setPresupuestoId] = useState<number>(0)
+
+    // Dirección (egresos / ingresos)
+    const [direccion, setDireccion] = useState<'egreso' | 'ingreso'>('egreso')
 
     // Filtros
     const currentMonth = new Date().getMonth() + 1
@@ -27,12 +37,24 @@ export const PresupuestoVsRealPage = () => {
     const [mesDesde, setMesDesde] = useState(1)
     const [mesHasta, setMesHasta] = useState(currentMonth)
     const [selectedRange, setSelectedRange] = useState('YTD')
-    const [cuentaId, setCuentaId] = useState('')
     const [terceroId, setTerceroId] = useState('')
     const [centroCostoId, setCentroCostoId] = useState('')
     const [conceptoId, setConceptoId] = useState('')
     const [mostrarIngresos, setMostrarIngresos] = useState(true)
     const [mostrarEgresos, setMostrarEgresos] = useState(true)
+
+    // Search & Sort (Paso 4)
+    const [busqueda, setBusqueda] = useState('')
+    const [sortKey, setSortKey] = useState('ejecutado')
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+    const toggleSort = (key: string) => {
+        if (sortKey === key) {
+            setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+        } else {
+            setSortKey(key)
+            setSortDir(key === 'nombre' ? 'asc' : 'desc')
+        }
+    }
 
     // CC Exclusion
     const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[] | null>(null)
@@ -43,15 +65,36 @@ export const PresupuestoVsRealPage = () => {
     const [drillLevel, setDrillLevel] = useState<'centro_costo' | 'concepto' | 'tercero'>('centro_costo')
     const [drillCcId, setDrillCcId] = useState<number | undefined>()
     const [drillCcName, setDrillCcName] = useState('')
-    const [, setDrillConceptoId] = useState<number | undefined>()
+    const [drillConceptoId, setDrillConceptoId] = useState<number | undefined>()
     const [drillConceptoName, setDrillConceptoName] = useState('')
     const [drillData, setDrillData] = useState<ComparacionPresupuesto[]>([])
     const [drillLoading, setDrillLoading] = useState(false)
     const [drillOpen, setDrillOpen] = useState(false)
 
-    // Seleccionar presupuesto activo por defecto
+    // Meses drill-down (4to nivel - Paso 3)
+    const [mesesData, setMesesData] = useState<ResumenMensualPresupuesto[]>([])
+    const [mesesLoading, setMesesLoading] = useState(false)
+    const [mesesOpen, setMesesOpen] = useState(false)
+    const [mesesBreadcrumb, setMesesBreadcrumb] = useState<BreadcrumbItem[]>([])
+
+    // Versiones (Paso 2)
     const selectedPresupuesto = presupuestos.find(p => p.id === presupuestoId)
-    const compact = selectedPresupuesto?.cifras_en_millones ?? false
+    const { cifrasEnMillones } = useSettings()
+    const compact = cifrasEnMillones
+    const { data: versiones = [] } = usePresupuestoVersiones(presupuestoId)
+    const [versionDropdownOpen, setVersionDropdownOpen] = useState(false)
+    const versionDropdownRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (!versionDropdownOpen) return
+        const handler = (e: MouseEvent) => {
+            if (versionDropdownRef.current && !versionDropdownRef.current.contains(e.target as Node)) {
+                setVersionDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [versionDropdownOpen])
 
     useEffect(() => {
         if (presupuestos.length > 0 && !presupuestoId) {
@@ -86,21 +129,29 @@ export const PresupuestoVsRealPage = () => {
     const conceptoIdFilter = conceptoId ? Number(conceptoId) : undefined
 
     // Queries
-    const { data: comparacion = [], isLoading } = usePresupuestoComparacion(presupuestoId, {
+    const { data: comparacion = [], isLoading, refetch: refetchComparacion } = usePresupuestoComparacion(presupuestoId, {
         nivel: 'centro_costo',
         mes_inicio: mesInicio,
         mes_fin: mesFin,
         centro_costo_id: ccIdFilter,
         concepto_id: conceptoIdFilter,
         centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-        excluir_estacionales: excluirEstacionales || undefined
+        excluir_estacionales: excluirEstacionales || undefined,
+        direccion
     })
+
+    // CC options from semáforo data (same order)
+    const ccOptions = useMemo(() =>
+        comparacion.filter(r => r.id != null).map(r => ({ id: r.id as number, nombre: r.nombre })),
+        [comparacion]
+    )
 
     // Totales
     const totales = useMemo(() => ({
         presupuestado: comparacion.reduce((s, r) => s + r.presupuestado, 0),
         ejecutado: comparacion.reduce((s, r) => s + r.ejecutado, 0),
         variacion: comparacion.reduce((s, r) => s + r.variacion, 0),
+        sinPresupuesto: comparacion.reduce((s, r) => s + (r.ejecutado_sin_ppto ?? 0), 0),
     }), [comparacion])
 
     const pctGlobal = totales.presupuestado > 0
@@ -114,13 +165,13 @@ export const PresupuestoVsRealPage = () => {
         setMesDesde(1)
         setMesHasta(isCurrentYear ? currentMonth : 12)
         setSelectedRange(isCurrentYear ? 'YTD' : 'Año Completo')
-        setCuentaId('')
         setTerceroId('')
         setCentroCostoId('')
         setConceptoId('')
         setMostrarIngresos(true)
         setMostrarEgresos(true)
         setExcluirEstacionales(false)
+        setBusqueda('')
         if (configExclusion.length > 0) {
             setCentrosCostosExcluidos(configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id))
         } else {
@@ -145,7 +196,8 @@ export const PresupuestoVsRealPage = () => {
                 mes_fin: mesFin,
                 centro_costo_id: item.id,
                 centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-                excluir_estacionales: excluirEstacionales || undefined
+                excluir_estacionales: excluirEstacionales || undefined,
+                direccion
             })
             setDrillData(data)
         } catch { setDrillData([]) }
@@ -165,11 +217,34 @@ export const PresupuestoVsRealPage = () => {
                 centro_costo_id: drillCcId,
                 concepto_id: item.id ?? undefined,
                 centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-                excluir_estacionales: excluirEstacionales || undefined
+                excluir_estacionales: excluirEstacionales || undefined,
+                direccion
             })
             setDrillData(data)
         } catch { setDrillData([]) }
         finally { setDrillLoading(false) }
+    }
+
+    // 4to nivel: Tercero → Meses
+    const handleTerceroClick = async (item: ComparacionPresupuesto) => {
+        setMesesBreadcrumb([
+            { label: 'Presupuesto' },
+            { label: drillCcName, color: 'text-indigo-600' },
+            { label: drillConceptoName, color: 'text-purple-600' },
+            { label: item.id ? `${item.id} - ${item.nombre}` : item.nombre, color: 'text-amber-600' },
+        ])
+        setMesesOpen(true)
+        setMesesLoading(true)
+        try {
+            const data = await presupuestoService.compararMensual(presupuestoId, {
+                centro_costo_id: drillCcId,
+                concepto_id: drillConceptoId,
+                tercero_id: item.id ?? undefined,
+                direccion
+            })
+            setMesesData(data)
+        } catch { setMesesData([]) }
+        finally { setMesesLoading(false) }
     }
 
     const handleDrillBack = () => {
@@ -208,30 +283,88 @@ export const PresupuestoVsRealPage = () => {
 
     return (
         <div className="flex flex-col h-full bg-slate-50/50 overflow-hidden">
-            {/* Header */}
-            <div className="px-6 pt-6 pb-2 bg-white flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Presupuesto vs Real</h1>
-                    <p className="text-slate-500 text-sm mt-1">Comparación del presupuesto contra gastos reales con semáforos</p>
+            {/* Hero: Header + Range + Stats */}
+            <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 px-6 pt-6 pb-5 text-white">
+                {/* Title row */}
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight">Presupuesto vs Real</h1>
+                        <p className="text-slate-400 text-sm mt-0.5">Comparación del presupuesto contra gastos reales con semáforos</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={presupuestoId}
+                            onChange={e => setPresupuestoId(parseInt(e.target.value))}
+                            className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none [&>option]:text-slate-900"
+                        >
+                            {presupuestos.map(p => (
+                                <option key={p.id} value={p.id}>
+                                    {p.nombre} ({p.anio}) - {p.estado}
+                                </option>
+                            ))}
+                        </select>
+                        {/* Version dropdown */}
+                        {selectedPresupuesto && selectedPresupuesto.version_actual > 1 && (
+                            <div className="relative" ref={versionDropdownRef}>
+                                <button
+                                    onClick={() => setVersionDropdownOpen(!versionDropdownOpen)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 text-purple-300 text-xs font-semibold hover:bg-white/20 transition-colors border border-white/20"
+                                >
+                                    v{selectedPresupuesto.version_actual}
+                                    <ChevronDown size={12} className={`transition-transform ${versionDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                                {versionDropdownOpen && versiones.length > 0 && (
+                                    <div className="absolute top-full right-0 mt-1 w-72 bg-white rounded-xl shadow-lg border border-gray-200 z-50 py-1">
+                                        <div className="px-3 py-2 border-b border-gray-100">
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Historial de versiones</p>
+                                        </div>
+                                        {versiones.map(v => (
+                                            <div
+                                                key={v.version}
+                                                className={`px-3 py-2 text-xs ${v.version === selectedPresupuesto.version_actual ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-semibold text-gray-700">
+                                                        v{v.version}
+                                                        {v.version === selectedPresupuesto.version_actual && (
+                                                            <span className="ml-1.5 text-[10px] text-purple-600 font-bold">ACTUAL</span>
+                                                        )}
+                                                    </span>
+                                                    <span className="text-gray-400 text-[10px]">
+                                                        {v.created_at ? new Date(v.created_at).toLocaleDateString('es-CO') : ''}
+                                                    </span>
+                                                </div>
+                                                <div className="flex items-center gap-3 mt-0.5 text-gray-500">
+                                                    <span>{v.lineas_generadas} líneas</span>
+                                                    <span>{fmt(v.total_presupuestado)}</span>
+                                                    {v.notas && <span className="truncate">{v.notas}</span>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {versiones.length > 1 && (
+                                            <button
+                                                onClick={() => { setVersionDropdownOpen(false); navigate(`/presupuestos/${presupuestoId}/comparar-versiones`) }}
+                                                className="w-full px-3 py-2 text-xs font-semibold text-purple-600 hover:bg-purple-50 border-t border-gray-100 text-left transition-colors"
+                                            >
+                                                Comparar versiones
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
-                <select
-                    value={presupuestoId}
-                    onChange={e => {
-                        setPresupuestoId(parseInt(e.target.value))
-                    }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                >
-                    {presupuestos.map(p => (
-                        <option key={p.id} value={p.id}>
-                            {p.nombre} ({p.anio}) - {p.estado}
-                        </option>
-                    ))}
-                </select>
-            </div>
 
-            {/* Botones de rango mensual + Filtros */}
-            <div className="bg-white/90 backdrop-blur-xl border-b border-slate-200 sticky top-0 z-30 px-6 pt-3 shadow-sm">
-                <div className="flex items-center gap-2 flex-wrap mb-2">
+                {/* Banner reglas pendientes */}
+                {presupuestoId > 0 && (
+                    <div className="mb-4">
+                        <ReglasPendientesBanner presupuestoId={presupuestoId} onRegenerated={() => refetchComparacion()} />
+                    </div>
+                )}
+
+                {/* Range buttons */}
+                <div className="flex items-center gap-1.5 flex-wrap mb-6">
                     {([
                         { label: 'Mes Actual', d: currentMonth, h: currentMonth },
                         { label: 'Mes Ant.', d: Math.max(1, currentMonth - 1), h: Math.max(1, currentMonth - 1) },
@@ -245,22 +378,22 @@ export const PresupuestoVsRealPage = () => {
                         return (
                             <Button
                                 key={btn.label}
-                                variant={isActive ? 'primary' : 'secondary'}
+                                variant="ghost"
                                 size="sm"
                                 disabled={disabled}
                                 onClick={() => { if (!disabled) { setMesDesde(btn.d); setMesHasta(btn.h); setSelectedRange(btn.label) } }}
-                                className={`${isActive
-                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-100 font-bold scale-105'
+                                className={`text-[11px] px-3 py-1.5 rounded-lg border transition-all duration-200 font-semibold ${isActive
+                                    ? 'bg-white/20 border-white/30 text-white shadow-lg shadow-white/5'
                                     : disabled
-                                        ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
-                                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300 font-medium'
-                                } transition-all duration-200 text-[11px] px-3 py-1.5 rounded-lg border`}
+                                        ? 'bg-white/5 border-white/5 text-slate-600 cursor-not-allowed'
+                                        : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                                }`}
                             >
                                 {btn.label}
                             </Button>
                         )
                     })}
-                    <span className="ml-2 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    <span className="ml-2 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                         {MESES[mesInicio]} - {MESES[mesFin]} {selectedPresupuesto?.anio}
                     </span>
                     <label className="ml-4 flex items-center gap-1.5 cursor-pointer select-none">
@@ -268,194 +401,146 @@ export const PresupuestoVsRealPage = () => {
                             type="checkbox"
                             checked={excluirEstacionales}
                             onChange={e => setExcluirEstacionales(e.target.checked)}
-                            className="w-3.5 h-3.5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                            className="w-3.5 h-3.5 rounded border-white/30 bg-white/10 text-purple-500 focus:ring-purple-400"
                         />
-                        <span className="text-[11px] font-medium text-slate-500">Excluir Estacionales</span>
+                        <span className="text-[11px] font-medium text-slate-400">Excluir Estacionales</span>
                     </label>
                 </div>
-            </div>
-            <FiltrosReporte
-                cuentaId={cuentaId} setCuentaId={setCuentaId}
-                terceroId={terceroId} setTerceroId={setTerceroId}
-                centroCostoId={centroCostoId} setCentroCostoId={setCentroCostoId}
-                conceptoId={conceptoId} setConceptoId={setConceptoId}
-                configuracionExclusion={configExclusion}
-                centrosCostosExcluidos={actualCentrosCostosExcluidos}
-                setCentrosCostosExcluidos={setCentrosCostosExcluidos}
-                mostrarIngresos={mostrarIngresos}
-                setMostrarIngresos={setMostrarIngresos}
-                mostrarEgresos={mostrarEgresos}
-                setMostrarEgresos={setMostrarEgresos}
-                onLimpiar={handleLimpiar}
-                showIngresosEgresos={false}
-                showClasificacionFilters={true}
-                soloConciliables={false}
-            />
 
-            {/* Contenido */}
-            <div className="flex-1 min-h-0 p-4 flex flex-col gap-4">
-                {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
-                    <StatCard
+                {/* KPI Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <DarkStatCard
                         label="Presupuestado"
                         value={totales.presupuestado}
                         icon={<Target className="w-5 h-5" />}
-                        colorClass="text-blue-600"
-                        bgColorClass="bg-blue-50"
-                        borderColor="group-hover:border-blue-200"
+                        colorClass="text-blue-400"
+                        iconBgClass="bg-blue-500/20 text-blue-400"
                         subtitle={`${selectedPresupuesto?.nombre || ''} (${MESES[mesInicio]}-${MESES[mesFin]})`}
                         compact={compact}
                     />
-                    <StatCard
+                    <DarkStatCard
                         label="Ejecutado Real"
                         value={totales.ejecutado}
                         icon={<TrendingDown className="w-5 h-5" />}
-                        colorClass="text-rose-600"
-                        bgColorClass="bg-rose-50"
-                        borderColor="group-hover:border-rose-200"
-                        isEgreso
+                        colorClass="text-rose-400"
+                        iconBgClass="bg-rose-500/20 text-rose-400"
                         subtitle="Gastos reales del periodo"
                         compact={compact}
                     />
-                    <StatCard
+                    <DarkStatCard
                         label="Variación"
                         value={totales.variacion}
                         icon={<TrendingUp className="w-5 h-5" />}
-                        colorClass={totales.variacion <= 0 ? 'text-emerald-600' : 'text-rose-600'}
-                        bgColorClass={totales.variacion <= 0 ? 'bg-emerald-50' : 'bg-rose-50'}
-                        borderColor={totales.variacion <= 0 ? 'group-hover:border-emerald-200' : 'group-hover:border-rose-200'}
+                        colorClass={totales.variacion <= 0 ? 'text-emerald-400' : 'text-rose-400'}
+                        iconBgClass={totales.variacion <= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}
                         subtitle="Ejecutado - Presupuestado"
                         compact={compact}
                     />
-                    <div className="group bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 flex items-center justify-between transition-all duration-300 hover:shadow-md">
-                        <div className="space-y-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">% Consumido</p>
-                            <div className="text-2xl font-black font-mono tracking-tight text-slate-700">
-                                {pctGlobal}%
-                            </div>
-                            <SemaforoBadge
+                    <DarkStatCard
+                        label="% Consumido"
+                        value={0}
+                        icon={<BarChart3 className="w-5 h-5" />}
+                        colorClass="text-white"
+                        iconBgClass="bg-white/10 text-slate-300"
+                        renderValue={<>
+                            {pctGlobal}%
+                            <div className="mt-1"><SemaforoBadge
                                 valor={parseFloat(pctGlobal) > 100 + (selectedPresupuesto?.semaforo_amarillo_hasta ?? 15) ? 'rojo' : parseFloat(pctGlobal) > 100 + (selectedPresupuesto?.semaforo_verde_hasta ?? 5) ? 'amarillo' : 'verde'}
                                 size="sm"
-                            />
-                        </div>
-                        <div className="p-3.5 bg-slate-50 text-slate-600 rounded-2xl group-hover:scale-110 transition-transform duration-300">
-                            <BarChart3 className="w-5 h-5" />
-                        </div>
+                            /></div>
+                        </>}
+                        compact={compact}
+                    />
+                    <DarkStatCard
+                        label="Sin Presupuesto"
+                        value={totales.sinPresupuesto}
+                        icon={<AlertTriangle className="w-5 h-5" />}
+                        colorClass="text-amber-400"
+                        iconBgClass="bg-amber-500/20 text-amber-400"
+                        subtitle="Gastos reales sin ppto asignado"
+                        compact={compact}
+                    />
+                </div>
+            </div>
+
+            {/* Egresos / Ingresos toggle + CC filter */}
+            <div className="px-4 pt-4">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 px-4 py-3 flex items-center gap-4">
+                    <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
+                        {(['egreso', 'ingreso'] as const).map(dir => (
+                            <button
+                                key={dir}
+                                onClick={() => setDireccion(dir)}
+                                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                                    direccion === dir
+                                        ? 'bg-white text-slate-800 shadow-sm'
+                                        : 'text-slate-500 hover:text-slate-700'
+                                }`}
+                            >
+                                {dir === 'egreso' ? 'Egresos' : 'Ingresos'}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="w-64">
+                        <EntitySelector
+                            label=""
+                            options={ccOptions}
+                            value={centroCostoId}
+                            onChange={setCentroCostoId}
+                            placeholder="Todos los centros de costo"
+                        />
                     </div>
                 </div>
+            </div>
 
+            {/* Contenido */}
+            <div className="flex-1 min-h-0 flex flex-col gap-0">
                 {/* CC Comparison Bars */}
-                <div className="flex-1 min-h-0">
+                <div className="flex-1 min-h-0 p-4">
                     <BudgetComparisonBars
                         data={comparacion}
                         loading={isLoading}
                         title="Semáforo Presupuestal"
+                        busqueda={busqueda}
+                        setBusqueda={setBusqueda}
+                        sortKey={sortKey}
+                        sortDir={sortDir}
+                        onSort={toggleSort}
                         onRowClick={handleCcClick}
                         onExport={exportarExcel}
+                        direccion={direccion}
                     />
                 </div>
             </div>
 
             {/* Drill-down Modal */}
-            {drillOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200 p-4">
-                    <div className="w-full max-w-4xl h-[600px] bg-white shadow-2xl flex flex-col rounded-3xl overflow-hidden">
-                        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <button onClick={handleDrillBack} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400">
-                                    <ArrowLeft className="w-5 h-5" />
-                                </button>
-                                <div>
-                                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1">
-                                        <span>Presupuesto</span>
-                                        <span className="mx-1 opacity-30">/</span>
-                                        <span className="text-indigo-600">{drillCcName}</span>
-                                        {drillLevel === 'tercero' && drillConceptoName && (
-                                            <>
-                                                <span className="mx-1 opacity-30">/</span>
-                                                <span className="text-purple-600">{drillConceptoName}</span>
-                                            </>
-                                        )}
-                                    </div>
-                                    <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">
-                                        {drillLevel === 'concepto' ? 'Conceptos' : 'Terceros'}
-                                    </h2>
-                                </div>
-                            </div>
-                            <button onClick={() => setDrillOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
+            <PresupuestoDrilldownModal
+                open={drillOpen}
+                level={drillLevel as 'concepto' | 'tercero'}
+                ccId={drillCcId}
+                ccName={drillCcName}
+                conceptoName={drillConceptoName}
+                data={drillData}
+                loading={drillLoading}
+                compact={compact}
+                semaforoVerde={selectedPresupuesto?.semaforo_verde_hasta}
+                semaforoAmarillo={selectedPresupuesto?.semaforo_amarillo_hasta}
+                onBack={handleDrillBack}
+                onClose={() => setDrillOpen(false)}
+                onConceptoClick={handleConceptoClick}
+                onTerceroClick={handleTerceroClick}
+                direccion={direccion}
+            />
 
-                        {/* Summary row */}
-                        <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex gap-6 text-right">
-                            <div><p className="text-[9px] text-slate-400 font-bold capitalize">Presupuestado</p><p className="text-xs font-mono text-blue-600 font-bold"><CurrencyDisplay value={drillData.reduce((s, r) => s + r.presupuestado, 0)} colorize={false} compact={compact} /></p></div>
-                            <div><p className="text-[9px] text-slate-400 font-bold capitalize">Ejecutado</p><p className="text-xs font-mono text-rose-600 font-bold"><CurrencyDisplay value={drillData.reduce((s, r) => s + r.ejecutado, 0)} colorize={false} compact={compact} /></p></div>
-                            <div><p className="text-[9px] text-slate-400 font-bold capitalize">Variación</p><p className="text-xs font-mono font-bold"><CurrencyDisplay value={drillData.reduce((s, r) => s + r.variacion, 0)} compact={compact} /></p></div>
-                        </div>
-
-                        <div className="flex-1 overflow-auto">
-                            <table className="w-full text-xs">
-                                <thead className="bg-gray-50 sticky top-0">
-                                    <tr>
-                                        <th className="text-left px-3 py-2 font-bold text-gray-400 capitalize text-[10px] tracking-wide">Nombre</th>
-                                        <th className="text-right px-3 py-2 font-bold text-gray-400 capitalize text-[10px] tracking-wide">Presupuestado</th>
-                                        <th className="text-right px-3 py-2 font-bold text-gray-400 capitalize text-[10px] tracking-wide">Ejecutado</th>
-                                        <th className="text-right px-3 py-2 font-bold text-gray-400 capitalize text-[10px] tracking-wide">Variación $</th>
-                                        <th className="text-right px-3 py-2 font-bold text-gray-400 capitalize text-[10px] tracking-wide">Var %</th>
-                                        <th className="text-center px-3 py-2 font-bold text-gray-400 capitalize text-[10px] tracking-wide">Estado</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {drillLoading ? (
-                                        <tr><td colSpan={6} className="text-center py-8 text-gray-400">Cargando...</td></tr>
-                                    ) : drillData.length === 0 ? (
-                                        <tr><td colSpan={6} className="text-center py-8 text-gray-400">Sin datos</td></tr>
-                                    ) : drillData.map((row, idx) => (
-                                        <tr
-                                            key={row.id ?? idx}
-                                            className={`border-b border-gray-50 hover:bg-blue-50/30 transition-colors ${drillLevel === 'concepto' ? 'cursor-pointer' : ''}`}
-                                            onClick={() => drillLevel === 'concepto' && handleConceptoClick(row)}
-                                        >
-                                            <td className="px-3 py-2">
-                                                <div className="flex items-center gap-2 group">
-                                                    {drillLevel === 'concepto' && (
-                                                        <div className="w-5 h-5 rounded bg-indigo-50 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                                                            <Eye className="w-3 h-3" />
-                                                        </div>
-                                                    )}
-                                                    <span className="font-bold text-slate-700 uppercase tracking-tight">{row.nombre}</span>
-                                                    {row.es_estacional && (
-                                                        <span className="text-[8px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                                                            Estacional
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-mono text-blue-600">
-                                                <CurrencyDisplay value={row.presupuestado} colorize={false} decimals={0} compact={compact} />
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-mono text-rose-600">
-                                                <CurrencyDisplay value={row.ejecutado} colorize={false} decimals={0} compact={compact} />
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-mono">
-                                                <CurrencyDisplay value={row.variacion} decimals={0} compact={compact} />
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-mono">
-                                                <span className={row.variacion_pct > (selectedPresupuesto?.semaforo_amarillo_hasta ?? 15) ? 'text-rose-600' : row.variacion_pct > (selectedPresupuesto?.semaforo_verde_hasta ?? 5) ? 'text-amber-600' : 'text-emerald-600'}>
-                                                    {row.variacion_pct > 0 ? '+' : ''}{row.variacion_pct.toFixed(1)}%
-                                                </span>
-                                            </td>
-                                            <td className="px-3 py-2 text-center">
-                                                <SemaforoBadge valor={row.semaforo} variacionPct={row.variacion_pct} size="sm" />
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+            {/* Meses Drill-down Modal (4to nivel) */}
+            {mesesOpen && (
+                <MesesDrilldownModal
+                    breadcrumb={mesesBreadcrumb}
+                    data={mesesData}
+                    loading={mesesLoading}
+                    onClose={() => setMesesOpen(false)}
+                    direccion={direccion}
+                />
             )}
         </div>
     )

@@ -10,8 +10,8 @@ export const PRESUPUESTO_KEYS = {
     resumenCC: (id: number) => [...PRESUPUESTO_KEYS.all, 'resumen-cc', id] as const,
     resumenMensual: (id: number) => [...PRESUPUESTO_KEYS.all, 'resumen-mensual', id] as const,
     widget: (params?: Record<string, unknown>) => [...PRESUPUESTO_KEYS.all, 'widget', params] as const,
-    clasificacionPreview: (anio: number, excluidos?: number[]) => [...PRESUPUESTO_KEYS.all, 'clasificacion-preview', anio, excluidos] as const,
-    detalleMensual: (anio: number, ccId: number, conceptoId?: number | null) => [...PRESUPUESTO_KEYS.all, 'detalle-mensual', anio, ccId, conceptoId] as const,
+    clasificacionPreview: (anio: number, excluidos?: number[], direccion?: string) => [...PRESUPUESTO_KEYS.all, 'clasificacion-preview', anio, excluidos, direccion] as const,
+    detalleMensual: (anio: number, ccId: number, conceptoId?: number | null, direccion?: string) => [...PRESUPUESTO_KEYS.all, 'detalle-mensual', anio, ccId, conceptoId, direccion] as const,
     simulacion: (id: number, version: number) => [...PRESUPUESTO_KEYS.all, 'simulacion', id, version] as const,
     versiones: (id: number) => [...PRESUPUESTO_KEYS.all, 'versiones', id] as const,
 }
@@ -37,7 +37,8 @@ export const usePresupuestoComparacion = (id: number, params: {
     nivel?: string; mes_inicio?: number; mes_fin?: number;
     centro_costo_id?: number; concepto_id?: number;
     centros_costos_excluidos?: number[];
-    excluir_estacionales?: boolean
+    excluir_estacionales?: boolean;
+    direccion?: string
 }) =>
     useQuery({
         queryKey: PRESUPUESTO_KEYS.comparacion(id, params as Record<string, unknown>),
@@ -50,6 +51,7 @@ export const usePresupuestoComparacionMensual = (id: number, params?: {
     centros_costos_excluidos?: number[]
     centro_costo_id?: number; concepto_id?: number; tercero_id?: number;
     excluir_estacionales?: boolean
+    direccion?: string
 }) =>
     useQuery({
         queryKey: PRESUPUESTO_KEYS.comparacionMensual(id, params as Record<string, unknown>),
@@ -61,6 +63,7 @@ export const usePresupuestoComparacionMensual = (id: number, params?: {
 export const usePresupuestoWidget = (params?: {
     centros_costos_excluidos?: number[]
     centro_costo_id?: number; concepto_id?: number; tercero_id?: number
+    direccion?: string
 }) =>
     useQuery({
         queryKey: PRESUPUESTO_KEYS.widget(params as Record<string, unknown>),
@@ -68,18 +71,18 @@ export const usePresupuestoWidget = (params?: {
         staleTime: 10 * 60 * 1000,
     })
 
-export const useClasificacionPreview = (anio: number, centrosCostosExcluidos?: number[]) =>
+export const useClasificacionPreview = (anio: number, centrosCostosExcluidos?: number[], direccion?: string) =>
     useQuery({
-        queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, centrosCostosExcluidos),
-        queryFn: () => presupuestoService.clasificacionPreview(anio, centrosCostosExcluidos),
+        queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, centrosCostosExcluidos, direccion),
+        queryFn: () => presupuestoService.clasificacionPreview(anio, centrosCostosExcluidos, direccion),
         staleTime: 5 * 60 * 1000,
         enabled: !!anio,
     })
 
-export const useDetalleMensual = (anio: number, centroCostoId: number, conceptoId?: number | null) =>
+export const useDetalleMensual = (anio: number, centroCostoId: number, conceptoId?: number | null, direccion?: string) =>
     useQuery({
-        queryKey: PRESUPUESTO_KEYS.detalleMensual(anio, centroCostoId, conceptoId),
-        queryFn: () => presupuestoService.detalleMensual(anio, centroCostoId, conceptoId),
+        queryKey: PRESUPUESTO_KEYS.detalleMensual(anio, centroCostoId, conceptoId, direccion),
+        queryFn: () => presupuestoService.detalleMensual(anio, centroCostoId, conceptoId, direccion),
         staleTime: 5 * 60 * 1000,
         enabled: !!anio && !!centroCostoId,
     })

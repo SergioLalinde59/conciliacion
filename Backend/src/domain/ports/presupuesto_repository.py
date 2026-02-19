@@ -26,6 +26,11 @@ class PresupuestoRepository(ABC):
         pass
 
     @abstractmethod
+    def obtener_borrador(self, anio: int) -> Optional[Presupuesto]:
+        """Obtiene el presupuesto en borrador para un año dado"""
+        pass
+
+    @abstractmethod
     def eliminar(self, presupuesto_id: int) -> None:
         """Elimina un presupuesto (solo en estado borrador)"""
         pass

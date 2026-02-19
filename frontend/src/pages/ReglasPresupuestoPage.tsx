@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Zap, Filter, Eye, Pencil, PlusCircle, X, TrendingUp, TrendingDown, Trash2, Loader2 } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Zap, Eye, Pencil, PlusCircle, X, TrendingUp, TrendingDown, Trash2, Loader2, AlertTriangle, Target, BarChart3, Wallet } from 'lucide-react'
 import { useReglasPresupuesto, useReglaPresupuestoMutations } from '../hooks/useReglasPresupuesto'
 import { useTiposGasto } from '../hooks/useTiposGasto'
 import { useIndicadores } from '../hooks/useIndicadores'
@@ -7,35 +7,26 @@ import { useConfiguracionExclusion } from '../hooks/useReportes'
 import { usePresupuestos, useClasificacionPreview, PRESUPUESTO_KEYS } from '../hooks/usePresupuesto'
 import { presupuestoService } from '../services/presupuesto.service'
 import { reglasPresupuestoService } from '../services/reglasPresupuesto.service'
+import { dashboardService } from '../services/dashboard.service'
 import type { ReglaPresupuesto } from '../types/ReglaPresupuesto'
-import type { ClasificacionPreviewItem } from '../types/Presupuesto'
-import { useQuery } from '@tanstack/react-query'
-import { API_BASE_URL, handleResponse } from '../services/httpClient'
+import type { ClasificacionPreviewItem, GastoSinPresupuesto } from '../types/Presupuesto'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DataTable } from '../components/molecules/DataTable'
 import type { Column } from '../components/molecules/DataTable'
-import { FilterToggles } from '../components/molecules/FilterToggles'
 import { MessageModal } from '../components/molecules/MessageModal'
+import { ReglasPendientesBanner } from '../components/molecules/ReglasPendientesBanner'
+import { ReglaPresupuestoModal } from '../components/organisms/modals/ReglaPresupuestoModal'
+import type { ReglaFormData } from '../components/organisms/modals/ReglaPresupuestoModal'
+import { PresupuestoActionToolbar } from '../components/organisms/PresupuestoActionToolbar'
+import { PresupuestoFormModal } from '../components/organisms/modals/PresupuestoFormModal'
+import { PresupuestoGenerarModal } from '../components/organisms/modals/PresupuestoGenerarModal'
+import { PresupuestoAjusteModal } from '../components/organisms/modals/PresupuestoAjusteModal'
+import { NuevaLineaPresupuestoModal } from '../components/organisms/modals/NuevaLineaPresupuestoModal'
+import { usePresupuestoActions } from '../hooks/usePresupuestoActions'
+import { formatMiles } from '../utils/formatters'
+import { DarkStatCard } from '../components/molecules/DarkStatCard'
+import { useSettings } from '../context/SettingsContext'
 import toast from 'react-hot-toast'
-
-const formatMiles = (value: number | null): string => {
-    if (value == null) return ''
-    return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Math.round(value))
-}
-
-const parseMonto = (text: string): number | null => {
-    const cleaned = text.replace(/[^\d]/g, '')
-    return cleaned ? Number(cleaned) : null
-}
-
-const INITIAL_FORM = {
-    centro_costo_id: null as number | null,
-    concepto_id: null as number | null,
-    tipo_gasto: 'Variable',
-    indicador_nombre: 'IPC Colombia' as string | null,
-    factor_ajuste: 0,
-    monto_fijo_mensual: null as number | null,
-    notas: '' as string | null,
-}
 
 const tipoBadgeColor: Record<string, string> = {
     Fijo: 'bg-blue-100 text-blue-700',
@@ -43,46 +34,80 @@ const tipoBadgeColor: Record<string, string> = {
     Salarial: 'bg-purple-100 text-purple-700',
     Estacional: 'bg-amber-100 text-amber-700',
     'No Repetitivo': 'bg-red-100 text-red-700',
+    'No Repetitivo - Ingresos': 'bg-red-100 text-red-700',
 }
+
+const esNoRepetitivo = (tipo: string) => tipo.includes('No Repetitivo')
 
 interface CCGroup {
     cc_id: number
     cc_nombre: string
     conceptos: ClasificacionPreviewItem[]
     tipos: string[]
+    baseAnual: number
+    flujoFuente: number
     totalAnual: number
     cantConceptos: number
     actual: number
     diferencia: number
     diferencia_pct: number
     gapCount: number
+    paretoAcum: number
+    paretoPct: number
+}
+
+const formatMillones = (value: number): string => {
+    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
+    if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`
+    return `$${formatMiles(value)}`
 }
 
 export const ReglasPresupuestoPage = () => {
-    const { data: reglas = [] } = useReglasPresupuesto()
+    const queryClient = useQueryClient()
+    const { cifrasEnMillones } = useSettings()
+    const compact = cifrasEnMillones
+    const [direccion, setDireccion] = useState<'egreso' | 'ingreso'>('egreso')
+    const { data: reglas = [] } = useReglasPresupuesto(direccion)
     const { crear, actualizar, eliminar } = useReglaPresupuestoMutations()
     const { data: tiposGasto = [] } = useTiposGasto()
-    const { data: indicadores = [] } = useIndicadores()
-    const [showReglaModal, setShowReglaModal] = useState(false)
-    const [editando, setEditando] = useState<ReglaPresupuesto | null>(null)
-    const [form, setForm] = useState(INITIAL_FORM)
-    const [editingMonto, setEditingMonto] = useState<'mensual' | 'anual' | null>(null)
-    const [rawMonto, setRawMonto] = useState('')
+    const [reglaModal, setReglaModal] = useState<{
+        isOpen: boolean
+        editando: ReglaPresupuesto | null
+        initialForm: Partial<ReglaFormData>
+    }>({ isOpen: false, editando: null, initialForm: {} })
     const [errorMsg, setErrorMsg] = useState<string | null>(null)
+    const [filterCcId, setFilterCcId] = useState<number | ''>('')
     const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void } | null>(null)
 
     // CC detail modal — almacena solo el ID, se deriva de ccGroups para que sea reactivo
     const [selectedCCId, setSelectedCCId] = useState<number | null>(null)
 
-    // Presupuesto activo o borrador
+    // Presupuesto selector
     const currentYear = new Date().getFullYear()
-    const { data: presupuestos = [] } = usePresupuestos(currentYear)
-    const presupuestoActivo = useMemo(
-        () => presupuestos.find(p => p.estado === 'activo') || presupuestos.find(p => p.estado === 'borrador'),
-        [presupuestos]
-    )
+    const { data: presupuestos = [], refetch: refetchPresupuestos } = usePresupuestos()
+    const [presupuestoId, setPresupuestoId] = useState<number>(0)
+
+    // Auto-seleccionar activo al cargar
+    useEffect(() => {
+        if (presupuestos.length > 0 && !presupuestoId) {
+            const activo = presupuestos.find(p => p.estado === 'activo')
+            setPresupuestoId(activo?.id || presupuestos[0].id)
+        }
+    }, [presupuestos, presupuestoId])
+
+    const presupuestoActivo = presupuestos.find(p => p.id === presupuestoId) || null
     const anioFuente = presupuestoActivo ? presupuestoActivo.anio - 1 : currentYear - 1
     const anioDestino = presupuestoActivo?.anio ?? currentYear
+
+    // Acciones de gestión del presupuesto
+    const handleRefreshAll = useCallback(() => {
+        refetchPresupuestos()
+        queryClient.invalidateQueries({ queryKey: ['clasificacion-preview'] })
+        queryClient.invalidateQueries({ queryKey: ['gastos-sin-presupuesto'] })
+        queryClient.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.all })
+    }, [refetchPresupuestos, queryClient])
+
+    const pptoActions = usePresupuestoActions(handleRefreshAll)
 
     // Filtros avanzados
     const { data: configExclusion = [] } = useConfiguracionExclusion()
@@ -96,8 +121,23 @@ export const ReglasPresupuestoPage = () => {
         }
     }, [configExclusion, centrosCostosExcluidos])
 
+    // Gasto real total del año fuente (misma fuente que el Dashboard)
+    const { data: flujoFuente } = useQuery({
+        queryKey: ['flujo-anual-fuente', anioFuente, actualExcluidos, filterCcId, direccion],
+        queryFn: () => dashboardService.flujoMensual(
+            `${anioFuente}-01-01`, `${anioFuente}-12-31`,
+            actualExcluidos,
+            filterCcId || undefined
+        ),
+        enabled: anioFuente > 0,
+    })
+    const gastoRealAnterior = useMemo(
+        () => flujoFuente?.reduce((sum, m) => sum + m.egresos, 0) ?? 0,
+        [flujoFuente]
+    )
+
     // Datos de clasificacion-preview (fuente principal izquierda)
-    const { data: previewItems = [], isLoading: loadingPreview } = useClasificacionPreview(anioFuente, actualExcluidos)
+    const { data: previewItems = [], isLoading: loadingPreview } = useClasificacionPreview(anioFuente, actualExcluidos, direccion)
 
     // Indicadores del año destino para calcular presupuesto anual
     const { data: indicadoresTarget = [] } = useIndicadores(anioDestino)
@@ -109,18 +149,27 @@ export const ReglasPresupuestoPage = () => {
 
     // Simulación de impacto (datos de presupuesto actual por CC)
     const { data: simulacionData } = useQuery({
-        queryKey: PRESUPUESTO_KEYS.simulacion(presupuestoActivo?.id ?? 0, 0),
+        queryKey: [...PRESUPUESTO_KEYS.simulacion(presupuestoActivo?.id ?? 0, 0), direccion],
         queryFn: () => presupuestoService.simularReglas(presupuestoActivo!.id, {
             anio_fuente: anioFuente,
             centros_costos_excluidos: actualExcluidos,
+            direccion,
         }),
+        staleTime: 0,
+        enabled: !!presupuestoActivo,
+    })
+
+    // Gastos sin presupuesto (año actual)
+    const { data: gastosSinPpto } = useQuery({
+        queryKey: ['gastos-sin-presupuesto', presupuestoActivo?.id, actualExcluidos, direccion],
+        queryFn: () => presupuestoService.gastosSinPresupuesto(presupuestoActivo!.id, actualExcluidos, direccion),
         staleTime: 0,
         enabled: !!presupuestoActivo,
     })
 
     // Cálculo de presupuesto anual por fila
     const calcRowPpto = useCallback((r: ClasificacionPreviewItem) => {
-        if (r.tipo_gasto === 'No Repetitivo') return 0
+        if (esNoRepetitivo(r.tipo_gasto)) return 0
         if (r.monto_fijo_mensual != null) return r.monto_fijo_mensual * 12
         const pct = r.indicador_nombre ? (indicadorMap.get(r.indicador_nombre) || 0) : 0
         return r.monto_total * (1 + (pct + r.factor_ajuste) / 100)
@@ -148,18 +197,21 @@ export const ReglasPresupuestoPage = () => {
         const groups: CCGroup[] = []
         map.forEach((val, ccId) => {
             const tipos = [...new Set(val.items.map(i => i.tipo_gasto))]
-            const totalAnual = val.items
-                .filter(i => i.tipo_gasto !== 'No Repetitivo')
-                .reduce((sum, i) => sum + calcRowPpto(i), 0)
+            const itemsSinNR = val.items.filter(i => !esNoRepetitivo(i.tipo_gasto))
+            const baseAnual = itemsSinNR.reduce((sum, i) => sum + i.monto_total, 0)
+            const flujoFuente = val.items.reduce((sum, i) => sum + i.monto_total, 0)
+            const totalAnual = itemsSinNR.reduce((sum, i) => sum + calcRowPpto(i), 0)
             const actual = actualMap.get(ccId) ?? 0
-            const diferencia = totalAnual - actual
-            const diferencia_pct = actual !== 0 ? Math.round(diferencia / actual * 1000) / 10 : (totalAnual > 0 ? 100 : 0)
+            const diferencia = totalAnual - flujoFuente
+            const diferencia_pct = flujoFuente !== 0 ? Math.round(diferencia / flujoFuente * 1000) / 10 : (totalAnual > 0 ? 100 : 0)
             const gapCount = val.items.filter(i => i.nivel_match === 'Auto' || i.nivel_match === 'Default').length
             groups.push({
                 cc_id: ccId,
                 cc_nombre: val.nombre,
                 conceptos: val.items.sort((a, b) => calcRowPpto(b) - calcRowPpto(a)),
                 tipos,
+                baseAnual,
+                flujoFuente,
                 totalAnual,
                 cantConceptos: val.items.length,
                 actual,
@@ -168,7 +220,15 @@ export const ReglasPresupuestoPage = () => {
                 gapCount,
             })
         })
-        return groups.sort((a, b) => b.totalAnual - a.totalAnual)
+        const sorted = groups.sort((a, b) => b.totalAnual - a.totalAnual)
+        const grandTotal = sorted.reduce((sum, g) => sum + g.totalAnual, 0)
+        let acum = 0
+        for (const g of sorted) {
+            acum += g.totalAnual
+            g.paretoAcum = acum
+            g.paretoPct = grandTotal !== 0 ? Math.round(acum / grandTotal * 1000) / 10 : 0
+        }
+        return sorted
     }, [previewItems, calcRowPpto, simulacionData])
 
     // CC seleccionado derivado de ccGroups (reactivo a cambios de datos)
@@ -183,61 +243,57 @@ export const ReglasPresupuestoPage = () => {
         [reglas]
     )
 
-    // Centros de costo y conceptos para el modal de crear
-    const { data: centrosCosto = [] } = useQuery({
-        queryKey: ['centros-costo-select'],
-        queryFn: () => fetch(`${API_BASE_URL}/api/centros-costos`).then(handleResponse) as Promise<{ id: number; nombre: string }[]>,
-        staleTime: 10 * 60 * 1000,
-    })
-    const { data: conceptos = [] } = useQuery({
-        queryKey: ['conceptos-select'],
-        queryFn: () => fetch(`${API_BASE_URL}/api/conceptos`).then(handleResponse) as Promise<{ id: number; nombre: string; centro_costo_id?: number }[]>,
-        staleTime: 10 * 60 * 1000,
-    })
-    const conceptosForm = useMemo(() =>
-        form.centro_costo_id ? conceptos.filter(c => c.centro_costo_id === form.centro_costo_id) : conceptos
-    , [conceptos, form.centro_costo_id])
-
-    const nombresIndicador = [...new Set(indicadores.map(i => i.indicador))]
-
     // --- Acciones ---
 
+    const closeReglaModal = () => setReglaModal({ isOpen: false, editando: null, initialForm: {} })
+
     const openCrear = (ccId?: number | null, conceptoId?: number | null) => {
-        setEditando(null)
-        setForm({ ...INITIAL_FORM, centro_costo_id: ccId ?? null, concepto_id: conceptoId ?? null })
-        setEditingMonto(null)
-        setShowReglaModal(true)
+        setReglaModal({
+            isOpen: true,
+            editando: null,
+            initialForm: { centro_costo_id: ccId ?? null, concepto_id: conceptoId ?? null },
+        })
     }
 
     const openCrearDesdePreview = (item: ClasificacionPreviewItem) => {
-        setEditando(null)
         const tipoGasto = tiposGasto.find(t => t.tipo === item.tipo_gasto)
-        setForm({
-            centro_costo_id: item.centro_costo_id,
-            concepto_id: item.concepto_id,
-            tipo_gasto: item.tipo_gasto,
-            indicador_nombre: tipoGasto?.indicador_default ? (item.indicador_nombre || tipoGasto.indicador_default) : null,
-            factor_ajuste: item.factor_ajuste,
-            monto_fijo_mensual: item.monto_fijo_mensual,
-            notas: '',
+        setReglaModal({
+            isOpen: true,
+            editando: null,
+            initialForm: {
+                centro_costo_id: item.centro_costo_id,
+                concepto_id: item.concepto_id,
+                tipo_gasto: item.tipo_gasto,
+                indicador_nombre: tipoGasto?.indicador_default ? (item.indicador_nombre || tipoGasto.indicador_default) : null,
+                factor_ajuste: item.factor_ajuste,
+                monto_fijo_mensual: item.monto_fijo_mensual,
+                notas: '',
+            },
         })
-        setEditingMonto(null)
-        setShowReglaModal(true)
     }
 
     const openEditar = (r: ReglaPresupuesto) => {
-        setEditando(r)
-        setForm({
-            centro_costo_id: r.centro_costo_id,
-            concepto_id: r.concepto_id,
-            tipo_gasto: r.tipo_gasto,
-            indicador_nombre: r.indicador_nombre,
-            factor_ajuste: r.factor_ajuste,
-            monto_fijo_mensual: r.monto_fijo_mensual,
-            notas: r.notas || '',
+        let monto = r.monto_fijo_mensual
+        if (monto == null) {
+            const items = previewItems.filter(i => i.regla_id === r.id && !esNoRepetitivo(i.tipo_gasto))
+            if (items.length > 0) {
+                const totalAnual = items.reduce((sum, i) => sum + calcRowPpto(i), 0)
+                monto = totalAnual / 12
+            }
+        }
+        setReglaModal({
+            isOpen: true,
+            editando: r,
+            initialForm: {
+                centro_costo_id: r.centro_costo_id,
+                concepto_id: r.concepto_id,
+                tipo_gasto: r.tipo_gasto,
+                indicador_nombre: r.indicador_nombre,
+                factor_ajuste: r.factor_ajuste,
+                monto_fijo_mensual: monto,
+                notas: r.notas || '',
+            },
         })
-        setEditingMonto(null)
-        setShowReglaModal(true)
     }
 
     const openEditarDesdePreview = (item: ClasificacionPreviewItem) => {
@@ -245,27 +301,33 @@ export const ReglasPresupuestoPage = () => {
         if (regla) openEditar(regla)
     }
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
+    const handleSaveRegla = async (formData: ReglaFormData) => {
         try {
-            if (editando) {
+            if (reglaModal.editando) {
                 await actualizar.mutateAsync({
-                    id: editando.id,
-                    ...form,
+                    id: reglaModal.editando.id,
+                    ...formData,
                     centro_costo_nombre: undefined,
                     concepto_nombre: undefined,
                 } as ReglaPresupuesto)
             } else {
-                await crear.mutateAsync(form)
+                await crear.mutateAsync(formData)
             }
-            setShowReglaModal(false)
+            closeReglaModal()
             // Si se creó desde sugerencias, remover de la lista
             if (editingSugerenciaKey) {
                 setSugerencias(prev => prev.filter(s => s.key !== editingSugerenciaKey))
                 setEditingSugerenciaKey(null)
             }
+            // Si se creó desde gastos sin ppto, remover de la lista y refrescar
+            if (editingGastoSinPptoKey) {
+                setGastosSinPptoItems(prev => prev.filter(s => s.key !== editingGastoSinPptoKey))
+                setEditingGastoSinPptoKey(null)
+                queryClient.invalidateQueries({ queryKey: ['gastos-sin-presupuesto'] })
+            }
         } catch (err: any) {
             setErrorMsg(err?.message || 'Error al guardar la regla')
+            throw err  // Re-throw so modal knows save failed
         }
     }
 
@@ -324,19 +386,20 @@ export const ReglasPresupuestoPage = () => {
 
     const handleEditarSugerencia = (s: SugerenciaItem) => {
         const tipoGasto = tiposGasto.find(t => t.tipo === s.tipo_gasto)
-        setEditando(null)
-        setForm({
-            centro_costo_id: s.centro_costo_id,
-            concepto_id: s.concepto_id,
-            tipo_gasto: s.tipo_gasto,
-            indicador_nombre: tipoGasto?.indicador_default ? (tipoGasto.indicador_default) : null,
-            factor_ajuste: 0,
-            monto_fijo_mensual: null,
-            notas: '',
-        })
-        setEditingMonto(null)
         setEditingSugerenciaKey(s.key)
-        setShowReglaModal(true)
+        setReglaModal({
+            isOpen: true,
+            editando: null,
+            initialForm: {
+                centro_costo_id: s.centro_costo_id,
+                concepto_id: s.concepto_id,
+                tipo_gasto: s.tipo_gasto,
+                indicador_nombre: tipoGasto?.indicador_default ? (tipoGasto.indicador_default) : null,
+                factor_ajuste: 0,
+                monto_fijo_mensual: null,
+                notas: '',
+            },
+        })
     }
 
     const handleConfirmarSugerencias = async () => {
@@ -354,6 +417,7 @@ export const ReglasPresupuestoPage = () => {
                     factor_ajuste: 0,
                     monto_fijo_mensual: null as number | null,
                     notas: 'Sugerida automáticamente',
+                    direccion,
                 }
             })
             const res = await reglasPresupuestoService.crearLote(reglas)
@@ -366,28 +430,116 @@ export const ReglasPresupuestoPage = () => {
         }
     }
 
-    // Tipo de gasto ↔ indicador/monto fijo
-    const handleTipoChange = (tipo: string) => {
-        const tipoGasto = tiposGasto.find(t => t.tipo === tipo)
-        if (tipoGasto?.indicador_default) {
-            setForm({ ...form, tipo_gasto: tipo, indicador_nombre: tipoGasto.indicador_default, monto_fijo_mensual: null })
-        } else {
-            setForm({ ...form, tipo_gasto: tipo, indicador_nombre: null, monto_fijo_mensual: form.monto_fijo_mensual })
-        }
+    // --- Modal Gastos Sin Presupuesto ---
+    type GastoCategoria = 'sin_regla' | 'no_repetitivo' | 'pendiente_regen'
+
+    interface GastoSinPptoItem extends GastoSinPresupuesto {
+        key: string
+        selected: boolean
+        tipo_gasto_seleccionado: string
+        categoria: GastoCategoria
     }
 
-    const tipoSeleccionado = tiposGasto.find(t => t.tipo === form.tipo_gasto)
-    const usaMontoFijo = !tipoSeleccionado?.indicador_default
+    const getCategoria = (g: GastoSinPresupuesto): GastoCategoria => {
+        if (!g.tiene_regla) return 'sin_regla'
+        if (esNoRepetitivo(g.regla_tipo_gasto || '')) return 'no_repetitivo'
+        return 'pendiente_regen'
+    }
 
-    // Monto fijo bidireccional
-    const montoAnual = form.monto_fijo_mensual ? form.monto_fijo_mensual * 12 : null
-    const mensualDisplay = editingMonto === 'mensual' ? rawMonto : formatMiles(form.monto_fijo_mensual)
-    const anualDisplay = editingMonto === 'anual' ? rawMonto : formatMiles(montoAnual)
-    const handleMensualFocus = () => { setEditingMonto('mensual'); setRawMonto(form.monto_fijo_mensual != null ? Math.round(form.monto_fijo_mensual).toString() : '') }
-    const handleMensualChange = (text: string) => { setRawMonto(text); setForm({ ...form, monto_fijo_mensual: parseMonto(text) }) }
-    const handleAnualFocus = () => { setEditingMonto('anual'); setRawMonto(montoAnual != null ? Math.round(montoAnual).toString() : '') }
-    const handleAnualChange = (text: string) => { setRawMonto(text); const a = parseMonto(text); setForm({ ...form, monto_fijo_mensual: a ? a / 12 : null }) }
-    const handleMontoBlur = () => setEditingMonto(null)
+    const [showGastosSinPptoModal, setShowGastosSinPptoModal] = useState(false)
+    const [gastosSinPptoItems, setGastosSinPptoItems] = useState<GastoSinPptoItem[]>([])
+    const [creandoGastosSinPpto, setCreandoGastosSinPpto] = useState(false)
+    const [editingGastoSinPptoKey, setEditingGastoSinPptoKey] = useState<string | null>(null)
+
+    const handleAbrirGastosSinPpto = () => {
+        if (!gastosSinPpto?.items?.length) return
+        const items: GastoSinPptoItem[] = gastosSinPpto.items
+            .map(g => ({
+                ...g,
+                key: `${g.centro_costo_id}-${g.concepto_id}`,
+                selected: !g.tiene_regla,
+                tipo_gasto_seleccionado: g.regla_tipo_gasto || 'Fijo',
+                categoria: getCategoria(g),
+            }))
+            // Orden: sin_regla primero (Pareto), luego pendiente_regen, luego no_repetitivo
+            .sort((a, b) => {
+                const order: Record<GastoCategoria, number> = { sin_regla: 0, pendiente_regen: 1, no_repetitivo: 2 }
+                const catDiff = order[a.categoria] - order[b.categoria]
+                return catDiff !== 0 ? catDiff : b.monto_acumulado - a.monto_acumulado
+            })
+        setGastosSinPptoItems(items)
+        setShowGastosSinPptoModal(true)
+    }
+
+    const toggleGastoSinPpto = (key: string) => {
+        setGastosSinPptoItems(prev => prev.map(s =>
+            s.key === key && !s.tiene_regla ? { ...s, selected: !s.selected } : s
+        ))
+    }
+
+    const toggleAllGastosSinPpto = () => {
+        const selectables = gastosSinPptoItems.filter(s => !s.tiene_regla)
+        const allSelected = selectables.every(s => s.selected)
+        setGastosSinPptoItems(prev => prev.map(s =>
+            s.tiene_regla ? s : { ...s, selected: !allSelected }
+        ))
+    }
+
+    const cambiarTipoGastoSinPpto = (key: string, tipo: string) => {
+        setGastosSinPptoItems(prev => prev.map(s => s.key === key ? { ...s, tipo_gasto_seleccionado: tipo } : s))
+    }
+
+    const handleEditarGastoSinPpto = (g: GastoSinPptoItem) => {
+        const tipo = g.tipo_gasto_seleccionado || 'Fijo'
+        const tipoGasto = tiposGasto.find(t => t.tipo === tipo)
+        const usaMonto = !tipoGasto?.indicador_default
+        setEditingSugerenciaKey(null)
+        setEditingGastoSinPptoKey(g.key)
+        setReglaModal({
+            isOpen: true,
+            editando: null,
+            initialForm: {
+                centro_costo_id: g.centro_costo_id,
+                concepto_id: g.concepto_id,
+                tipo_gasto: tipo,
+                indicador_nombre: tipoGasto?.indicador_default || null,
+                factor_ajuste: 0,
+                monto_fijo_mensual: usaMonto ? g.monto_acumulado / 12 : null,
+                notas: '',
+            },
+        })
+    }
+
+    const handleConfirmarGastosSinPpto = async () => {
+        const seleccionados = gastosSinPptoItems.filter(s => s.selected && !s.tiene_regla)
+        if (seleccionados.length === 0) return
+        setCreandoGastosSinPpto(true)
+        try {
+            const reglasNuevas = seleccionados.map(s => {
+                const tipoGasto = tiposGasto.find(t => t.tipo === s.tipo_gasto_seleccionado)
+                const usaMonto = !tipoGasto?.indicador_default
+                return {
+                    centro_costo_id: s.centro_costo_id,
+                    concepto_id: s.concepto_id,
+                    tipo_gasto: s.tipo_gasto_seleccionado,
+                    indicador_nombre: tipoGasto?.indicador_default || null,
+                    factor_ajuste: 0,
+                    monto_fijo_mensual: usaMonto ? Math.round(s.monto_acumulado / 12) : null,
+                    notas: 'Gasto sin presupuesto detectado',
+                    direccion,
+                }
+            })
+            const res = await reglasPresupuestoService.crearLote(reglasNuevas)
+            toast.success(`${res.creadas} reglas creadas${res.omitidas > 0 ? `, ${res.omitidas} omitidas` : ''}`)
+            setShowGastosSinPptoModal(false)
+            queryClient.invalidateQueries({ queryKey: ['gastos-sin-presupuesto'] })
+            queryClient.invalidateQueries({ queryKey: ['reglas-presupuesto'] })
+        } catch (err: any) {
+            setErrorMsg(err?.message || 'Error al crear reglas')
+        } finally {
+            setCreandoGastosSinPpto(false)
+        }
+    }
 
 
     // --- Tabla CC agrupada ---
@@ -435,7 +587,7 @@ export const ReglasPresupuestoPage = () => {
             header: 'Tipos',
             accessor: (r) => (
                 <div className="flex flex-wrap gap-1">
-                    {r.tipos.map(t => (
+                    {[...r.tipos].sort((a, b) => Number(esNoRepetitivo(a)) - Number(esNoRepetitivo(b))).map(t => (
                         <span key={t} className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${tipoBadgeColor[t] || 'bg-slate-100 text-slate-700'}`}>
                             {t}
                         </span>
@@ -444,12 +596,21 @@ export const ReglasPresupuestoPage = () => {
             ),
         },
         {
+            key: 'flujoFuente',
+            header: `Flujo ${anioFuente}`,
+            sortable: true,
+            sortValue: (r) => r.flujoFuente,
+            align: 'right' as const,
+            cellClassName: 'font-mono text-sm text-cyan-700',
+            accessor: (r) => `$${formatMiles(r.flujoFuente)}`,
+        },
+        {
             key: 'actual',
             header: 'Actual',
             sortable: true,
             sortValue: (r) => r.actual,
             align: 'right' as const,
-            cellClassName: 'font-mono text-sm',
+            cellClassName: 'font-mono text-sm text-slate-500',
             accessor: (r) => `$${formatMiles(r.actual)}`,
         },
         {
@@ -487,7 +648,31 @@ export const ReglasPresupuestoPage = () => {
                 return <span className={color}>{prefix}{r.diferencia_pct}%</span>
             },
         },
-    ], [])
+        {
+            key: 'paretoAcum',
+            header: 'Pareto $',
+            sortable: true,
+            sortValue: (r) => r.paretoAcum,
+            align: 'right' as const,
+            cellClassName: 'font-mono text-xs',
+            accessor: (r) => {
+                const color = r.paretoPct <= 80 ? 'text-indigo-600' : 'text-indigo-400'
+                return <span className={color}>${formatMiles(r.paretoAcum)}</span>
+            },
+        },
+        {
+            key: 'paretoPct',
+            header: 'Pareto %',
+            sortable: true,
+            sortValue: (r) => r.paretoPct,
+            align: 'right' as const,
+            cellClassName: 'font-mono text-xs',
+            accessor: (r) => {
+                const color = r.paretoPct <= 80 ? 'text-indigo-600' : 'text-indigo-400'
+                return <span className={color}>{r.paretoPct.toFixed(1)}%</span>
+            },
+        },
+    ], [anioFuente])
 
     // Columnas del drill-down por concepto
     const conceptoColumns = useMemo<Column<ClasificacionPreviewItem>[]>(() => [
@@ -562,19 +747,26 @@ export const ReglasPresupuestoPage = () => {
             cellClassName: 'font-mono font-medium',
             accessor: (item) => {
                 const anual = calcRowPpto(item)
-                const esNoRepetitivo = item.tipo_gasto === 'No Repetitivo'
-                return <span className={esNoRepetitivo ? 'text-red-400' : 'text-slate-700'}>
+                const esNR = esNoRepetitivo(item.tipo_gasto)
+                return <span className={esNR ? 'text-red-400' : 'text-slate-700'}>
                     ${formatMiles(anual)}
                 </span>
             },
         },
     ], [calcRowPpto, reglas, tiposGasto])
 
-    // Totales calculados desde ccGroups (tabla unificada)
-    const totalActual = useMemo(() => ccGroups.reduce((sum, g) => sum + g.actual, 0), [ccGroups])
-    const totalProyectado = useMemo(() => ccGroups.reduce((sum, g) => sum + g.totalAnual, 0), [ccGroups])
-    const totalDiferencia = totalProyectado - totalActual
-    const totalDiferenciaPct = totalActual !== 0 ? Math.round(totalDiferencia / totalActual * 1000) / 10 : 0
+    // Filtrar por CC seleccionado
+    const filteredCcGroups = useMemo(
+        () => filterCcId ? ccGroups.filter(g => g.cc_id === filterCcId) : ccGroups,
+        [ccGroups, filterCcId]
+    )
+
+    // Totales calculados desde filteredCcGroups
+    const totalFlujoFuente = useMemo(() => filteredCcGroups.reduce((sum, g) => sum + g.flujoFuente, 0), [filteredCcGroups])
+    const totalActual = useMemo(() => filteredCcGroups.reduce((sum, g) => sum + g.actual, 0), [filteredCcGroups])
+    const totalProyectado = useMemo(() => filteredCcGroups.reduce((sum, g) => sum + g.totalAnual, 0), [filteredCcGroups])
+    const totalDiferencia = totalProyectado - totalFlujoFuente
+    const totalDiferenciaPct = totalFlujoFuente !== 0 ? Math.round(totalDiferencia / totalFlujoFuente * 1000) / 10 : 0
 
     // --- Render ---
 
@@ -582,98 +774,160 @@ export const ReglasPresupuestoPage = () => {
     const DiffIcon = totalDiferencia > 0 ? TrendingUp : TrendingDown
 
     return (
-        <div className="p-6 flex flex-col h-[calc(100vh-64px)]">
-            {/* Header */}
-            <div className="flex justify-between items-center mb-3 flex-shrink-0">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Zap size={24} /> Reglas de Presupuesto
-                    </h1>
-                    <p className="text-slate-500 text-sm mt-1">
-                        Vista por Centro de Costo — Año fuente {anioFuente} → Ppto {anioDestino}
-                    </p>
+        <div className="flex flex-col h-full bg-slate-50/50 overflow-hidden">
+            {/* Hero: Header + Stats */}
+            <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 px-6 pt-5 pb-5 text-white flex-shrink-0">
+                {/* Title row */}
+                <div className="flex items-center justify-between mb-3">
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+                            <Zap size={24} /> Reglas de Presupuesto
+                        </h1>
+                        <p className="text-slate-400 text-sm mt-0.5">
+                            Vista por Centro de Costo — Año fuente {anioFuente} → Ppto {anioDestino}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3" />
                 </div>
+                {/* Toolbar de acciones del presupuesto */}
+                <div className="mt-3 mb-1">
+                    <PresupuestoActionToolbar
+                        presupuestos={presupuestos}
+                        selectedPresupuesto={presupuestoActivo}
+                        presupuestoId={presupuestoId}
+                        onSelectPresupuesto={setPresupuestoId}
+                        onCrear={pptoActions.handleCrear}
+                        onEditar={pptoActions.handleEditar}
+                        onGenerar={pptoActions.handleGenerar}
+                        onActivar={pptoActions.handleActivar}
+                        onEliminar={pptoActions.handleEliminar}
+                        onRevertir={pptoActions.handleRevertir}
+                        onCerrar={pptoActions.handleCerrar}
+                        onAjuste={() => pptoActions.setAjusteModalOpen(true)}
+                        onNuevaLinea={() => pptoActions.setNuevaLineaModalOpen(true)}
+                    />
+                </div>
+
+                {/* Banner reglas pendientes */}
                 {presupuestoActivo && (
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${
-                        presupuestoActivo.estado === 'activo' ? 'bg-green-100 text-green-700' :
-                        presupuestoActivo.estado === 'borrador' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-slate-100 text-slate-600'
-                    }`}>
-                        {presupuestoActivo.nombre} — {presupuestoActivo.estado}
-                    </span>
+                    <div className="mb-4">
+                        <ReglasPendientesBanner
+                            presupuestoId={presupuestoActivo.id}
+                            onRegenerated={() => {
+                                queryClient.invalidateQueries({ queryKey: ['clasificacion-preview'] })
+                                queryClient.invalidateQueries({ queryKey: ['gastos-sin-presupuesto'] })
+                            }}
+                        />
+                    </div>
+                )}
+
+                {/* KPI Cards */}
+                {presupuestoActivo && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                        <DarkStatCard
+                            label={`Flujo ${anioFuente}`}
+                            value={gastoRealAnterior}
+                            icon={<Wallet className="w-5 h-5" />}
+                            colorClass="text-cyan-400"
+                            iconBgClass="bg-cyan-500/20 text-cyan-400"
+                            subtitle={`Gasto real año ${anioFuente}`}
+                            compact={compact}
+                        />
+                        <DarkStatCard
+                            label="Ppto Actual"
+                            value={totalActual}
+                            icon={<Target className="w-5 h-5" />}
+                            colorClass="text-blue-400"
+                            iconBgClass="bg-blue-500/20 text-blue-400"
+                            subtitle={`Presupuesto ${anioDestino} vigente`}
+                            compact={compact}
+                        />
+                        <DarkStatCard
+                            label="Proyectado"
+                            value={totalProyectado}
+                            icon={<BarChart3 className="w-5 h-5" />}
+                            colorClass="text-slate-200"
+                            iconBgClass="bg-white/10 text-slate-300"
+                            subtitle="Con reglas actuales"
+                            compact={compact}
+                        />
+                        <DarkStatCard
+                            label="Diferencia"
+                            value={totalDiferencia}
+                            icon={<DiffIcon className="w-5 h-5" />}
+                            colorClass={totalDiferencia > 0 ? 'text-rose-400' : totalDiferencia < 0 ? 'text-emerald-400' : 'text-slate-400'}
+                            iconBgClass={totalDiferencia > 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}
+                            subtitle="Proyectado - Actual"
+                            compact={compact}
+                        />
+                        <DarkStatCard
+                            label="% Impacto"
+                            value={0}
+                            icon={<DiffIcon className="w-5 h-5" />}
+                            colorClass={totalDiferencia > 0 ? 'text-rose-400' : totalDiferencia < 0 ? 'text-emerald-400' : 'text-slate-400'}
+                            iconBgClass={totalDiferencia > 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}
+                            renderValue={<>{totalDiferenciaPct > 0 ? '+' : ''}{totalDiferenciaPct}%</>}
+                            subtitle={hayDiferencia ? `${totalDiferencia > 0 ? 'Aumentaría' : 'Reduciría'} el presupuesto` : 'Sin cambios'}
+                            compact={compact}
+                        />
+                        <div className={gastosSinPpto?.count ? 'cursor-pointer' : ''} onClick={gastosSinPpto?.count ? handleAbrirGastosSinPpto : undefined}>
+                            <DarkStatCard
+                                label="Sin Presupuestar"
+                                value={gastosSinPpto?.total_sin_ppto ?? 0}
+                                icon={<AlertTriangle className="w-5 h-5" />}
+                                colorClass="text-amber-400"
+                                iconBgClass="bg-amber-500/20 text-amber-400"
+                                subtitle={gastosSinPpto?.count
+                                    ? `${gastosSinPpto.count} combinaciones detectadas`
+                                    : 'Sin gastos pendientes'}
+                                compact={compact}
+                            />
+                        </div>
+                    </div>
                 )}
             </div>
 
-            {/* Filtros avanzados */}
-            {configExclusion.length > 0 && (
-                <div className="bg-white rounded-xl shadow p-3 mb-3 flex-shrink-0">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2 text-slate-400">
-                            <Filter size={14} className="opacity-50" />
-                            <span className="text-[9px] font-black uppercase tracking-[0.2em]">Filtros Avanzados</span>
-                        </div>
-                        <FilterToggles
-                            configuracionExclusion={configExclusion}
-                            centrosCostosExcluidos={actualExcluidos}
-                            onCentrosCostosExcluidosChange={setCentrosCostosExcluidos}
-                        />
-                    </div>
+            {/* Filtros */}
+            <div className="flex items-center gap-4 px-4 pt-4 pb-2 flex-shrink-0">
+                <div className="flex gap-1 bg-white border border-slate-200 p-1 rounded-lg shadow-sm">
+                    {(['egreso', 'ingreso'] as const).map(dir => (
+                        <button
+                            key={dir}
+                            onClick={() => setDireccion(dir)}
+                            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                                direccion === dir
+                                    ? 'bg-slate-800 text-white shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                            {dir === 'egreso' ? 'Egresos' : 'Ingresos'}
+                        </button>
+                    ))}
                 </div>
-            )}
-
-            {/* Cinta de resumen con totales */}
-            {presupuestoActivo && (
-                <div className="bg-white rounded-xl shadow px-6 py-4 mb-3 flex-shrink-0">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-8">
-                            <div className="text-center min-w-[120px]">
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Ppto Actual</p>
-                                <p className="text-lg font-bold text-slate-700 font-mono">
-                                    ${formatMiles(totalActual)}
-                                </p>
-                            </div>
-                            <div className="w-px h-10 bg-slate-200" />
-                            <div className="text-center min-w-[120px]">
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Proyectado</p>
-                                <p className="text-lg font-bold text-slate-700 font-mono">
-                                    ${formatMiles(totalProyectado)}
-                                </p>
-                            </div>
-                            <div className="w-px h-10 bg-slate-200" />
-                            <div className="text-center min-w-[140px]">
-                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Diferencia</p>
-                                <p className={`text-lg font-bold font-mono ${
-                                    totalDiferencia > 0 ? 'text-rose-600' : totalDiferencia < 0 ? 'text-emerald-600' : 'text-slate-700'
-                                }`}>
-                                    {totalDiferencia > 0 ? '+' : ''}{formatMiles(totalDiferencia)}
-                                    <span className="text-sm ml-1.5 font-semibold">({totalDiferenciaPct > 0 ? '+' : ''}{totalDiferenciaPct}%)</span>
-                                </p>
-                            </div>
-                            {hayDiferencia && (
-                                <>
-                                    <div className="w-px h-10 bg-slate-200" />
-                                    <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
-                                        totalDiferencia > 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
-                                    }`}>
-                                        <DiffIcon size={16} />
-                                        <span>
-                                            {totalDiferencia > 0 ? 'Aumentaría' : 'Reduciría'} <strong>${formatMiles(Math.abs(totalDiferencia))}</strong>
-                                        </span>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
-                            Auto-regenerado al guardar reglas
-                        </div>
-                    </div>
-                </div>
-            )}
+                <select
+                    value={filterCcId}
+                    onChange={e => setFilterCcId(e.target.value ? Number(e.target.value) : '')}
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 shadow-sm focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none"
+                >
+                    <option value="">Todos los CCs</option>
+                    {ccGroups.map(g => (
+                        <option key={g.cc_id} value={g.cc_id}>
+                            {g.cc_id} - {g.cc_nombre}
+                        </option>
+                    ))}
+                </select>
+                <button
+                    onClick={() => openCrear(filterCcId || undefined)}
+                    className="flex items-center gap-1.5 text-sm bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 shadow-sm whitespace-nowrap"
+                >
+                    <PlusCircle size={14} /> Nueva Regla
+                </button>
+            </div>
 
             {/* Tabla unificada */}
-            <div className="flex-1 min-h-0 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-auto px-4 pb-4">
                 <DataTable<CCGroup>
-                    data={ccGroups}
+                    data={filteredCcGroups}
                     columns={ccColumns}
                     loading={loadingPreview}
                     emptyMessage="No hay datos de gastos para el año fuente"
@@ -743,7 +997,7 @@ export const ReglasPresupuestoPage = () => {
                                 <h2 className="text-lg font-bold text-slate-800">{selectedCC.cc_id} - {selectedCC.cc_nombre}</h2>
                                 <p className="text-sm text-slate-500">
                                     {selectedCC.cantConceptos} conceptos — Total anual: <span className="font-mono font-semibold">${formatMiles(selectedCC.totalAnual)}</span>
-                                    {selectedCC.conceptos.some(c => c.tipo_gasto === 'No Repetitivo') && (
+                                    {selectedCC.conceptos.some(c => esNoRepetitivo(c.tipo_gasto)) && (
                                         <span className="text-xs text-red-400 ml-2">(excluye No Repetitivos)</span>
                                     )}
                                     {selectedCC.gapCount > 0 && (
@@ -780,7 +1034,7 @@ export const ReglasPresupuestoPage = () => {
                                 rounded={false}
                                 maxHeight="100%"
                                 getRowClassName={(item) =>
-                                    item.tipo_gasto === 'No Repetitivo' ? 'opacity-50' :
+                                    esNoRepetitivo(item.tipo_gasto) ? 'opacity-50' :
                                     (item.nivel_match === 'Auto' || item.nivel_match === 'Default') ? 'bg-red-50' : ''
                                 }
                                 emptyMessage="No hay conceptos para este centro de costo"
@@ -887,127 +1141,167 @@ export const ReglasPresupuestoPage = () => {
                 </div>
             )}
 
-            {/* Modal crear/editar regla */}
-            {showReglaModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-                    <div className="bg-white rounded-xl p-6 w-full max-w-2xl shadow-2xl">
-                        <h2 className="text-lg font-bold mb-4">{editando ? 'Editar' : 'Nueva'} Regla</h2>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                {editando ? (
-                                    <>
-                                        <div>
-                                            <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1">Centro de Costo</span>
-                                            <p className="border rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700 font-medium">
-                                                {editando.centro_costo_nombre || <span className="text-slate-400 italic">Todos (Global)</span>}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1">Concepto</span>
-                                            <p className="border rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700 font-medium">
-                                                {editando.concepto_nombre || <span className="text-slate-400 italic">Todos</span>}
-                                            </p>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Centro de Costo</label>
-                                            <select value={form.centro_costo_id ?? ''}
-                                                onChange={e => setForm({ ...form, centro_costo_id: e.target.value ? Number(e.target.value) : null, concepto_id: null })}
-                                                className="w-full border rounded-lg px-3 py-2 text-sm">
-                                                <option value="">Todos (Global)</option>
-                                                {centrosCosto.map(cc => (
-                                                    <option key={cc.id} value={cc.id}>{cc.id} - {cc.nombre}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Concepto</label>
-                                            <select value={form.concepto_id ?? ''}
-                                                onChange={e => setForm({ ...form, concepto_id: e.target.value ? Number(e.target.value) : null })}
-                                                className="w-full border rounded-lg px-3 py-2 text-sm">
-                                                <option value="">Todos</option>
-                                                {conceptosForm.map(c => (
-                                                    <option key={c.id} value={c.id}>{c.id} - {c.nombre}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                            <div className={!usaMontoFijo ? 'grid grid-cols-2 gap-4' : ''}>
+            {/* Modal Gastos Sin Presupuesto */}
+            {showGastosSinPptoModal && (() => {
+                const categorias: { key: GastoCategoria; label: string; desc: string; color: string; bgRow: string }[] = [
+                    { key: 'sin_regla', label: 'Sin Regla', desc: 'Necesitan regla para presupuestar', color: 'bg-red-100 text-red-600 border-red-200', bgRow: '' },
+                    { key: 'pendiente_regen', label: 'Pendiente Regenerar', desc: 'Tienen regla, falta regenerar presupuesto', color: 'bg-amber-100 text-amber-700 border-amber-200', bgRow: 'bg-amber-50/30' },
+                    { key: 'no_repetitivo', label: 'No Repetitivo', desc: 'Excluidos del presupuesto por diseño', color: 'bg-orange-100 text-orange-600 border-orange-200', bgRow: 'bg-orange-50/30' },
+                ]
+                const porCat = (cat: GastoCategoria) => gastosSinPptoItems.filter(g => g.categoria === cat)
+                const sinReglaItems = porCat('sin_regla')
+
+                return (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[55]" onClick={() => !creandoGastosSinPpto && setShowGastosSinPptoModal(false)}>
+                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between px-6 py-4 border-b">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Gasto</label>
-                                    <select value={form.tipo_gasto}
-                                        onChange={e => handleTipoChange(e.target.value)}
-                                        className="w-full border rounded-lg px-3 py-2 text-sm">
-                                        {tiposGasto.map(t => (
-                                            <option key={t.tipo} value={t.tipo}>{t.tipo}</option>
-                                        ))}
-                                    </select>
+                                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <AlertTriangle size={20} className="text-orange-500" />
+                                        Gastos Sin Presupuesto — {anioDestino}
+                                    </h2>
+                                    <p className="text-sm text-slate-500 mt-0.5">
+                                        {gastosSinPptoItems.length} combinaciones — Total: <span className="font-mono font-semibold">{formatMillones(gastosSinPptoItems.reduce((sum, s) => sum + s.monto_acumulado, 0))}</span>
+                                    </p>
                                 </div>
-                                {!usaMontoFijo && (
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Indicador</label>
-                                        <select value={form.indicador_nombre ?? ''}
-                                            onChange={e => setForm({ ...form, indicador_nombre: e.target.value })}
-                                            className="w-full border rounded-lg px-3 py-2 text-sm">
-                                            {nombresIndicador.map(n => (
-                                                <option key={n} value={n}>{n}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
-                            {usaMontoFijo && (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Monto Fijo Mensual ($)</label>
-                                        <input type="text" inputMode="numeric"
-                                            value={mensualDisplay}
-                                            onFocus={handleMensualFocus}
-                                            onChange={e => handleMensualChange(e.target.value)}
-                                            onBlur={handleMontoBlur}
-                                            className="w-full border rounded-lg px-3 py-2 text-sm text-right" placeholder="ej: 1.410.000" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Presupuesto Anual ($)</label>
-                                        <input type="text" inputMode="numeric"
-                                            value={anualDisplay}
-                                            onFocus={handleAnualFocus}
-                                            onChange={e => handleAnualChange(e.target.value)}
-                                            onBlur={handleMontoBlur}
-                                            className="w-full border rounded-lg px-3 py-2 text-sm text-right" placeholder="ej: 16.920.000" />
-                                    </div>
-                                </div>
-                            )}
-                            {!usaMontoFijo && (
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Factor Ajuste Adicional (%)</label>
-                                    <input type="number" step="0.01" value={form.factor_ajuste}
-                                        onChange={e => setForm({ ...form, factor_ajuste: Number(e.target.value) })}
-                                        className="w-full border rounded-lg px-3 py-2 text-sm" />
-                                    <p className="text-xs text-slate-400 mt-1">Porcentaje adicional sobre el indicador. Ej: 2.0 = +2% extra</p>
-                                </div>
-                            )}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Notas</label>
-                                <input value={form.notas || ''} onChange={e => setForm({ ...form, notas: e.target.value })}
-                                    className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="Opcional" />
-                            </div>
-                            <div className="flex justify-end gap-3 pt-2">
-                                <button type="button" onClick={() => setShowReglaModal(false)}
-                                    className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
-                                <button type="submit"
-                                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                                    {editando ? 'Guardar' : 'Crear'}
+                                <button onClick={() => setShowGastosSinPptoModal(false)} className="text-slate-400 hover:text-slate-600" disabled={creandoGastosSinPpto}>
+                                    <X size={20} />
                                 </button>
                             </div>
-                        </form>
+                            <div className="flex-1 overflow-auto px-6 py-4">
+                                {categorias.map(cat => {
+                                    const items = porCat(cat.key)
+                                    if (items.length === 0) return null
+                                    const subtotal = items.reduce((s, i) => s + i.monto_acumulado, 0)
+                                    const isActionable = cat.key === 'sin_regla'
+
+                                    return (
+                                        <div key={cat.key} className="mb-5 last:mb-0">
+                                            {/* Section header */}
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${cat.color}`}>
+                                                    {cat.label}
+                                                </span>
+                                                <span className="text-xs text-slate-500">
+                                                    {items.length} items — <span className="font-mono font-semibold">{formatMillones(subtotal)}</span>
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 italic">{cat.desc}</span>
+                                            </div>
+                                            <table className="w-full text-sm">
+                                                {isActionable && (
+                                                    <thead>
+                                                        <tr className="border-b text-left text-xs text-slate-500 uppercase tracking-wider">
+                                                            <th className="pb-2 pr-2 w-8">
+                                                                <input type="checkbox"
+                                                                    checked={sinReglaItems.length > 0 && sinReglaItems.every(s => s.selected)}
+                                                                    onChange={toggleAllGastosSinPpto}
+                                                                    className="rounded border-slate-300 accent-orange-500"
+                                                                />
+                                                            </th>
+                                                            <th className="pb-2 pr-2 w-8"></th>
+                                                            <th className="pb-2 pr-2">Centro de Costo</th>
+                                                            <th className="pb-2 pr-2">Concepto</th>
+                                                            <th className="pb-2 pr-2 w-28 text-right">Acumulado</th>
+                                                            <th className="pb-2 w-14 text-center">Meses</th>
+                                                            <th className="pb-2 w-32">Tipo Sugerido</th>
+                                                        </tr>
+                                                    </thead>
+                                                )}
+                                                <tbody>
+                                                    {items.map(g => (
+                                                        <tr key={g.key} className={`border-b border-slate-100 ${cat.bgRow} ${isActionable && !g.selected ? 'opacity-40' : ''} ${!isActionable ? 'opacity-60' : ''}`}>
+                                                            {isActionable ? (
+                                                                <>
+                                                                    <td className="py-2 pr-2">
+                                                                        <input type="checkbox"
+                                                                            checked={g.selected}
+                                                                            onChange={() => toggleGastoSinPpto(g.key)}
+                                                                            className="rounded border-slate-300 accent-orange-500"
+                                                                        />
+                                                                    </td>
+                                                                    <td className="py-2 pr-2">
+                                                                        <button onClick={() => handleEditarGastoSinPpto(g)}
+                                                                            className="p-1 text-blue-500 hover:text-blue-700" title="Crear regla con detalle">
+                                                                            <Pencil size={13} />
+                                                                        </button>
+                                                                    </td>
+                                                                </>
+                                                            ) : (
+                                                                <td className="py-2 pr-2" colSpan={2}></td>
+                                                            )}
+                                                            <td className="py-2 pr-2 text-slate-700 text-xs">
+                                                                {g.centro_costo_nombre}
+                                                            </td>
+                                                            <td className="py-2 pr-2 text-slate-700">
+                                                                {g.concepto_nombre || <span className="italic text-slate-400">Sin concepto</span>}
+                                                            </td>
+                                                            <td className="py-2 pr-2 text-right font-mono text-slate-700 font-medium">
+                                                                ${formatMiles(g.monto_acumulado)}
+                                                            </td>
+                                                            <td className="py-2 text-center font-mono text-slate-400">
+                                                                {g.meses_con_gasto}
+                                                            </td>
+                                                            <td className="py-2">
+                                                                {isActionable ? (
+                                                                    <select
+                                                                        value={g.tipo_gasto_seleccionado}
+                                                                        onChange={e => cambiarTipoGastoSinPpto(g.key, e.target.value)}
+                                                                        className={`w-full border rounded px-2 py-1 text-xs font-medium ${tipoBadgeColor[g.tipo_gasto_seleccionado] || 'bg-slate-50 text-slate-700'}`}
+                                                                    >
+                                                                        {tiposGasto.map(t => (
+                                                                            <option key={t.tipo} value={t.tipo}>{t.tipo}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                ) : (
+                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${tipoBadgeColor[g.regla_tipo_gasto || ''] || 'bg-slate-100 text-slate-700'}`}>
+                                                                        {g.regla_tipo_gasto}
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            <div className="flex items-center justify-between px-6 py-4 border-t bg-slate-50 rounded-b-xl">
+                                <span className="text-sm text-slate-500">
+                                    {sinReglaItems.filter(s => s.selected).length} reglas se crearán
+                                    {' — '}
+                                    <span className="font-mono">
+                                        {formatMillones(sinReglaItems.filter(s => s.selected).reduce((sum, s) => sum + s.monto_acumulado, 0))}
+                                    </span>
+                                </span>
+                                <div className="flex items-center gap-3">
+                                    <button onClick={() => setShowGastosSinPptoModal(false)}
+                                        className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg"
+                                        disabled={creandoGastosSinPpto}>
+                                        Cancelar
+                                    </button>
+                                    <button onClick={handleConfirmarGastosSinPpto}
+                                        className="flex items-center gap-1.5 px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+                                        disabled={creandoGastosSinPpto || sinReglaItems.filter(s => s.selected).length === 0}>
+                                        {creandoGastosSinPpto ? <Loader2 size={14} className="animate-spin" /> : <AlertTriangle size={14} />}
+                                        Crear {sinReglaItems.filter(s => s.selected).length} reglas
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            })()}
+
+            {/* Modal crear/editar regla */}
+            <ReglaPresupuestoModal
+                isOpen={reglaModal.isOpen}
+                onClose={closeReglaModal}
+                editando={reglaModal.editando}
+                initialForm={reglaModal.initialForm}
+                onSave={handleSaveRegla}
+                direccion={direccion}
+            />
 
             <MessageModal message={errorMsg} onClose={() => setErrorMsg(null)} />
             <MessageModal
@@ -1015,6 +1309,45 @@ export const ReglasPresupuestoPage = () => {
                 type="confirm"
                 onClose={() => setConfirmModal(null)}
                 onConfirm={confirmModal?.onConfirm}
+            />
+
+            {/* Modales de gestión del presupuesto */}
+            <PresupuestoFormModal
+                isOpen={pptoActions.formModalOpen}
+                editando={pptoActions.formEditando}
+                onClose={() => pptoActions.setFormModalOpen(false)}
+                onSaved={pptoActions.handleFormSaved}
+            />
+            {pptoActions.presupuestoGenerar && (
+                <PresupuestoGenerarModal
+                    isOpen={pptoActions.generarModalOpen}
+                    presupuesto={pptoActions.presupuestoGenerar}
+                    onClose={() => pptoActions.setGenerarModalOpen(false)}
+                    onSuccess={pptoActions.handleGenerarSuccess}
+                    mode={pptoActions.generarMode}
+                />
+            )}
+            {presupuestoActivo && (
+                <PresupuestoAjusteModal
+                    isOpen={pptoActions.ajusteModalOpen}
+                    presupuestoId={presupuestoActivo.id}
+                    onClose={() => pptoActions.setAjusteModalOpen(false)}
+                    onSuccess={() => { pptoActions.setAjusteModalOpen(false); handleRefreshAll() }}
+                />
+            )}
+            {presupuestoActivo && (
+                <NuevaLineaPresupuestoModal
+                    isOpen={pptoActions.nuevaLineaModalOpen}
+                    presupuestoId={presupuestoActivo.id}
+                    onClose={() => pptoActions.setNuevaLineaModalOpen(false)}
+                    onSuccess={() => { pptoActions.setNuevaLineaModalOpen(false); handleRefreshAll() }}
+                />
+            )}
+            <MessageModal
+                message={pptoActions.confirmMsg}
+                type="confirm"
+                onClose={pptoActions.closeConfirm}
+                onConfirm={pptoActions.confirmAction || undefined}
             />
         </div>
     )

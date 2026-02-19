@@ -189,7 +189,7 @@ export const ComparacionVersionesPage = () => {
             {/* Header */}
             <div className="px-6 pt-6 pb-2 bg-white border-b border-slate-200">
                 <div className="flex items-center gap-4">
-                    <button onClick={() => navigate(`/presupuestos/${presupuestoId}/detalle`)} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+                    <button onClick={() => navigate('/reportes/presupuesto-vs-real')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
                         <ArrowLeft size={20} />
                     </button>
                     <div className="flex-1">

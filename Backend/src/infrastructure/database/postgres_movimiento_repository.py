@@ -807,11 +807,14 @@ class PostgresMovimientoRepository(MovimientoRepository):
         
         # Determinar campo de agrupación y joins necesarios
         if tipo_agrupacion == 'centro_costo':
-            group_field = "COALESCE(g.centro_costo, 'Sin Centro de Costo')"
+            id_field = "g.centro_costo_id"
+            name_field = "COALESCE(g.centro_costo, 'Sin Centro de Costo')"
         elif tipo_agrupacion == 'tercero':
-            group_field = "COALESCE(t.tercero, 'Sin Tercero')"
+            id_field = "t.terceroid"
+            name_field = "COALESCE(t.tercero, 'Sin Tercero')"
         elif tipo_agrupacion == 'concepto':
-            group_field = "COALESCE(con.concepto, 'Sin Concepto')"
+            id_field = "con.conceptoid"
+            name_field = "COALESCE(con.concepto, 'Sin Concepto')"
         else:
              raise ValueError("Tipo de agrupación debe ser 'centro_costo', 'tercero' o 'concepto'")
 
@@ -820,7 +823,8 @@ class PostgresMovimientoRepository(MovimientoRepository):
         val = "md.Valor"
         query = f"""
             SELECT
-                {group_field} as nombre,
+                {id_field} as id,
+                {name_field} as nombre,
                 SUM(CASE WHEN md.Valor > 0 THEN md.Valor ELSE 0 END) as ingresos,
                 SUM(CASE WHEN md.Valor < 0 THEN ABS(md.Valor) ELSE 0 END) as egresos,
                 SUM(md.Valor) as saldo
@@ -846,18 +850,19 @@ class PostgresMovimientoRepository(MovimientoRepository):
         )
         
         query += where_clause
-        query += f" GROUP BY {group_field} ORDER BY SUM({val}) ASC"
-        
+        query += f" GROUP BY {id_field}, {name_field} ORDER BY SUM({val}) ASC"
+
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
         cursor.close()
-        
+
         return [
             {
-                "nombre": row[0],
-                "ingresos": float(row[1] or 0),
-                "egresos": float(row[2] or 0),
-                "saldo": float(row[3] or 0)
+                "id": row[0],
+                "nombre": row[1],
+                "ingresos": float(row[2] or 0),
+                "egresos": float(row[3] or 0),
+                "saldo": float(row[4] or 0)
             }
             for row in rows
         ]

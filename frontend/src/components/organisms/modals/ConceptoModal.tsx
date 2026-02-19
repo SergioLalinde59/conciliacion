@@ -11,6 +11,7 @@ interface Props {
     concepto: Concepto | null
     centrosCostos: CentroCosto[]
     conceptos: Concepto[]
+    defaultCentroCostoId?: string
     onClose: () => void
     onSave: (data: { nombre: string, centro_costo_id: number }) => void
 }
@@ -18,7 +19,7 @@ interface Props {
 /**
  * Modal para crear/editar conceptos - Refactorizado con Modal base
  */
-export const ConceptoModal = ({ isOpen, concepto, centrosCostos, conceptos, onClose, onSave }: Props) => {
+export const ConceptoModal = ({ isOpen, concepto, centrosCostos, conceptos, defaultCentroCostoId, onClose, onSave }: Props) => {
     const [nombre, setNombre] = useState('')
     const [centroCostoId, setCentroCostoId] = useState<string>('')
     const [errorNombre, setErrorNombre] = useState('')
@@ -26,10 +27,10 @@ export const ConceptoModal = ({ isOpen, concepto, centrosCostos, conceptos, onCl
     useEffect(() => {
         if (isOpen) {
             setNombre(concepto ? concepto.nombre : '')
-            setCentroCostoId(concepto?.centro_costo_id?.toString() || '')
+            setCentroCostoId(concepto?.centro_costo_id?.toString() || defaultCentroCostoId || '')
             setErrorNombre('')
         }
-    }, [isOpen, concepto])
+    }, [isOpen, concepto, defaultCentroCostoId])
 
     const validarNombreUnico = () => {
         if (!nombre.trim() || !centroCostoId) return true

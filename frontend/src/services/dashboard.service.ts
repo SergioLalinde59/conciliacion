@@ -19,6 +19,7 @@ export interface FlujoCajaMes {
 }
 
 export interface ClasificacionItem {
+    id: number | null
     nombre: string
     ingresos: number
     egresos: number
@@ -34,10 +35,11 @@ export const dashboardService = {
         return fetch(`${API_BASE_URL}/api/dashboard/estadisticas?${params.toString()}`).then(handleResponse)
     },
 
-    flujoMensual: (desde?: string, hasta?: string, centrosExcluidos?: number[]): Promise<FlujoCajaMes[]> => {
+    flujoMensual: (desde?: string, hasta?: string, centrosExcluidos?: number[], centroCostoId?: number): Promise<FlujoCajaMes[]> => {
         const params = buildQueryParams({
             desde, hasta,
             centros_costos_excluidos: centrosExcluidos?.length ? centrosExcluidos : undefined,
+            centro_costo_id: centroCostoId || undefined,
         } as Record<string, unknown>)
         return fetch(`${API_BASE_URL}/api/movimientos/reporte/ingresos-gastos-mes?${params}`).then(handleResponse)
     },

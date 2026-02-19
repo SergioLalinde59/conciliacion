@@ -30,7 +30,8 @@ class PostgresPresupuestoDetalleRepository(PresupuestoDetalleRepository):
             version=row[12],
             centro_costo_nombre=row[13] if len(row) > 13 else None,
             concepto_nombre=row[14] if len(row) > 14 else None,
-            tercero_nombre=row[15] if len(row) > 15 else None
+            tercero_nombre=row[15] if len(row) > 15 else None,
+            direccion=row[16] if len(row) > 16 else 'egreso',
         )
 
     _BASE_SELECT = """
@@ -39,7 +40,8 @@ class PostgresPresupuestoDetalleRepository(PresupuestoDetalleRepository):
                pd.tipo, pd.notas, pd.created_at, pd.monto_base, pd.version,
                cc.centro_costo as centro_costo_nombre,
                con.concepto as concepto_nombre,
-               t.tercero as tercero_nombre
+               t.tercero as tercero_nombre,
+               pd.direccion
         FROM presupuesto_detalle pd
         LEFT JOIN centro_costos cc ON pd.centro_costo_id = cc.centro_costo_id
         LEFT JOIN conceptos con ON pd.concepto_id = con.conceptoid
@@ -64,13 +66,13 @@ class PostgresPresupuestoDetalleRepository(PresupuestoDetalleRepository):
                 cursor.execute(
                     """INSERT INTO presupuesto_detalle
                        (presupuesto_id, centro_costo_id, concepto_id, tercero_id,
-                        mes, monto_presupuestado, monto_ajustado, monto_base, tipo, notas, version)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        mes, monto_presupuestado, monto_ajustado, monto_base, tipo, notas, version, direccion)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        RETURNING id, created_at""",
                     (detalle.presupuesto_id, detalle.centro_costo_id, detalle.concepto_id,
                      detalle.tercero_id, detalle.mes, detalle.monto_presupuestado,
                      detalle.monto_ajustado, detalle.monto_base, detalle.tipo, detalle.notas,
-                     detalle.version)
+                     detalle.version, detalle.direccion)
                 )
                 result = cursor.fetchone()
                 detalle.id = result[0]
@@ -91,17 +93,18 @@ class PostgresPresupuestoDetalleRepository(PresupuestoDetalleRepository):
             query = """
                 INSERT INTO presupuesto_detalle
                 (presupuesto_id, centro_costo_id, concepto_id, tercero_id,
-                 mes, monto_presupuestado, monto_ajustado, monto_base, tipo, notas, version)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 mes, monto_presupuestado, monto_ajustado, monto_base, tipo, notas, version, direccion)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (presupuesto_id, centro_costo_id, COALESCE(concepto_id, 0), COALESCE(tercero_id, 0), mes, version)
                 DO UPDATE SET monto_presupuestado = EXCLUDED.monto_presupuestado,
                               monto_base = EXCLUDED.monto_base,
-                              tipo = EXCLUDED.tipo
+                              tipo = EXCLUDED.tipo,
+                              direccion = EXCLUDED.direccion
             """
             params = [
                 (d.presupuesto_id, d.centro_costo_id, d.concepto_id, d.tercero_id,
                  d.mes, d.monto_presupuestado, d.monto_ajustado, d.monto_base, d.tipo, d.notas,
-                 d.version)
+                 d.version, d.direccion)
                 for d in detalles
             ]
             cursor.executemany(query, params)
@@ -128,7 +131,8 @@ class PostgresPresupuestoDetalleRepository(PresupuestoDetalleRepository):
         concepto_id: Optional[int] = None,
         tercero_id: Optional[int] = None,
         mes: Optional[int] = None,
-        version: Optional[int] = None
+        version: Optional[int] = None,
+        direccion: Optional[str] = None
     ) -> List[PresupuestoDetalle]:
         cursor = self.conn.cursor()
         conditions = ["pd.presupuesto_id = %s"]
@@ -141,6 +145,9 @@ class PostgresPresupuestoDetalleRepository(PresupuestoDetalleRepository):
         else:
             conditions.append(f"pd.version = {_VERSION_ACTUAL_SQ}")
 
+        if direccion:
+            conditions.append("pd.direccion = %s")
+            params.append(direccion)
         if centro_costo_id:
             conditions.append("pd.centro_costo_id = %s")
             params.append(centro_costo_id)
@@ -370,6 +377,42 @@ class PostgresPresupuestoDetalleRepository(PresupuestoDetalleRepository):
             }
             for r in rows
         ]
+
+    def contar_reglas_sin_detalle(self, presupuesto_id: int, version: int) -> dict:
+        """Cuenta reglas cuya combinación CC+Concepto no tiene filas en presupuesto_detalle.
+        Solo incluye reglas con monto_fijo_mensual (las únicas que pueden generar filas sin historial).
+        Excluye No Repetitivos (que por diseño tienen $0)."""
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as pendientes,
+                       COALESCE(json_agg(json_build_object(
+                           'regla_id', rp.id,
+                           'centro_costo_nombre', cc.centro_costo,
+                           'concepto_nombre', con.concepto,
+                           'tipo_gasto', rp.tipo_gasto
+                       )) FILTER (WHERE rp.id IS NOT NULL), '[]'::json) as detalle
+                FROM reglas_presupuesto rp
+                LEFT JOIN centro_costos cc ON rp.centro_costo_id = cc.centro_costo_id
+                LEFT JOIN conceptos con ON rp.concepto_id = con.conceptoid
+                WHERE rp.tipo_gasto NOT LIKE '%%No Repetitivo%%'
+                  AND rp.monto_fijo_mensual IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM presupuesto_detalle pd
+                      WHERE pd.presupuesto_id = %s
+                        AND pd.version = %s
+                        AND pd.centro_costo_id = rp.centro_costo_id
+                        AND COALESCE(pd.concepto_id, 0) = COALESCE(rp.concepto_id, 0)
+                  )
+            """, (presupuesto_id, version))
+            row = cursor.fetchone()
+            import json
+            detalle = row[1] if row[1] else []
+            if isinstance(detalle, str):
+                detalle = json.loads(detalle)
+            return {"pendientes": row[0] or 0, "detalle": detalle}
+        finally:
+            cursor.close()
 
     def guardar_version(self, presupuesto_id: int, version: int,
                         lineas_generadas: int, total_presupuestado,

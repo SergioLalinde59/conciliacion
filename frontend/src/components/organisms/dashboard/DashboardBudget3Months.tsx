@@ -2,13 +2,26 @@ import { usePresupuestoWidget } from '../../../hooks/usePresupuesto'
 import { useNavigate } from 'react-router-dom'
 import { SemaforoBadge } from '../../atoms/SemaforoBadge'
 import { CurrencyDisplay } from '../../atoms/CurrencyDisplay'
-import { Target, Calendar, ArrowRight } from 'lucide-react'
+import { Target, Calendar, ArrowRight, TrendingDown, TrendingUp } from 'lucide-react'
 import type { PresupuestoWidgetMes } from '../../../types/Presupuesto'
 
 const barColors = {
     verde: { bar: 'bg-emerald-500', bg: 'bg-emerald-100', accent: 'border-emerald-200' },
     amarillo: { bar: 'bg-amber-500', bg: 'bg-amber-100', accent: 'border-amber-200' },
     rojo: { bar: 'bg-rose-500', bg: 'bg-rose-100', accent: 'border-rose-200' },
+}
+
+const ingresosBarColors = {
+    verde: { bar: 'bg-emerald-400', bg: 'bg-emerald-50' },
+    amarillo: { bar: 'bg-amber-400', bg: 'bg-amber-50' },
+    rojo: { bar: 'bg-rose-400', bg: 'bg-rose-50' },
+}
+
+interface MonthIngresoData {
+    presupuestado: number
+    ejecutado: number
+    porcentaje: number
+    semaforo: 'verde' | 'amarillo' | 'rojo'
 }
 
 interface MonthCardProps {
@@ -20,62 +33,111 @@ interface MonthCardProps {
     isCurrent?: boolean
     diasRestantes?: number
     compact?: boolean
+    ingresos?: MonthIngresoData
 }
 
-const MonthCard = ({ mesNombre, presupuestado, ejecutado, porcentaje, semaforo, isCurrent, diasRestantes, compact = false }: MonthCardProps) => {
+const MonthCard = ({
+    mesNombre, presupuestado, ejecutado, porcentaje, semaforo,
+    isCurrent, diasRestantes, compact = false, ingresos
+}: MonthCardProps) => {
     const colors = barColors[semaforo] || barColors.verde
+
+    // Net calculations
+    const hasIngresos = ingresos && ingresos.presupuestado > 0
+    const netoReal = hasIngresos ? ingresos.ejecutado - ejecutado : 0
+    const netoPpto = hasIngresos ? ingresos.presupuestado - presupuestado : 0
+    const diferenciaNeta = netoReal - netoPpto
+    const netoMejor = diferenciaNeta >= 0
 
     return (
         <div className={`
-            bg-white rounded-xl border p-5 transition-all
+            bg-white rounded-xl border p-3.5 transition-all
             ${isCurrent ? `border-2 ${colors.accent} shadow-md` : 'border-gray-100 shadow-sm'}
         `}>
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                     {isCurrent && <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />}
-                    <h4 className={`font-bold ${isCurrent ? 'text-slate-900 text-base' : 'text-slate-600 text-sm'}`}>
+                    <h4 className={`font-bold ${isCurrent ? 'text-slate-900 text-sm' : 'text-slate-600 text-xs'}`}>
                         {mesNombre}
                     </h4>
                 </div>
                 <SemaforoBadge valor={semaforo} size="sm" />
             </div>
 
-            {/* Progress bar */}
-            <div className={`w-full ${isCurrent ? 'h-4' : 'h-3'} rounded-full ${colors.bg} mb-3`}>
-                <div
-                    className={`h-full rounded-full ${colors.bar} transition-all duration-700`}
-                    style={{ width: `${Math.min(porcentaje, 100)}%` }}
-                />
-            </div>
-
-            {/* Percentage */}
-            <div className="text-center mb-3">
-                <span className={`font-mono font-black ${isCurrent ? 'text-2xl' : 'text-xl'} text-slate-800`}>
-                    {porcentaje.toFixed(0)}%
-                </span>
-            </div>
-
-            {/* Amounts */}
-            <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Ejecutado</span>
-                    <span className="font-mono font-bold text-slate-700">
-                        <CurrencyDisplay value={ejecutado} colorize={false} decimals={0} compact={compact} />
-                    </span>
+            {/* ── EGRESOS section ── */}
+            <div className="mb-2.5">
+                <div className="flex items-center gap-1 mb-1">
+                    <TrendingDown size={11} className="text-rose-400" />
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase">Egresos</span>
                 </div>
-                <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">Presupuesto</span>
-                    <span className="font-mono font-bold text-slate-500">
+                <div className={`w-full ${isCurrent ? 'h-2.5' : 'h-2'} rounded-full ${colors.bg}`}>
+                    <div
+                        className={`h-full rounded-full ${colors.bar} transition-all duration-700`}
+                        style={{ width: `${Math.min(porcentaje, 100)}%` }}
+                    />
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] font-mono text-slate-400">
+                        <CurrencyDisplay value={ejecutado} colorize={false} decimals={0} compact={compact} />
+                        <span className="text-slate-300"> / </span>
                         <CurrencyDisplay value={presupuestado} colorize={false} decimals={0} compact={compact} />
                     </span>
+                    <span className="text-[10px] font-bold font-mono text-slate-500">{porcentaje.toFixed(0)}%</span>
                 </div>
             </div>
+
+            {/* ── INGRESOS section (if available) ── */}
+            {hasIngresos && (
+                <div className="mb-2.5">
+                    <div className="flex items-center gap-1 mb-1">
+                        <TrendingUp size={11} className="text-emerald-500" />
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase">Ingresos</span>
+                    </div>
+                    <div className={`w-full ${isCurrent ? 'h-2.5' : 'h-2'} rounded-full ${ingresosBarColors[ingresos.semaforo]?.bg || ingresosBarColors.verde.bg}`}>
+                        <div
+                            className={`h-full rounded-full ${ingresosBarColors[ingresos.semaforo]?.bar || ingresosBarColors.verde.bar} transition-all duration-700`}
+                            style={{ width: `${Math.min(ingresos.porcentaje, 100)}%` }}
+                        />
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] font-mono text-slate-400">
+                            <CurrencyDisplay value={ingresos.ejecutado} colorize={false} decimals={0} compact={compact} />
+                            <span className="text-slate-300"> / </span>
+                            <CurrencyDisplay value={ingresos.presupuestado} colorize={false} decimals={0} compact={compact} />
+                        </span>
+                        <span className="text-[10px] font-bold font-mono text-emerald-600">{ingresos.porcentaje.toFixed(0)}%</span>
+                    </div>
+                </div>
+            )}
+
+            {/* ── NETO summary (if both available) ── */}
+            {hasIngresos && (
+                <div className="border-t border-gray-100 pt-2 mt-1">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">Neto</span>
+                        <span className={`text-[11px] font-bold font-mono ${netoReal >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                            <CurrencyDisplay value={netoReal} colorize={false} decimals={0} compact={compact} showPlusSign={netoReal > 0} />
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5">
+                        <span className="text-[10px] text-slate-300">Ppto</span>
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono text-slate-400">
+                                <CurrencyDisplay value={netoPpto} colorize={false} decimals={0} compact={compact} showPlusSign={netoPpto > 0} />
+                            </span>
+                            <span className={`text-[9px] font-bold ${netoMejor ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                {netoMejor ? '▲' : '▼'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Days remaining (only current) */}
             {isCurrent && diasRestantes !== undefined && (
-                <div className="flex items-center justify-center gap-1 mt-3 pt-3 border-t border-gray-100 text-[11px] text-gray-400">
-                    <Calendar size={12} />
+                <div className="flex items-center justify-center gap-1 mt-2 pt-2 border-t border-gray-100 text-[10px] text-gray-400">
+                    <Calendar size={11} />
                     <span className="font-semibold">{diasRestantes} días restantes</span>
                 </div>
             )}
@@ -89,10 +151,16 @@ interface DashboardBudget3MonthsProps {
 }
 
 export const DashboardBudget3Months = ({ centrosExcluidos, compact = false }: DashboardBudget3MonthsProps) => {
-    const { data: widget, isLoading } = usePresupuestoWidget({
+    const { data: widgetEgresos, isLoading: loadingEgresos } = usePresupuestoWidget({
         centros_costos_excluidos: centrosExcluidos?.length ? centrosExcluidos : undefined,
     })
+    const { data: widgetIngresos, isLoading: loadingIngresos } = usePresupuestoWidget({
+        centros_costos_excluidos: centrosExcluidos?.length ? centrosExcluidos : undefined,
+        direccion: 'ingreso',
+    })
     const navigate = useNavigate()
+
+    const isLoading = loadingEgresos || loadingIngresos
 
     if (isLoading) {
         return (
@@ -107,7 +175,7 @@ export const DashboardBudget3Months = ({ centrosExcluidos, compact = false }: Da
         )
     }
 
-    if (!widget || !widget.tiene_presupuesto) {
+    if (!widgetEgresos || !widgetEgresos.tiene_presupuesto) {
         return (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-center gap-2 mb-3">
@@ -125,30 +193,56 @@ export const DashboardBudget3Months = ({ centrosExcluidos, compact = false }: Da
         )
     }
 
-    // Build month array from widget: mes corrido (Jan=1, Feb=2, Mar+=3 sliding)
-    const allMonths: (PresupuestoWidgetMes & { isCurrent?: boolean; diasRestantes?: number })[] = []
-    const prevMonths = (widget.meses || []).filter(m => m.mes_nombre !== widget.mes_nombre)
-    prevMonths.forEach(m => allMonths.push(m))
+    // Build ingreso lookup by mes_nombre
+    const ingresosMap = new Map<string, PresupuestoWidgetMes>()
+    if (widgetIngresos?.tiene_presupuesto) {
+        widgetIngresos.meses?.forEach(m => ingresosMap.set(m.mes_nombre, m))
+        // Add current month from widget top-level
+        if (widgetIngresos.mes_nombre) {
+            ingresosMap.set(widgetIngresos.mes_nombre, {
+                mes: 0,
+                mes_nombre: widgetIngresos.mes_nombre,
+                presupuestado: widgetIngresos.presupuesto_mes_actual,
+                ejecutado: widgetIngresos.ejecutado_mes_actual,
+                porcentaje: widgetIngresos.porcentaje_consumido,
+                semaforo: widgetIngresos.semaforo,
+            })
+        }
+    }
+
+    // Build month array from egresos widget
+    const allMonths: (PresupuestoWidgetMes & { isCurrent?: boolean; diasRestantes?: number; ingresos?: MonthIngresoData })[] = []
+    const prevMonths = (widgetEgresos.meses || []).filter(m => m.mes_nombre !== widgetEgresos.mes_nombre)
+    prevMonths.forEach(m => {
+        const ing = ingresosMap.get(m.mes_nombre)
+        allMonths.push({
+            ...m,
+            ingresos: ing ? { presupuestado: ing.presupuestado, ejecutado: ing.ejecutado, porcentaje: ing.porcentaje, semaforo: ing.semaforo } : undefined,
+        })
+    })
+
+    const currentIng = ingresosMap.get(widgetEgresos.mes_nombre)
     allMonths.push({
         mes: 0,
-        mes_nombre: widget.mes_nombre,
-        presupuestado: widget.presupuesto_mes_actual,
-        ejecutado: widget.ejecutado_mes_actual,
-        porcentaje: widget.porcentaje_consumido,
-        semaforo: widget.semaforo,
+        mes_nombre: widgetEgresos.mes_nombre,
+        presupuestado: widgetEgresos.presupuesto_mes_actual,
+        ejecutado: widgetEgresos.ejecutado_mes_actual,
+        porcentaje: widgetEgresos.porcentaje_consumido,
+        semaforo: widgetEgresos.semaforo,
         isCurrent: true,
-        diasRestantes: widget.dias_restantes,
+        diasRestantes: widgetEgresos.dias_restantes,
+        ingresos: currentIng ? { presupuestado: currentIng.presupuestado, ejecutado: currentIng.ejecutado, porcentaje: currentIng.porcentaje, semaforo: currentIng.semaforo } : undefined,
     })
 
     const monthCount = allMonths.length
 
     return (
         <div
-            className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow cursor-pointer"
+            className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer"
             onClick={() => navigate('/reportes/presupuesto-vs-real')}
         >
             {/* Header */}
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                         <Target className="w-5 h-5" />
@@ -175,6 +269,7 @@ export const DashboardBudget3Months = ({ centrosExcluidos, compact = false }: Da
                         isCurrent={m.isCurrent}
                         diasRestantes={m.diasRestantes}
                         compact={compact}
+                        ingresos={m.ingresos}
                     />
                 ))}
             </div>

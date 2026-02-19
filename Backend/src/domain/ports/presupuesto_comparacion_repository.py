@@ -15,7 +15,8 @@ class PresupuestoComparacionRepository(ABC):
         centros_costos_excluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
-        excluir_estacionales: bool = False
+        excluir_estacionales: bool = False,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Comparación presupuesto vs real agrupada por centro de costo"""
         pass
@@ -31,7 +32,8 @@ class PresupuestoComparacionRepository(ABC):
         centros_costos_excluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
-        excluir_estacionales: bool = False
+        excluir_estacionales: bool = False,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Comparación presupuesto vs real agrupada por concepto dentro de un CC"""
         pass
@@ -48,7 +50,8 @@ class PresupuestoComparacionRepository(ABC):
         centros_costos_excluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
-        excluir_estacionales: bool = False
+        excluir_estacionales: bool = False,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Comparación presupuesto vs real agrupada por tercero"""
         pass
@@ -64,7 +67,19 @@ class PresupuestoComparacionRepository(ABC):
         tercero_id: Optional[int] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
-        excluir_estacionales: bool = False
+        excluir_estacionales: bool = False,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Resumen mensual: presupuestado vs ejecutado por mes, con filtros opcionales"""
+        pass
+
+    @abstractmethod
+    def obtener_gastos_sin_presupuesto(
+        self,
+        presupuesto_id: int,
+        anio: int,
+        centros_costos_excluidos: Optional[List[int]] = None,
+        direccion: str = 'egreso'
+    ) -> List[dict]:
+        """Movimientos del año actual sin filas en presupuesto_detalle, con info de regla existente"""
         pass

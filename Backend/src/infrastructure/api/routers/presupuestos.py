@@ -84,6 +84,7 @@ class PrevisualizarDTO(BaseModel):
 class SimularReglasDTO(BaseModel):
     anio_fuente: Optional[int] = None
     centros_costos_excluidos: Optional[List[int]] = None
+    direccion: str = 'egreso'
 
 class RegenerarDTO(BaseModel):
     anio_fuente: Optional[int] = None
@@ -153,13 +154,15 @@ def listar_presupuestos(
 def clasificacion_preview(
     anio: int = Query(..., description="Año fuente para analizar gastos"),
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    direccion: str = Query("egreso", description="egreso o ingreso"),
     service: PresupuestoService = Depends(get_presupuesto_service)
 ):
     """Preview de clasificación: muestra cada combo CC/Concepto y la regla que aplica"""
     try:
         return service.obtener_clasificacion_preview(
             anio_fuente=anio,
-            centros_costos_excluidos=centros_costos_excluidos
+            centros_costos_excluidos=centros_costos_excluidos,
+            direccion=direccion
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -173,11 +176,12 @@ def detalle_mensual(
     anio: int = Query(..., description="Año fuente"),
     centro_costo_id: int = Query(...),
     concepto_id: Optional[int] = Query(None),
+    direccion: str = Query("egreso", description="egreso o ingreso"),
     repo: PresupuestoGeneracionRepository = Depends(get_presupuesto_generacion_repository)
 ):
-    """Desglose mensual de gastos para un CC/Concepto específico"""
+    """Desglose mensual de gastos/ingresos para un CC/Concepto específico"""
     try:
-        return repo.obtener_desglose_mensual(anio, centro_costo_id, concepto_id)
+        return repo.obtener_desglose_mensual(anio, centro_costo_id, concepto_id, direccion=direccion)
     except Exception as e:
         logger.error(f"Error en detalle mensual: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -336,6 +340,41 @@ def revertir_presupuesto(
         raise HTTPException(status_code=400, detail=str(ve))
 
 
+# --- Reglas Pendientes ---
+
+@router.get("/{presupuesto_id}/reglas-pendientes")
+def reglas_pendientes(
+    presupuesto_id: int,
+    service: PresupuestoService = Depends(get_presupuesto_service)
+):
+    """Devuelve reglas cuya combinación CC+Concepto no tiene filas en presupuesto_detalle"""
+    try:
+        return service.contar_reglas_pendientes(presupuesto_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+
+# --- Gastos Sin Presupuesto ---
+
+@router.get("/{presupuesto_id}/gastos-sin-presupuesto")
+def gastos_sin_presupuesto(
+    presupuesto_id: int,
+    centros_costos_excluidos: Optional[List[int]] = Query(None),
+    direccion: str = Query("egreso", description="egreso o ingreso"),
+    service: PresupuestoService = Depends(get_presupuesto_service)
+):
+    """Gastos/ingresos del año actual sin presupuesto asignado"""
+    try:
+        return service.obtener_gastos_sin_presupuesto(
+            presupuesto_id, centros_costos_excluidos, direccion=direccion
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error obteniendo gastos sin presupuesto: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- Simulación de Impacto ---
 
 @router.post("/{presupuesto_id}/simular-reglas")
@@ -349,7 +388,8 @@ def simular_impacto_reglas(
         return service.simular_impacto_reglas(
             presupuesto_id=presupuesto_id,
             anio_fuente=dto.anio_fuente,
-            centros_costos_excluidos=dto.centros_costos_excluidos
+            centros_costos_excluidos=dto.centros_costos_excluidos,
+            direccion=dto.direccion
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -475,6 +515,7 @@ def listar_detalle(
     tercero_id: Optional[int] = None,
     mes: Optional[int] = None,
     version: Optional[int] = None,
+    direccion: Optional[str] = Query(None, description="Filtrar por egreso o ingreso"),
     repo: PresupuestoDetalleRepository = Depends(get_presupuesto_detalle_repository)
 ):
     detalles = repo.obtener_por_presupuesto(
@@ -483,7 +524,8 @@ def listar_detalle(
         concepto_id=concepto_id,
         tercero_id=tercero_id,
         mes=mes,
-        version=version
+        version=version,
+        direccion=direccion
     )
     return [
         {
@@ -495,6 +537,7 @@ def listar_detalle(
             "monto_base": float(d.monto_base) if d.monto_base is not None else None,
             "monto_efectivo": float(d.monto_efectivo),
             "tipo": d.tipo, "notas": d.notas,
+            "direccion": d.direccion,
             "centro_costo_nombre": d.centro_costo_nombre,
             "concepto_nombre": d.concepto_nombre,
             "tercero_nombre": d.tercero_nombre,
@@ -628,6 +671,7 @@ def comparar_presupuesto_vs_real(
     concepto_id: Optional[int] = None,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
     excluir_estacionales: bool = False,
+    direccion: str = Query("egreso", description="egreso o ingreso"),
     service: PresupuestoService = Depends(get_presupuesto_service)
 ):
     try:
@@ -639,7 +683,8 @@ def comparar_presupuesto_vs_real(
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
             centros_costos_excluidos=centros_costos_excluidos,
-            excluir_estacionales=excluir_estacionales
+            excluir_estacionales=excluir_estacionales,
+            direccion=direccion
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -655,6 +700,7 @@ def comparar_resumen_mensual(
     concepto_id: Optional[int] = None,
     tercero_id: Optional[int] = None,
     excluir_estacionales: bool = False,
+    direccion: str = Query("egreso", description="egreso o ingreso"),
     repo_presupuesto: PresupuestoRepository = Depends(get_presupuesto_repository),
     repo_comparacion: PresupuestoComparacionRepository = Depends(get_presupuesto_comparacion_repository)
 ):
@@ -671,7 +717,8 @@ def comparar_resumen_mensual(
             tercero_id=tercero_id,
             verde_hasta=p.semaforo_verde_hasta,
             amarillo_hasta=p.semaforo_amarillo_hasta,
-            excluir_estacionales=excluir_estacionales
+            excluir_estacionales=excluir_estacionales,
+            direccion=direccion
         )
     except Exception as e:
         logger.error(f"Error en resumen mensual: {e}", exc_info=True)

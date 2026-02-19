@@ -15,9 +15,21 @@ export const formatCurrency = (value: number | string | undefined | null, showDe
 };
 
 export const formatCompact = (n: number): string => {
-    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
-    if (n >= 1_000) return `$${Math.round(n / 1_000)}K`
-    return `$${n}`
+    const sign = n < 0 ? '-' : ''
+    const abs = Math.abs(n)
+    if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`
+    if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}K`
+    return `${sign}$${Math.round(abs)}`
+}
+
+export const formatMiles = (value: number | null): string => {
+    if (value == null) return ''
+    return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Math.round(value))
+}
+
+export const parseMonto = (text: string): number | null => {
+    const cleaned = text.replace(/[^\d]/g, '')
+    return cleaned ? Number(cleaned) : null
 }
 
 export const getAmountColorClass = (value: number | string | undefined | null): string => {

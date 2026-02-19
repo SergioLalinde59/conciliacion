@@ -2,8 +2,9 @@ import { API_BASE_URL, handleResponse } from './httpClient'
 import type { ReglaPresupuesto } from '../types/ReglaPresupuesto'
 
 export const reglasPresupuestoService = {
-    listar: async (): Promise<ReglaPresupuesto[]> => {
-        return fetch(`${API_BASE_URL}/api/reglas-presupuesto`).then(handleResponse)
+    listar: async (direccion?: string): Promise<ReglaPresupuesto[]> => {
+        const params = direccion ? `?direccion=${direccion}` : ''
+        return fetch(`${API_BASE_URL}/api/reglas-presupuesto${params}`).then(handleResponse)
     },
 
     obtener: async (id: number): Promise<ReglaPresupuesto> => {

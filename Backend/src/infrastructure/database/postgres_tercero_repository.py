@@ -120,6 +120,35 @@ class PostgresTerceroRepository(TerceroRepository):
         finally:
             cursor.close()
 
+    def buscar_en_texto(self, texto: str, min_longitud: int = 4) -> List[Tercero]:
+        """
+        Busca terceros cuyo nombre aparece como palabra completa dentro del texto.
+        Usa word-boundary matching para evitar falsos positivos.
+        Ejemplo: texto="Presto Las Vegas" → encuentra tercero "Presto"
+        """
+        if not texto or len(texto.strip()) < min_longitud:
+            return []
+
+        cursor = self.conn.cursor()
+        try:
+            sql = """
+                SELECT terceroid, tercero, activa
+                FROM terceros
+                WHERE activa = TRUE
+                  AND length(tercero) >= %s
+                  AND (' ' || UPPER(%s) || ' ') LIKE ('%% ' || UPPER(tercero) || ' %%')
+                ORDER BY length(tercero) DESC
+                LIMIT 5
+            """
+            cursor.execute(sql, (min_longitud, texto))
+            rows = cursor.fetchall()
+            return [
+                Tercero(terceroid=row[0], tercero=row[1], activa=row[2])
+                for row in rows
+            ]
+        finally:
+            cursor.close()
+
     def eliminar(self, terceroid: int):
         cursor = self.conn.cursor()
         try:

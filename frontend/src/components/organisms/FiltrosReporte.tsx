@@ -45,6 +45,7 @@ interface FiltrosReporteProps {
     setCentrosCostosExcluidos?: (val: number[]) => void
     soloConciliables?: boolean
     extraActions?: React.ReactNode
+    showAdvancedFilters?: boolean
 }
 
 export const FiltrosReporte = ({
@@ -63,7 +64,8 @@ export const FiltrosReporte = ({
     configuracionExclusion = [],
     centrosCostosExcluidos = [], onCentrosCostosExcluidosChange, setCentrosCostosExcluidos,
     soloConciliables = true,
-    extraActions
+    extraActions,
+    showAdvancedFilters = true
 }: FiltrosReporteProps) => {
 
     // Helper to prioritize the new "set" naming convetion or the old "on" one
@@ -146,7 +148,7 @@ export const FiltrosReporte = ({
             </div>
 
             {/* Fila 4: Filtros Avanzados */}
-            <div className="flex items-center gap-6 pt-2 border-t border-slate-100">
+            {showAdvancedFilters && <div className="flex items-center gap-6 pt-2 border-t border-slate-100">
                 <div className="flex items-center gap-2 text-slate-400">
                     <Filter size={14} className="opacity-50" />
                     <span className="text-[9px] font-black uppercase tracking-[0.2em]">Filtros Avanzados</span>
@@ -162,7 +164,7 @@ export const FiltrosReporte = ({
                     centrosCostosExcluidos={centrosCostosExcluidos}
                     onCentrosCostosExcluidosChange={_onExcluidos}
                 />
-            </div>
+            </div>}
         </div>
     )
 }

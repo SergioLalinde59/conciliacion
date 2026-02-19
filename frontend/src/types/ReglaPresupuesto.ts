@@ -7,6 +7,7 @@ export interface ReglaPresupuesto {
     factor_ajuste: number
     monto_fijo_mensual: number | null
     notas?: string | null
+    direccion?: string
     centro_costo_nombre?: string | null
     concepto_nombre?: string | null
 }

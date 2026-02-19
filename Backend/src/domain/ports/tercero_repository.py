@@ -37,6 +37,11 @@ class TerceroRepository(ABC):
         pass
 
     @abstractmethod
+    def buscar_en_texto(self, texto: str, min_longitud: int = 4) -> List[Tercero]:
+        """Busca terceros cuyo nombre aparece como palabra completa en el texto dado."""
+        pass
+
+    @abstractmethod
     def eliminar(self, terceroid: int):
         """Elimina (soft-delete) un tercero por su ID"""
         pass

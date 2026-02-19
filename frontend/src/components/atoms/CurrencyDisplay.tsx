@@ -123,6 +123,19 @@ export const useFormatCurrency = () => {
 }
 
 /**
+ * Hook para formatear valores de presupuesto respetando el toggle "Cifras (mm)".
+ * Cuando está activado, usa formato compacto ($1.5M, $150K).
+ * Cuando está desactivado, usa formato completo ($1.500.000).
+ */
+export const useBudgetFormat = () => {
+    const { cifrasEnMillones, showDecimals } = useSettings()
+    return (value: number): string => {
+        if (cifrasEnMillones) return formatCompact(value)
+        return formatCurrency(value, 'COP', true, showDecimals ? 2 : 0)
+    }
+}
+
+/**
  * Componente CurrencyDisplay
  *
  * @example

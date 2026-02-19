@@ -5,13 +5,13 @@ import type { ReglaPresupuesto } from '../types/ReglaPresupuesto'
 
 const KEYS = {
     all: ['reglas-presupuesto'] as const,
-    lista: () => [...KEYS.all, 'lista'] as const,
+    lista: (direccion?: string) => [...KEYS.all, 'lista', direccion] as const,
 }
 
-export const useReglasPresupuesto = () =>
+export const useReglasPresupuesto = (direccion?: string) =>
     useQuery({
-        queryKey: KEYS.lista(),
-        queryFn: () => reglasPresupuestoService.listar(),
+        queryKey: KEYS.lista(direccion),
+        queryFn: () => reglasPresupuestoService.listar(direccion),
         staleTime: 5 * 60 * 1000,
     })
 
@@ -20,6 +20,8 @@ export const useReglaPresupuestoMutations = () => {
     const invalidate = () => {
         qc.invalidateQueries({ queryKey: KEYS.all })
         qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.all })
+        qc.invalidateQueries({ queryKey: ['gastos-sin-presupuesto'] })
+        qc.invalidateQueries({ queryKey: ['clasificacion-preview'] })
     }
 
     const crear = useMutation({

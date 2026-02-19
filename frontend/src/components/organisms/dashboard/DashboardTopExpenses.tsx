@@ -23,7 +23,7 @@ export const DashboardTopExpenses = ({ data, isLoading, maxItems = 8, compact = 
         // Add "Otros" if there are more items
         if (sorted.length > maxItems) {
             const otrosEgresos = sorted.slice(maxItems).reduce((sum, d) => sum + d.egresos, 0)
-            top.push({ nombre: 'Otros', ingresos: 0, egresos: otrosEgresos, saldo: -otrosEgresos })
+            top.push({ id: null, nombre: 'Otros', ingresos: 0, egresos: otrosEgresos, saldo: -otrosEgresos })
         }
 
         return { items: top, totalEgresos: total }
@@ -64,7 +64,7 @@ export const DashboardTopExpenses = ({ data, isLoading, maxItems = 8, compact = 
                             <div key={item.nombre} className="group">
                                 <div className="flex items-center justify-between mb-1">
                                     <span className="text-sm font-medium text-slate-700 truncate max-w-[40%]">
-                                        {item.nombre}
+                                        {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
                                     </span>
                                     <div className="flex items-center gap-3">
                                         <span className="text-[11px] font-mono text-slate-400">

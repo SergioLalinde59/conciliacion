@@ -8,17 +8,24 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
     def __init__(self, connection):
         self.conn = connection
 
+    @staticmethod
+    def _valor_filter(direccion: str) -> str:
+        """Retorna el filtro SQL de valor según dirección."""
+        return "md.Valor > 0" if direccion == 'ingreso' else "md.Valor < 0"
+
     def generar_base_desde_anio(
         self,
         anio_fuente: int,
-        centros_costos_excluidos: Optional[List[int]] = None
+        centros_costos_excluidos: Optional[List[int]] = None,
+        direccion: str = 'egreso'
     ) -> List[PresupuestoDetalle]:
         cursor = self.conn.cursor()
 
         fecha_inicio = f"{anio_fuente}-01-01"
         fecha_fin = f"{anio_fuente}-12-31"
+        valor_filter = self._valor_filter(direccion)
 
-        query = """
+        query = f"""
             SELECT
                 md.centro_costo_id,
                 md.ConceptoID as concepto_id,
@@ -35,7 +42,7 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
             LEFT JOIN terceros t ON md.TerceroID = t.terceroid
             WHERE m.Fecha >= %s AND m.Fecha <= %s
               AND md.centro_costo_id IS NOT NULL
-              AND md.Valor < 0
+              AND {valor_filter}
         """
         params = [fecha_inicio, fecha_fin]
 
@@ -65,6 +72,7 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
                 mes=row[3],
                 monto_presupuestado=Decimal(str(row[4])).quantize(Decimal('0.01')),
                 tipo='variable',
+                direccion=direccion,
                 centro_costo_nombre=row[5],
                 concepto_nombre=row[6],
                 tercero_nombre=row[7],
@@ -76,14 +84,16 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
     def obtener_combinaciones_gasto(
         self,
         anio_fuente: int,
-        centros_costos_excluidos: Optional[List[int]] = None
+        centros_costos_excluidos: Optional[List[int]] = None,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         cursor = self.conn.cursor()
         fecha_inicio = f"{anio_fuente}-01-01"
         fecha_fin = f"{anio_fuente}-12-31"
+        valor_filter = self._valor_filter(direccion)
 
         # 1. Combinaciones CC/Concepto con movimientos en el año fuente
-        query = """
+        query = f"""
             SELECT
                 md.centro_costo_id,
                 md.ConceptoID as concepto_id,
@@ -97,7 +107,7 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
             LEFT JOIN conceptos con ON md.ConceptoID = con.conceptoid
             WHERE m.Fecha >= %s AND m.Fecha <= %s
               AND md.centro_costo_id IS NOT NULL
-              AND md.Valor < 0
+              AND {valor_filter}
         """
         params: list = [fecha_inicio, fecha_fin]
 
@@ -140,8 +150,9 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
             JOIN conceptos con ON rp.concepto_id = con.conceptoid
             WHERE rp.centro_costo_id IS NOT NULL
               AND rp.concepto_id IS NOT NULL
+              AND rp.direccion = %s
         """
-        orphan_params: list = []
+        orphan_params: list = [direccion]
 
         if centros_costos_excluidos:
             placeholders = ','.join(['%s'] * len(centros_costos_excluidos))
@@ -170,13 +181,15 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
         self,
         anio_fuente: int,
         centro_costo_id: int,
-        concepto_id: Optional[int] = None
+        concepto_id: Optional[int] = None,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         cursor = self.conn.cursor()
         fecha_inicio = f"{anio_fuente}-01-01"
         fecha_fin = f"{anio_fuente}-12-31"
+        valor_filter = self._valor_filter(direccion)
 
-        query = """
+        query = f"""
             SELECT
                 EXTRACT(MONTH FROM m.Fecha)::INT as mes,
                 SUM(ABS(md.Valor)) as monto,
@@ -185,7 +198,7 @@ class PostgresPresupuestoGeneracionRepository(PresupuestoGeneracionRepository):
             JOIN movimientos_detalle md ON m.Id = md.movimiento_id
             WHERE m.Fecha >= %s AND m.Fecha <= %s
               AND md.centro_costo_id = %s
-              AND md.Valor < 0
+              AND {valor_filter}
         """
         params: list = [fecha_inicio, fecha_fin, centro_costo_id]
 

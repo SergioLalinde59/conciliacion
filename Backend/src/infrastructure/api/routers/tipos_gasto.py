@@ -17,6 +17,7 @@ class TipoGastoDTO(BaseModel):
     activo: bool = True
     keywords: List[Dict[str, Any]] = []
     prioridad: int = 99
+    direccion: str = 'egreso'
 
     @field_validator("keywords")
     @classmethod
@@ -36,7 +37,8 @@ def _to_response(t: TipoGasto) -> dict:
         "id": t.id, "tipo": t.tipo,
         "descripcion": t.descripcion, "indicador_default": t.indicador_default,
         "excluir_presupuesto": t.excluir_presupuesto, "activo": t.activo,
-        "keywords": t.keywords, "prioridad": t.prioridad
+        "keywords": t.keywords, "prioridad": t.prioridad,
+        "direccion": t.direccion,
     }
 
 
@@ -61,7 +63,8 @@ def crear_tipo_gasto(dto: TipoGastoDTO, repo: TipoGastoRepository = Depends(get_
             tipo=dto.tipo, descripcion=dto.descripcion,
             indicador_default=dto.indicador_default,
             excluir_presupuesto=dto.excluir_presupuesto, activo=dto.activo,
-            keywords=dto.keywords, prioridad=dto.prioridad
+            keywords=dto.keywords, prioridad=dto.prioridad,
+            direccion=dto.direccion,
         )
         guardado = repo.guardar(tipo)
         return _to_response(guardado)
@@ -87,6 +90,7 @@ def actualizar_tipo_gasto(
         existente.activo = dto.activo
         existente.keywords = dto.keywords
         existente.prioridad = dto.prioridad
+        existente.direccion = dto.direccion
         guardado = repo.guardar(existente)
         return _to_response(guardado)
     except Exception as e:

@@ -34,7 +34,7 @@ const EMPTY_PAIR: KeywordPair = { concepto: '', centro_costo: '' }
 const INITIAL_FORM: Omit<TipoGasto, 'id'> = {
     tipo: '', descripcion: '',
     indicador_default: null, excluir_presupuesto: false, activo: true,
-    keywords: [], prioridad: 99
+    keywords: [], prioridad: 99, direccion: 'egreso',
 }
 
 export const TiposGastoPage = () => {
@@ -48,14 +48,19 @@ export const TiposGastoPage = () => {
     const [form, setForm] = useState(INITIAL_FORM)
     const [newPair, setNewPair] = useState<KeywordPair>({ ...EMPTY_PAIR })
     const [filtroCC, setFiltroCC] = useState('')
+    const [tabDireccion, setTabDireccion] = useState<'egreso' | 'ingreso'>('egreso')
 
-    const openCrear = () => { setEditando(null); setForm(INITIAL_FORM); setNewPair({ ...EMPTY_PAIR }); setFiltroCC(''); setShowModal(true) }
+    const tiposFiltrados = useMemo(() =>
+        tipos.filter(t => t.direccion === tabDireccion),
+    [tipos, tabDireccion])
+
+    const openCrear = () => { setEditando(null); setForm({ ...INITIAL_FORM, direccion: tabDireccion }); setNewPair({ ...EMPTY_PAIR }); setFiltroCC(''); setShowModal(true) }
     const openEditar = (t: TipoGasto) => {
         setEditando(t)
         setForm({
             tipo: t.tipo, descripcion: t.descripcion || '',
             indicador_default: t.indicador_default, excluir_presupuesto: t.excluir_presupuesto, activo: t.activo,
-            keywords: t.keywords || [], prioridad: t.prioridad
+            keywords: t.keywords || [], prioridad: t.prioridad, direccion: t.direccion,
         })
         setNewPair({ ...EMPTY_PAIR })
         setFiltroCC('')
@@ -113,12 +118,32 @@ export const TiposGastoPage = () => {
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                         <Tags size={24} /> Tipos de Gasto
                     </h1>
-                    <p className="text-slate-500 text-sm mt-1">Catálogo de clasificación de gastos para presupuesto</p>
+                    <p className="text-slate-500 text-sm mt-1">Catálogo de clasificación para presupuesto</p>
                 </div>
                 <button onClick={openCrear}
                     className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
                     <Plus size={18} /> Nuevo Tipo
                 </button>
+            </div>
+
+            {/* Tabs Egresos / Ingresos */}
+            <div className="flex gap-1 mb-4 bg-slate-100 rounded-lg p-1 w-fit">
+                {(['egreso', 'ingreso'] as const).map(dir => (
+                    <button
+                        key={dir}
+                        onClick={() => setTabDireccion(dir)}
+                        className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                            tabDireccion === dir
+                                ? 'bg-white text-slate-800 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                        {dir === 'egreso' ? 'Egresos' : 'Ingresos'}
+                        <span className="ml-1.5 text-xs text-slate-400">
+                            ({tipos.filter(t => t.direccion === dir).length})
+                        </span>
+                    </button>
+                ))}
             </div>
 
             {isLoading ? (
@@ -138,7 +163,7 @@ export const TiposGastoPage = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {tipos.map(t => (
+                            {tiposFiltrados.map(t => (
                                 <tr key={t.id} className="hover:bg-slate-50">
                                     <td className="px-4 py-3 text-center">
                                         <div className="flex justify-center gap-2">

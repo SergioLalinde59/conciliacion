@@ -161,6 +161,7 @@ export interface ContextoClasificacionResponse {
     contexto: ContextoItem[]
     referencia_no_existe: boolean
     referencia?: string | null
+    confianza?: 'alta' | 'media' | 'baja' | null
 }
 
 export interface ClasificacionLoteDTO {

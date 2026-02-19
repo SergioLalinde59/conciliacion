@@ -16,6 +16,8 @@ export interface Presupuesto {
     created_at?: string | null
 }
 
+export type Direccion = 'ingreso' | 'egreso'
+
 export interface PresupuestoDetalle {
     id: number
     presupuesto_id: number
@@ -28,6 +30,7 @@ export interface PresupuestoDetalle {
     monto_base?: number | null
     monto_efectivo: number
     tipo: string
+    direccion: Direccion
     notas?: string | null
     centro_costo_nombre?: string
     concepto_nombre?: string
@@ -91,6 +94,7 @@ export interface GeneracionResult {
     lineas_excluidas: number
     incluidos_manualmente: number
     fijos_incluidos: number
+    ingresos_generados?: number
     resumen: GeneracionResumen
     version?: number
     mensaje?: string
@@ -171,11 +175,34 @@ export interface ComparacionPresupuesto {
 export interface ResumenMensualPresupuesto {
     mes: number
     mes_nombre: string
+    ejecutado_anterior?: number
     presupuestado: number
     ejecutado: number
     variacion: number
     variacion_pct: number
     semaforo: 'verde' | 'amarillo' | 'rojo'
+}
+
+export interface GastoSinPresupuesto {
+    centro_costo_id: number
+    concepto_id: number | null
+    centro_costo_nombre: string
+    concepto_nombre: string | null
+    monto_acumulado: number
+    meses_con_gasto: number
+    tiene_regla: boolean
+    regla_tipo_gasto: string | null
+}
+
+export interface GastosSinPresupuestoResponse {
+    total_sin_ppto: number
+    count: number
+    por_categoria: {
+        sin_regla: { count: number; total: number }
+        no_repetitivo: { count: number; total: number }
+        pendiente_regen: { count: number; total: number }
+    }
+    items: GastoSinPresupuesto[]
 }
 
 export interface PresupuestoWidgetMes {

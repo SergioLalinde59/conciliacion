@@ -59,6 +59,7 @@ def obtener_widget_presupuesto(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     tercero_id: Optional[int] = None,
+    direccion: str = Query("egreso", description="egreso o ingreso"),
     repo_presupuesto: PresupuestoRepository = Depends(get_presupuesto_repository),
     repo_comparacion: PresupuestoComparacionRepository = Depends(get_presupuesto_comparacion_repository)
 ):
@@ -85,7 +86,16 @@ def obtener_widget_presupuesto(
         verde_hasta = presupuesto.semaforo_verde_hasta
         amarillo_hasta = presupuesto.semaforo_amarillo_hasta
 
+        invertir = (direccion == 'ingreso')
+
         def _calcular_semaforo(pct: float) -> str:
+            if invertir:
+                # Para ingresos: sub-recaudación es mala
+                if pct >= (100 - verde_hasta):
+                    return "verde"
+                elif pct >= (100 - amarillo_hasta):
+                    return "amarillo"
+                return "rojo"
             if pct <= (100 + verde_hasta):
                 return "verde"
             elif pct <= (100 + amarillo_hasta):
@@ -108,7 +118,8 @@ def obtener_widget_presupuesto(
             concepto_id=concepto_id,
             tercero_id=tercero_id,
             verde_hasta=verde_hasta,
-            amarillo_hasta=amarillo_hasta
+            amarillo_hasta=amarillo_hasta,
+            direccion=direccion
         )
 
         presupuestado, ejecutado = _totales_mes(mes_actual)

@@ -24,6 +24,7 @@ class ReglaDTO(BaseModel):
     factor_ajuste: float = 0.0
     monto_fijo_mensual: Optional[float] = None
     notas: Optional[str] = None
+    direccion: str = 'egreso'
 
 
 class BatchReglasDTO(BaseModel):
@@ -41,18 +42,22 @@ def _regla_to_dict(r) -> dict:
         "monto_fijo_mensual": float(r.monto_fijo_mensual) if r.monto_fijo_mensual else None,
         "notas": r.notas,
         "centro_costo_nombre": r.centro_costo_nombre,
-        "concepto_nombre": r.concepto_nombre
+        "concepto_nombre": r.concepto_nombre,
+        "direccion": r.direccion
     }
 
 
 def _auto_regenerar(service: PresupuestoService) -> dict:
-    """Intenta regenerar el presupuesto activo del año actual. Nunca lanza excepciones."""
+    """Intenta regenerar el presupuesto del año actual (activo o borrador). Nunca lanza excepciones."""
     try:
-        activo = service._presupuesto_repo.obtener_activo(date.today().year)
-        if not activo:
+        anio = date.today().year
+        presupuesto = service._presupuesto_repo.obtener_activo(anio)
+        if not presupuesto:
+            presupuesto = service._presupuesto_repo.obtener_borrador(anio)
+        if not presupuesto:
             return {"presupuesto_regenerado": False}
-        resultado = service.regenerar_en_version_actual(activo.id)
-        logger.info(f"Auto-regeneración exitosa: {resultado.get('lineas_generadas', 0)} líneas")
+        resultado = service.regenerar_en_version_actual(presupuesto.id)
+        logger.info(f"Auto-regeneración exitosa ({presupuesto.estado}): {resultado.get('lineas_generadas', 0)} líneas")
         return {"presupuesto_regenerado": True, "lineas_generadas": resultado.get("lineas_generadas", 0)}
     except Exception as e:
         logger.warning(f"Auto-regeneración falló: {e}")
@@ -60,8 +65,13 @@ def _auto_regenerar(service: PresupuestoService) -> dict:
 
 
 @router.get("")
-def listar_reglas(repo: ReglaPresupuestoRepository = Depends(get_regla_presupuesto_repository)):
+def listar_reglas(
+    direccion: Optional[str] = None,
+    repo: ReglaPresupuestoRepository = Depends(get_regla_presupuesto_repository),
+):
     reglas = repo.obtener_todos()
+    if direccion:
+        reglas = [r for r in reglas if r.direccion == direccion]
     return [_regla_to_dict(r) for r in reglas]
 
 
@@ -81,7 +91,8 @@ def crear_reglas_lote(
                 indicador_nombre=r.indicador_nombre,
                 factor_ajuste=Decimal(str(r.factor_ajuste)),
                 monto_fijo_mensual=Decimal(str(r.monto_fijo_mensual)) if r.monto_fijo_mensual else None,
-                notas=r.notas
+                notas=r.notas,
+                direccion=r.direccion
             )
             for r in dto.reglas
         ]
@@ -114,7 +125,8 @@ def crear_regla(
             indicador_nombre=dto.indicador_nombre,
             factor_ajuste=Decimal(str(dto.factor_ajuste)),
             monto_fijo_mensual=Decimal(str(dto.monto_fijo_mensual)) if dto.monto_fijo_mensual else None,
-            notas=dto.notas
+            notas=dto.notas,
+            direccion=dto.direccion
         )
         guardado = repo.guardar(regla)
         resp = _regla_to_dict(guardado)
@@ -145,6 +157,7 @@ def actualizar_regla(
         existente.factor_ajuste = Decimal(str(dto.factor_ajuste))
         existente.monto_fijo_mensual = Decimal(str(dto.monto_fijo_mensual)) if dto.monto_fijo_mensual else None
         existente.notas = dto.notas
+        existente.direccion = dto.direccion
         guardado = repo.guardar(existente)
         resp = _regla_to_dict(guardado)
         resp.update(_auto_regenerar(service))

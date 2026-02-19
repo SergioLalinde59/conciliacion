@@ -13,6 +13,7 @@ class ReglaPresupuesto:
     concepto_id: Optional[int] = None
     factor_ajuste: Decimal = Decimal('0')
     monto_fijo_mensual: Optional[Decimal] = None
+    direccion: str = 'egreso'
     id: Optional[int] = None
     notas: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -23,7 +24,9 @@ class ReglaPresupuesto:
     def __post_init__(self):
         if not self.tipo_gasto:
             raise ValueError("El tipo de gasto es obligatorio")
-        if self.tipo_gasto != 'No Repetitivo' and not self.indicador_nombre and self.monto_fijo_mensual is None:
+        if self.direccion not in ('ingreso', 'egreso'):
+            raise ValueError(f"Dirección inválida: {self.direccion}")
+        if 'No Repetitivo' not in self.tipo_gasto and not self.indicador_nombre and self.monto_fijo_mensual is None:
             raise ValueError("Debe especificar indicador económico o monto fijo mensual")
         if not isinstance(self.factor_ajuste, Decimal):
             self.factor_ajuste = Decimal(str(self.factor_ajuste))

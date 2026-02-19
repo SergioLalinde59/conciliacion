@@ -11,6 +11,7 @@ import type { ResumenMensualPresupuesto } from '../../../types/Presupuesto'
 interface DashboardCashFlowChartProps {
     data: FlujoCajaMes[]
     presupuestoMensual?: ResumenMensualPresupuesto[]
+    presupuestoMensualIngresos?: ResumenMensualPresupuesto[]
     isLoading?: boolean
     compact?: boolean
 }
@@ -22,24 +23,30 @@ const MONTH_NAMES: Record<string, string> = {
 }
 
 const SERIES_COLORS: Record<string, string> = {
-    Presupuesto: '#94a3b8',
+    'Ppto Egresos': '#94a3b8',
+    'Ppto Ingresos': '#6ee7b7',
     Ingresos: '#93c5fd',
     Egresos: '#1e40af',
     'Flujo Neto': '#6366f1',
+    'Flujo Neto Ppto': '#f59e0b',
 }
 
-const SERIES_ORDER = ['Presupuesto', 'Ingresos', 'Egresos', 'Flujo Neto']
+const SERIES_ORDER = ['Ppto Egresos', 'Ppto Ingresos', 'Ingresos', 'Egresos', 'Flujo Neto', 'Flujo Neto Ppto']
 
-export const DashboardCashFlowChart = ({ data, presupuestoMensual, isLoading, compact = false }: DashboardCashFlowChartProps) => {
+export const DashboardCashFlowChart = ({ data, presupuestoMensual, presupuestoMensualIngresos, isLoading, compact = false }: DashboardCashFlowChartProps) => {
     const formatCurrency = useFormatCurrency()
 
     const chartData = useMemo(() => {
         if (!data?.length) return []
 
-        // Build a map of presupuesto by month number
-        const pptoMap = new Map<number, number>()
+        // Build maps of presupuesto by month number
+        const pptoEgresosMap = new Map<number, number>()
         presupuestoMensual?.forEach(p => {
-            pptoMap.set(p.mes, p.presupuestado)
+            pptoEgresosMap.set(p.mes, p.presupuestado)
+        })
+        const pptoIngresosMap = new Map<number, number>()
+        presupuestoMensualIngresos?.forEach(p => {
+            pptoIngresosMap.set(p.mes, p.presupuestado)
         })
 
         return [...data].sort((a, b) => a.mes.localeCompare(b.mes)).map(item => {
@@ -47,16 +54,23 @@ export const DashboardCashFlowChart = ({ data, presupuestoMensual, isLoading, co
             const monthNum = parseInt(monthPart, 10)
             const shortName = MONTH_NAMES[monthPart] || monthPart
 
+            const pptoEgr = pptoEgresosMap.get(monthNum) ?? null
+            const pptoIng = pptoIngresosMap.get(monthNum) ?? null
+
             return {
                 name: shortName,
                 mes: item.mes,
                 Ingresos: item.ingresos,
                 Egresos: item.egresos,
                 'Flujo Neto': item.saldo,
-                Presupuesto: pptoMap.get(monthNum) ?? null,
+                'Ppto Egresos': pptoEgr,
+                'Ppto Ingresos': pptoIng,
+                'Flujo Neto Ppto': pptoIng !== null && pptoEgr !== null
+                    ? pptoIng - pptoEgr
+                    : null,
             }
         })
-    }, [data, presupuestoMensual])
+    }, [data, presupuestoMensual, presupuestoMensualIngresos])
 
     if (isLoading) {
         return (
@@ -77,9 +91,9 @@ export const DashboardCashFlowChart = ({ data, presupuestoMensual, isLoading, co
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="font-bold text-slate-800 mb-4">Flujo de Caja Mensual</h3>
-            <div className="h-80 w-full">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <h3 className="font-bold text-slate-800 mb-2 text-sm">Flujo de Caja Mensual</h3>
+            <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -140,7 +154,7 @@ export const DashboardCashFlowChart = ({ data, presupuestoMensual, isLoading, co
                         <Legend
                             wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
                             content={({ payload }: any) => {
-                                const order = ['Presupuesto', 'Ingresos', 'Egresos', 'Flujo Neto']
+                                const order = ['Ppto Egresos', 'Ppto Ingresos', 'Ingresos', 'Egresos', 'Flujo Neto']
                                 const sorted = order
                                     .map(name => payload?.find((p: any) => p.value === name))
                                     .filter(Boolean)
@@ -163,8 +177,19 @@ export const DashboardCashFlowChart = ({ data, presupuestoMensual, isLoading, co
                         {presupuestoMensual && presupuestoMensual.length > 0 && (
                             <Line
                                 type="monotone"
-                                dataKey="Presupuesto"
+                                dataKey="Ppto Egresos"
                                 stroke="#94a3b8"
+                                strokeWidth={2}
+                                strokeDasharray="6 3"
+                                dot={false}
+                                connectNulls
+                            />
+                        )}
+                        {presupuestoMensualIngresos && presupuestoMensualIngresos.length > 0 && (
+                            <Line
+                                type="monotone"
+                                dataKey="Ppto Ingresos"
+                                stroke="#6ee7b7"
                                 strokeWidth={2}
                                 strokeDasharray="6 3"
                                 dot={false}
@@ -179,6 +204,18 @@ export const DashboardCashFlowChart = ({ data, presupuestoMensual, isLoading, co
                             dot={{ fill: '#6366f1', r: 4 }}
                             activeDot={{ r: 6 }}
                         />
+                        {presupuestoMensual && presupuestoMensual.length > 0 &&
+                         presupuestoMensualIngresos && presupuestoMensualIngresos.length > 0 && (
+                            <Line
+                                type="monotone"
+                                dataKey="Flujo Neto Ppto"
+                                stroke="#f59e0b"
+                                strokeWidth={2}
+                                strokeDasharray="6 3"
+                                dot={false}
+                                connectNulls
+                            />
+                        )}
                         <Bar dataKey="Ingresos" fill="#93c5fd" radius={[4, 4, 0, 0]} barSize={20} />
                         <Bar dataKey="Egresos" fill="#1e40af" radius={[4, 4, 0, 0]} barSize={20} />
                     </ComposedChart>

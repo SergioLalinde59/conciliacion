@@ -46,21 +46,27 @@ class PresupuestoGeneracionDomainService:
         meses_activos: int,
         tipos_gasto: List[TipoGasto],
         umbral_no_repetitivo: int = DEFAULT_UMBRAL_NO_REPETITIVO,
-        umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL
+        umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL,
+        direccion: str = 'egreso'
     ) -> str:
-        """Auto-clasifica el tipo de gasto usando parejas CC-Concepto de la BD.
+        """Auto-clasifica el tipo de gasto/ingreso usando parejas CC-Concepto de la BD.
 
         Recorre tipos_gasto ordenados por prioridad. Cada tipo tiene parejas
         {concepto, centro_costo} — ambos campos son obligatorios (match AND).
 
-        Fallback por frecuencia:
+        Fallback por frecuencia (solo egresos):
         - ≤ umbral meses → No Repetitivo
         - Default → Variable
+
+        Fallback para ingresos: Ingreso Variable
         """
+        # Filtrar tipos_gasto por dirección
+        tipos_filtrados = [t for t in tipos_gasto if t.direccion == direccion]
+
         concepto = (concepto_nombre or '').lower().strip()
         cc = (cc_nombre or '').lower().strip()
 
-        for tipo in tipos_gasto:
+        for tipo in tipos_filtrados:
             kw_list = tipo.keywords or []
             if not kw_list:
                 continue
@@ -76,7 +82,7 @@ class PresupuestoGeneracionDomainService:
                 if kw_concepto not in concepto or kw_cc not in cc:
                     continue
 
-                # Estacional requiere frecuencia baja
+                # Estacional requiere frecuencia baja (solo aplica a egresos)
                 if tipo.tipo == 'Estacional' and meses_activos > umbral_estacional:
                     continue
 
@@ -84,14 +90,17 @@ class PresupuestoGeneracionDomainService:
 
         # Fallback por frecuencia
         if meses_activos <= umbral_no_repetitivo:
-            return 'No Repetitivo'
+            return 'No Repetitivo - Ingresos' if direccion == 'ingreso' else 'No Repetitivo'
+        if direccion == 'ingreso':
+            return 'Ingreso Variable'
         return 'Variable'
 
     def resolver_regla(
         self,
         cc_id: int,
         concepto_id: Optional[int],
-        reglas: List[ReglaPresupuesto]
+        reglas: List[ReglaPresupuesto],
+        direccion: str = 'egreso'
     ) -> ReglaPresupuesto:
         """Resuelve la regla aplicable según jerarquía:
         1. CC + Concepto exactos
@@ -103,6 +112,10 @@ class PresupuestoGeneracionDomainService:
         mejor_prioridad = -1
 
         for regla in reglas:
+            # Skip rules from different direction
+            if regla.direccion and regla.direccion != direccion:
+                continue
+
             # Match CC+Concepto exacto → prioridad 3
             if regla.centro_costo_id == cc_id and regla.concepto_id == concepto_id:
                 if mejor_prioridad < 3:
@@ -124,7 +137,14 @@ class PresupuestoGeneracionDomainService:
         if mejor:
             return mejor
 
-        # Default sintético
+        # Default sintético según dirección
+        if direccion == 'ingreso':
+            return ReglaPresupuesto(
+                tipo_gasto='Ingreso Variable',
+                indicador_nombre='IPC Colombia',
+                factor_ajuste=Decimal('0'),
+                direccion='ingreso'
+            )
         return ReglaPresupuesto(
             tipo_gasto='Variable',
             indicador_nombre='IPC Colombia',
@@ -137,7 +157,8 @@ class PresupuestoGeneracionDomainService:
         reglas: List[ReglaPresupuesto],
         indicadores: Dict[str, Decimal],
         tipos_excluidos: List[str],
-        umbral: int = DEFAULT_UMBRAL_NO_REPETITIVO
+        umbral: int = DEFAULT_UMBRAL_NO_REPETITIVO,
+        direccion: str = 'egreso'
     ) -> GeneracionResult:
         """Proceso completo de generación inteligente.
 
@@ -147,12 +168,21 @@ class PresupuestoGeneracionDomainService:
             indicadores: Dict {indicador: valor_porcentaje} del año destino
             tipos_excluidos: Lista de códigos de tipo_gasto que se excluyen
             umbral: Meses mínimos para considerar repetitivo
+            direccion: 'egreso' o 'ingreso'
         """
         if not indicadores:
             raise ValueError("No hay indicadores económicos configurados para el año destino")
 
+        # Filtrar reglas por dirección
+        reglas = [r for r in reglas if r.direccion == direccion]
+
         # Paso 1: Detectar no repetitivos por frecuencia
-        repetitivas, no_rep_auto = self.detectar_no_repetitivos(lineas_raw, umbral)
+        # Para ingresos: NO detectar no-repetitivos (todo ingreso cuenta)
+        if direccion == 'ingreso':
+            repetitivas = lineas_raw
+            no_rep_auto = []
+        else:
+            repetitivas, no_rep_auto = self.detectar_no_repetitivos(lineas_raw, umbral)
 
         # Paso 2: Clasificar y aplicar reglas
         regulares = []
@@ -187,7 +217,7 @@ class PresupuestoGeneracionDomainService:
 
         # Procesar repetitivas (posibles candidatas)
         for linea in repetitivas:
-            regla = self.resolver_regla(linea.centro_costo_id, linea.concepto_id, reglas)
+            regla = self.resolver_regla(linea.centro_costo_id, linea.concepto_id, reglas, direccion)
 
             # Si la regla fuerza exclusión
             if regla.tipo_gasto in tipos_excluidos:
@@ -221,7 +251,7 @@ class PresupuestoGeneracionDomainService:
 
         # Procesar no repetitivas auto-detectadas
         for linea in no_rep_auto:
-            regla = self.resolver_regla(linea.centro_costo_id, linea.concepto_id, reglas)
+            regla = self.resolver_regla(linea.centro_costo_id, linea.concepto_id, reglas, direccion)
 
             # Estacional: siempre incluir con distribución histórica, aunque sea no-repetitivo por frecuencia
             if regla.tipo_gasto == 'Estacional' and regla.tipo_gasto not in tipos_excluidos:
@@ -262,6 +292,7 @@ class PresupuestoGeneracionDomainService:
                     monto_presupuestado=regla.monto_fijo_mensual,
                     monto_base=regla.monto_fijo_mensual,
                     tipo=regla.tipo_gasto,
+                    direccion=direccion,
                     centro_costo_nombre=sample.centro_costo_nombre,
                     concepto_nombre=sample.concepto_nombre,
                     tercero_nombre=None,
@@ -289,6 +320,7 @@ class PresupuestoGeneracionDomainService:
                     monto_presupuestado=monto_mensual,
                     monto_base=monto_mensual,
                     tipo='Estacional',
+                    direccion=direccion,
                     centro_costo_nombre=sample.centro_costo_nombre,
                     concepto_nombre=sample.concepto_nombre,
                     tercero_nombre=None,
@@ -298,6 +330,48 @@ class PresupuestoGeneracionDomainService:
                 total_presupuestado += new_line.monto_presupuestado
                 resumen_tipos['Estacional'] = resumen_tipos.get('Estacional', 0) + 1
                 resumen_indicadores['Prorrateo Anual'] = resumen_indicadores.get('Prorrateo Anual', 0) + 1
+
+        # Paso 5: Crear filas para reglas con monto_fijo_mensual sin datos históricos
+        # Estas reglas tienen monto explícito pero no aparecieron en lineas_raw
+        combos_procesados = set()
+        for linea in regulares:
+            combos_procesados.add((linea.centro_costo_id, linea.concepto_id))
+        for key in fijo_monto_conceptos:
+            combos_procesados.add(key)
+        for key in estacional_conceptos:
+            combos_procesados.add(key)
+
+        presupuesto_id_ref = lineas_raw[0].presupuesto_id if lineas_raw else None
+        for regla in reglas:
+            if regla.monto_fijo_mensual is None or regla.id is None:
+                continue
+            if regla.tipo_gasto in tipos_excluidos:
+                continue
+            key = (regla.centro_costo_id, regla.concepto_id)
+            if key in combos_procesados:
+                continue
+            # Regla con monto fijo sin datos históricos → crear 12 líneas
+            for mes in range(1, 13):
+                new_line = PresupuestoDetalle(
+                    presupuesto_id=presupuesto_id_ref,
+                    centro_costo_id=regla.centro_costo_id,
+                    concepto_id=regla.concepto_id,
+                    tercero_id=None,
+                    mes=mes,
+                    monto_presupuestado=regla.monto_fijo_mensual,
+                    monto_base=regla.monto_fijo_mensual,
+                    tipo=regla.tipo_gasto,
+                    direccion=direccion,
+                    centro_costo_nombre=regla.centro_costo_nombre,
+                    concepto_nombre=regla.concepto_nombre,
+                    tercero_nombre=None,
+                )
+                regulares.append(new_line)
+                total_base += new_line.monto_base
+                total_presupuestado += new_line.monto_presupuestado
+                resumen_tipos[regla.tipo_gasto] = resumen_tipos.get(regla.tipo_gasto, 0) + 1
+                resumen_indicadores['Monto Fijo'] = resumen_indicadores.get('Monto Fijo', 0) + 1
+            combos_procesados.add(key)
 
         # Calcular resumen
         pct_aumento = (

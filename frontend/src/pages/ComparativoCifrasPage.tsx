@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { usePresupuestos, usePresupuestoComparacionMensual } from '../hooks/usePresupuesto'
+import { useQuery } from '@tanstack/react-query'
+import { usePresupuestos, usePresupuestoComparacionMensual, PRESUPUESTO_KEYS } from '../hooks/usePresupuesto'
 import { useConfiguracionExclusion } from '../hooks/useReportes'
 import { dashboardService } from '../services/dashboard.service'
+import { presupuestoService } from '../services/presupuesto.service'
 import type { FlujoCajaMes } from '../services/dashboard.service'
 import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
 import { GitCompare, AlertTriangle, CheckCircle, Info } from 'lucide-react'
@@ -62,6 +64,18 @@ export const ComparativoCifrasPage = () => {
 
     const { data: pptoMensual = [], isLoading: loadingPpto } = usePresupuestoComparacionMensual(presupuestoId, mensualParams)
 
+    // ---- FUENTE 3: Reglas de Presupuesto (simularReglas) ----
+    const anioFuente = anio - 1
+    const { data: simulacion, isLoading: loadingReglas } = useQuery({
+        queryKey: PRESUPUESTO_KEYS.simulacion(presupuestoId, 0),
+        queryFn: () => presupuestoService.simularReglas(presupuestoId, {
+            anio_fuente: anioFuente,
+            centros_costos_excluidos: actualExcluidos.length > 0 ? actualExcluidos : undefined,
+        }),
+        staleTime: 5 * 60 * 1000,
+        enabled: !!presupuestoId,
+    })
+
     // ---- MAPEAR Y COMPARAR ----
     const mesesAMostrar = useMemo(() => {
         const meses: number[] = []
@@ -101,7 +115,16 @@ export const ComparativoCifrasPage = () => {
             { presupuestado: 0, ejecutado: 0, variacion: 0 }
         ), [pptoMensual, currentMonth])
 
-    const isLoading = loadingFlujo || loadingPpto
+    // Presupuesto 12M (full year from compararMensual)
+    const ppto12M = useMemo(() => pptoMensual.reduce(
+        (acc, m) => ({
+            presupuestado: acc.presupuestado + m.presupuestado,
+            ejecutado: acc.ejecutado + m.ejecutado,
+        }),
+        { presupuestado: 0, ejecutado: 0 }
+    ), [pptoMensual])
+
+    const isLoading = loadingFlujo || loadingPpto || loadingReglas
 
     const thBase = 'px-4 py-2.5 text-[10px] font-bold uppercase tracking-wide'
     const tdBase = 'px-4 py-2 text-right font-mono text-xs'
@@ -113,6 +136,12 @@ export const ComparativoCifrasPage = () => {
         })
     }, [actualExcluidos, configExclusion])
 
+    // Badge helper
+    const Badge = ({ value, na }: { value?: string; na?: boolean }) => na
+        ? <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold">N/A</span>
+        : <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">{value}</span>
+    const BadgeNo = () => <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold">No</span>
+
     return (
         <div className="flex flex-col h-full bg-slate-50/50 overflow-hidden">
             {/* Header */}
@@ -123,7 +152,7 @@ export const ComparativoCifrasPage = () => {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold text-slate-900">Comparativo de Cifras</h1>
-                        <p className="text-slate-500 text-sm mt-0.5">Cruce entre Dashboard y Presupuesto vs Real para identificar diferencias</p>
+                        <p className="text-slate-500 text-sm mt-0.5">Cruce entre Dashboard, Presupuesto vs Real y Reglas de Presupuesto</p>
                     </div>
                 </div>
                 <select
@@ -142,11 +171,172 @@ export const ComparativoCifrasPage = () => {
             {/* Contenido */}
             <div className="flex-1 min-h-0 p-6 overflow-auto space-y-6">
                 {isLoading ? (
-                    <div className="flex items-center justify-center py-20 text-slate-400">Cargando datos de ambas fuentes...</div>
+                    <div className="flex items-center justify-center py-20 text-slate-400">Cargando datos de las 3 fuentes...</div>
                 ) : (
                     <>
-                        {/* TABLA PRINCIPAL */}
+                        {/* ===== TABLA RESUMEN GLOBAL ===== */}
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="px-5 py-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-slate-200">
+                                <h2 className="text-sm font-bold text-slate-800">Resumen Global &mdash; {anio}</h2>
+                                <p className="text-[10px] text-slate-500 mt-0.5">
+                                    Dashboard y Ppto vs Real: YTD ({MESES[1]}&ndash;{MESES[currentMonth]}) &middot; Reglas: A&ntilde;o completo (12M)
+                                </p>
+                            </div>
+                            <table className="w-full text-xs">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className={`${thBase} text-left text-gray-400 w-40`}>M&eacute;trica</th>
+                                        <th className={`${thBase} text-center text-blue-600 w-48`}>
+                                            Dashboard
+                                            <span className="block text-[8px] font-medium text-blue-400 normal-case">YTD {MESES[1]}&ndash;{MESES[currentMonth]}</span>
+                                        </th>
+                                        <th className={`${thBase} text-center text-indigo-600 w-48`}>
+                                            Ppto vs Real
+                                            <span className="block text-[8px] font-medium text-indigo-400 normal-case">YTD {MESES[1]}&ndash;{MESES[currentMonth]}</span>
+                                        </th>
+                                        <th className={`${thBase} text-center text-amber-600 w-48`}>
+                                            Reglas Ppto
+                                            <span className="block text-[8px] font-medium text-amber-400 normal-case">12M (excl. No Rep.)</span>
+                                        </th>
+                                        <th className={`${thBase} text-center text-slate-400 w-40`}>Observaci&oacute;n</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {/* Presupuesto */}
+                                    <tr className="border-b border-gray-50 hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-bold text-slate-700">Presupuesto</td>
+                                        <td className={`${tdBase} text-center text-blue-700 font-bold`}>
+                                            <CurrencyDisplay value={ytdPpto.presupuestado} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-indigo-700 font-bold`}>
+                                            <CurrencyDisplay value={ytdPpto.presupuestado} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-amber-700 font-bold`}>
+                                            <CurrencyDisplay value={simulacion?.total_actual ?? 0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-slate-400 text-center">
+                                            {Math.abs(ytdPpto.presupuestado - ytdPpto.presupuestado) < 1
+                                                ? <span className="text-emerald-500">Dash = Ppto</span>
+                                                : <span className="text-amber-500">Difiere</span>
+                                            }
+                                            <span className="mx-1">&middot;</span>
+                                            <span className="text-slate-400">Reglas = 12M</span>
+                                        </td>
+                                    </tr>
+                                    {/* Ingresos */}
+                                    <tr className="border-b border-gray-50 hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-bold text-emerald-700">Ingresos</td>
+                                        <td className={`${tdBase} text-center text-emerald-600 font-bold`}>
+                                            <CurrencyDisplay value={ytdDash.ingresos} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>
+                                            <CurrencyDisplay value={0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>
+                                            <CurrencyDisplay value={0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-slate-400 text-center">Solo Dashboard mide ingresos</td>
+                                    </tr>
+                                    {/* Egresos */}
+                                    <tr className="border-b border-gray-50 hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-bold text-rose-700">Egresos</td>
+                                        <td className={`${tdBase} text-center text-rose-600 font-bold`}>
+                                            <CurrencyDisplay value={ytdDash.egresos} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-rose-600 font-bold`}>
+                                            <CurrencyDisplay value={ytdPpto.ejecutado} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>
+                                            <CurrencyDisplay value={0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-center">
+                                            {(() => {
+                                                const diff = ytdDash.egresos - ytdPpto.ejecutado
+                                                return Math.abs(diff) < 100
+                                                    ? <span className="text-emerald-500">Dash = Ppto</span>
+                                                    : <span className="text-amber-500">Dif: <CurrencyDisplay value={diff} colorize={false} decimals={0} showPlusSign /></span>
+                                            })()}
+                                        </td>
+                                    </tr>
+                                    {/* Flujo Neto */}
+                                    <tr className="border-b border-gray-50 hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-bold text-slate-700">Flujo Neto</td>
+                                        <td className={`${tdBase} text-center font-bold`}>
+                                            <CurrencyDisplay value={ytdDash.saldo} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>
+                                            <CurrencyDisplay value={0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>
+                                            <CurrencyDisplay value={0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-slate-400 text-center">Solo Dashboard (ing &minus; egr)</td>
+                                    </tr>
+                                    {/* Variación */}
+                                    <tr className="border-b border-gray-50 hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-bold text-slate-700">Variaci&oacute;n</td>
+                                        <td className={`${tdBase} text-center font-bold`}>
+                                            <CurrencyDisplay value={ytdDash.egresos - ytdPpto.presupuestado} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center font-bold`}>
+                                            <CurrencyDisplay value={ytdPpto.variacion} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center font-bold`}>
+                                            <CurrencyDisplay value={simulacion?.diferencia ?? 0} decimals={0} />
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-slate-400 text-center">Ejec &minus; Ppto (Reglas: Proy &minus; Actual)</td>
+                                    </tr>
+                                    {/* Proyectado (Reglas) */}
+                                    <tr className="border-b border-gray-100 hover:bg-slate-50/50">
+                                        <td className="px-4 py-3 font-bold text-slate-700">Proyectado</td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>
+                                            <CurrencyDisplay value={0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>
+                                            <CurrencyDisplay value={0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className={`${tdBase} text-center text-amber-700 font-bold`}>
+                                            <CurrencyDisplay value={simulacion?.total_proyectado ?? 0} colorize={false} decimals={0} />
+                                        </td>
+                                        <td className="px-4 py-3 text-[10px] text-center">
+                                            {simulacion && (
+                                                <span className={simulacion.diferencia > 0 ? 'text-rose-500' : 'text-emerald-500'}>
+                                                    {simulacion.diferencia > 0 ? '+' : ''}{simulacion.diferencia_pct}% vs actual
+                                                </span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                    {/* Consumo % */}
+                                    <tr className="bg-purple-50/30">
+                                        <td className="px-4 py-3 font-bold text-purple-700">Consumo %</td>
+                                        <td className={`${tdBase} text-center font-black`}>
+                                            {(() => {
+                                                const pct = ytdPpto.presupuestado > 0 ? (ytdDash.egresos / ytdPpto.presupuestado * 100) : 0
+                                                return <span className={pct > 110 ? 'text-rose-600' : pct > 100 ? 'text-amber-600' : 'text-emerald-600'}>
+                                                    {pct.toFixed(1)}%
+                                                </span>
+                                            })()}
+                                        </td>
+                                        <td className={`${tdBase} text-center font-black`}>
+                                            {(() => {
+                                                const pct = ytdPpto.presupuestado > 0 ? (ytdPpto.ejecutado / ytdPpto.presupuestado * 100) : 0
+                                                return <span className={pct > 110 ? 'text-rose-600' : pct > 100 ? 'text-amber-600' : 'text-emerald-600'}>
+                                                    {pct.toFixed(1)}%
+                                                </span>
+                                            })()}
+                                        </td>
+                                        <td className={`${tdBase} text-center text-slate-300`}>0.0%</td>
+                                        <td className="px-4 py-3 text-[10px] text-slate-400 text-center">Egresos YTD / Ppto YTD</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* ===== TABLA DETALLE MENSUAL ===== */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="px-5 py-3 border-b border-slate-100">
+                                <h2 className="text-sm font-bold text-slate-800">Detalle Mensual</h2>
+                            </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-xs">
                                     <thead className="bg-gray-50">
@@ -241,7 +431,7 @@ export const ComparativoCifrasPage = () => {
                                             </td>
                                         </tr>
                                         {/* Variación */}
-                                        <tr className="border-b border-slate-200 hover:bg-slate-50/50">
+                                        <tr className="border-b border-gray-50 hover:bg-slate-50/50">
                                             <td className="px-4 py-2 font-medium text-slate-600">Variaci&oacute;n</td>
                                             <td className="px-4 py-2 text-[10px] text-slate-400">ejec - ppto</td>
                                             {mesesAMostrar.map(m => (
@@ -251,40 +441,6 @@ export const ComparativoCifrasPage = () => {
                                             ))}
                                             <td className={`${tdBase} font-bold bg-purple-50/30`}>
                                                 <CurrencyDisplay value={ytdPpto.variacion} decimals={0} />
-                                            </td>
-                                        </tr>
-
-                                        {/* SECCIÓN EJECUCIÓN MENSUAL */}
-                                        <tr className="bg-teal-50/30">
-                                            <td colSpan={mesesAMostrar.length + 3} className="px-4 py-2 text-[10px] font-black text-teal-700 uppercase tracking-widest">
-                                                Ejecuci&oacute;n Mensual
-                                                <span className="ml-2 text-[9px] font-medium text-teal-500 normal-case">(misma API: compararMensual)</span>
-                                            </td>
-                                        </tr>
-                                        {/* Presupuestado */}
-                                        <tr className="border-b border-gray-50 hover:bg-slate-50/50">
-                                            <td className="px-4 py-2 font-medium text-slate-600">Presupuestado</td>
-                                            <td className="px-4 py-2 text-[10px] text-slate-400">compararMensual</td>
-                                            {mesesAMostrar.map(m => (
-                                                <td key={m} className={`${tdBase} text-blue-600`}>
-                                                    <CurrencyDisplay value={pptoMap[m]?.presupuestado ?? 0} colorize={false} decimals={0} />
-                                                </td>
-                                            ))}
-                                            <td className={`${tdBase} text-blue-700 font-bold bg-purple-50/30`}>
-                                                <CurrencyDisplay value={ytdPpto.presupuestado} colorize={false} decimals={0} />
-                                            </td>
-                                        </tr>
-                                        {/* Ejecutado */}
-                                        <tr className="border-b border-gray-50 hover:bg-slate-50/50">
-                                            <td className="px-4 py-2 font-medium text-slate-600">Ejecutado</td>
-                                            <td className="px-4 py-2 text-[10px] text-slate-400">compararMensual</td>
-                                            {mesesAMostrar.map(m => (
-                                                <td key={m} className={`${tdBase} text-rose-600`}>
-                                                    <CurrencyDisplay value={pptoMap[m]?.ejecutado ?? 0} colorize={false} decimals={0} />
-                                                </td>
-                                            ))}
-                                            <td className={`${tdBase} text-rose-700 font-bold bg-purple-50/30`}>
-                                                <CurrencyDisplay value={ytdPpto.ejecutado} colorize={false} decimals={0} />
                                             </td>
                                         </tr>
                                         {/* Consumo % */}
@@ -346,52 +502,41 @@ export const ComparativoCifrasPage = () => {
                                                 )
                                             })()}
                                         </tr>
-                                        {/* Diff: Dashboard Egresos vs Ejec Mensual */}
-                                        <tr className="border-b border-gray-50 bg-amber-50/20">
-                                            <td className="px-4 py-2 font-bold text-slate-700">Dash Egresos - Ejec. Mensual</td>
-                                            <td className="px-4 py-2 text-[10px] text-amber-600">dash - ejec</td>
-                                            {mesesAMostrar.map(m => {
-                                                const diff = (flujoMap[m]?.egresos ?? 0) - (pptoMap[m]?.ejecutado ?? 0)
-                                                const hasDiff = Math.abs(diff) > 100
-                                                return (
-                                                    <td key={m} className={`${tdBase} ${hasDiff ? 'text-amber-700 font-bold' : 'text-emerald-600'}`}>
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            {hasDiff ? <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" /> : <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />}
-                                                            <CurrencyDisplay value={diff} colorize={false} decimals={0} showPlusSign />
-                                                        </div>
-                                                    </td>
-                                                )
-                                            })}
-                                            {(() => {
-                                                const diff = ytdDash.egresos - ytdPpto.ejecutado
-                                                const hasDiff = Math.abs(diff) > 100
-                                                return (
-                                                    <td className={`${tdBase} font-black bg-purple-50/30 ${hasDiff ? 'text-amber-700' : 'text-emerald-600'}`}>
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            {hasDiff ? <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" /> : <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />}
-                                                            <CurrencyDisplay value={diff} colorize={false} decimals={0} showPlusSign />
-                                                        </div>
-                                                    </td>
-                                                )
-                                            })()}
-                                        </tr>
-                                        {/* Diff: Ppto vs Ejec Mensual (should be 0 - same API) */}
+                                        {/* Diff: Ppto 12M vs Reglas Actual */}
                                         <tr className="border-b border-slate-200 bg-amber-50/20">
-                                            <td className="px-4 py-2 font-bold text-slate-700">Ppto Ejec. - Ejec. Mensual</td>
-                                            <td className="px-4 py-2 text-[10px] text-slate-400">misma API</td>
-                                            {mesesAMostrar.map(m => (
-                                                <td key={m} className={`${tdBase} text-emerald-600`}>
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />
-                                                        <span>$0</span>
-                                                    </div>
-                                                </td>
-                                            ))}
-                                            <td className={`${tdBase} font-black bg-purple-50/30 text-emerald-600`}>
-                                                <div className="flex items-center justify-end gap-1">
-                                                    <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />
-                                                    <span>$0</span>
-                                                </div>
+                                            <td className="px-4 py-2 font-bold text-slate-700">Ppto 12M - Reglas Actual</td>
+                                            <td className="px-4 py-2 text-[10px] text-amber-600">12M vs sim</td>
+                                            <td colSpan={mesesAMostrar.length} className={`${tdBase} text-center`}>
+                                                {(() => {
+                                                    const diff = ppto12M.presupuestado - (simulacion?.total_actual ?? 0)
+                                                    const hasDiff = Math.abs(diff) > 100
+                                                    return (
+                                                        <div className="flex items-center justify-center gap-1">
+                                                            {hasDiff ? <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" /> : <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />}
+                                                            <span className={hasDiff ? 'text-amber-700 font-bold' : 'text-emerald-600'}>
+                                                                <CurrencyDisplay value={diff} colorize={false} decimals={0} showPlusSign />
+                                                            </span>
+                                                            <span className="text-[9px] text-slate-400 ml-1">
+                                                                (Ppto 12M: <CurrencyDisplay value={ppto12M.presupuestado} colorize={false} decimals={0} />
+                                                                {' vs '}Reglas: <CurrencyDisplay value={simulacion?.total_actual ?? 0} colorize={false} decimals={0} />)
+                                                            </span>
+                                                        </div>
+                                                    )
+                                                })()}
+                                            </td>
+                                            <td className={`${tdBase} bg-purple-50/30`}>
+                                                {(() => {
+                                                    const diff = ppto12M.presupuestado - (simulacion?.total_actual ?? 0)
+                                                    const hasDiff = Math.abs(diff) > 100
+                                                    return (
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            {hasDiff ? <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" /> : <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />}
+                                                            <span className={`font-black ${hasDiff ? 'text-amber-700' : 'text-emerald-600'}`}>
+                                                                <CurrencyDisplay value={diff} colorize={false} decimals={0} showPlusSign />
+                                                            </span>
+                                                        </div>
+                                                    )
+                                                })()}
                                             </td>
                                         </tr>
                                     </tbody>
@@ -399,7 +544,7 @@ export const ComparativoCifrasPage = () => {
                             </div>
                         </div>
 
-                        {/* EXPLICACIÓN DE DIFERENCIAS */}
+                        {/* ===== EXPLICACIÓN Y FILTROS ===== */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {/* Card: Por qué difieren */}
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
@@ -423,12 +568,16 @@ export const ComparativoCifrasPage = () => {
                                         <p><strong>Signo del valor:</strong> Dashboard calcula ingresos (Valor &gt; 0) y egresos (Valor &lt; 0) por separado. Presupuesto solo filtra <code>Valor &lt; 0</code>.</p>
                                     </div>
                                     <div className="flex gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
-                                        <p><strong>Las 3 fuentes aplican:</strong> Exclusiones de Centros de Costos (filtros avanzados de reportes).</p>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                                        <p><strong>Per&iacute;odo Reglas:</strong> Reglas muestra el a&ntilde;o completo (12M) y calcula proyecci&oacute;n desde a&ntilde;o fuente ({anioFuente}). No es comparable 1:1 con YTD.</p>
                                     </div>
                                     <div className="flex gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-teal-400 mt-1.5 shrink-0" />
-                                        <p><strong>Ppto vs Real y Ejec. Mensual:</strong> Usan la misma API (<code>compararMensual</code>), mismos filtros. Sus cifras deben coincidir siempre.</p>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                                        <p><strong>No Repetitivos:</strong> Reglas excluye gastos no repetitivos del total. Ppto vs Real los incluye si est&aacute;n en presupuesto_detalle.</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                                        <p><strong>Las 3 fuentes aplican:</strong> Exclusiones de Centros de Costos (filtros avanzados de reportes).</p>
                                     </div>
                                 </div>
                             </div>
@@ -447,45 +596,51 @@ export const ComparativoCifrasPage = () => {
                                             <th className="text-left py-2 text-slate-400 font-bold text-[10px] uppercase">Filtro</th>
                                             <th className="text-center py-2 text-blue-600 font-bold text-[10px] uppercase">Dashboard</th>
                                             <th className="text-center py-2 text-indigo-600 font-bold text-[10px] uppercase">Ppto vs Real</th>
-                                            <th className="text-center py-2 text-teal-600 font-bold text-[10px] uppercase">Ejec. Mensual</th>
+                                            <th className="text-center py-2 text-amber-600 font-bold text-[10px] uppercase">Reglas Ppto</th>
                                         </tr>
                                     </thead>
                                     <tbody className="text-slate-600">
                                         <tr className="border-b border-gray-50">
                                             <td className="py-2">Solo egresos (Valor &lt; 0)</td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold">No</span></td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">S&iacute;</span></td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">S&iacute;</span></td>
+                                            <td className="py-2 text-center"><BadgeNo /></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
                                         </tr>
                                         <tr className="border-b border-gray-50">
                                             <td className="py-2">centro_costo_id NOT NULL</td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-[10px] font-bold">No</span></td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">S&iacute;</span></td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">S&iacute;</span></td>
+                                            <td className="py-2 text-center"><BadgeNo /></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
                                         </tr>
                                         <tr className="border-b border-gray-50">
-                                            <td className="py-2">Tipo de JOIN</td>
-                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">LEFT JOIN</span></td>
-                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">INNER JOIN</span></td>
-                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">INNER JOIN</span></td>
+                                            <td className="py-2">Per&iacute;odo</td>
+                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">YTD</span></td>
+                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">YTD</span></td>
+                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">12M</span></td>
+                                        </tr>
+                                        <tr className="border-b border-gray-50">
+                                            <td className="py-2">Excl. No Repetitivos</td>
+                                            <td className="py-2 text-center"><BadgeNo /></td>
+                                            <td className="py-2 text-center"><BadgeNo /></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
                                         </tr>
                                         <tr className="border-b border-gray-50">
                                             <td className="py-2">Exclusiones CC</td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">S&iacute;</span></td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">S&iacute;</span></td>
-                                            <td className="py-2 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">S&iacute;</span></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
+                                            <td className="py-2 text-center"><Badge value="S&iacute;" /></td>
                                         </tr>
                                         <tr className="border-b border-gray-50">
-                                            <td className="py-2">Fuente de monto</td>
+                                            <td className="py-2">Fuente datos</td>
                                             <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">md.Valor</span></td>
                                             <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">md.Valor</span></td>
-                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">md.Valor</span></td>
+                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">ppto_detalle</span></td>
                                         </tr>
                                         <tr>
                                             <td className="py-2">API endpoint</td>
                                             <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">flujoMensual</span></td>
                                             <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">compararMensual</span></td>
-                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">compararMensual</span></td>
+                                            <td className="py-2 text-center"><span className="text-[10px] font-mono text-slate-500">simularReglas</span></td>
                                         </tr>
                                     </tbody>
                                 </table>

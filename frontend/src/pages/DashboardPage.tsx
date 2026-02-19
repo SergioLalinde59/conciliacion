@@ -8,6 +8,7 @@ import { dashboardService } from '../services/dashboard.service'
 import { presupuestoService } from '../services/presupuesto.service'
 import { apiService } from '../services/api'
 import { getAnioYTD } from '../utils/dateUtils'
+import { useSettings } from '../context/SettingsContext'
 import type { FlujoCajaMes, ClasificacionItem } from '../services/dashboard.service'
 import type { ComparacionPresupuesto, ResumenMensualPresupuesto, PresupuestoWidget } from '../types/Presupuesto'
 
@@ -24,8 +25,12 @@ export const DashboardPage = () => {
     const [flujoMensual, setFlujoMensual] = useState<FlujoCajaMes[]>([])
     const [topEgresos, setTopEgresos] = useState<ClasificacionItem[]>([])
     const [pptoVsReal, setPptoVsReal] = useState<ComparacionPresupuesto[]>([])
+    const [pptoVsRealIngresos, setPptoVsRealIngresos] = useState<ComparacionPresupuesto[]>([])
     const [pptoMensual, setPptoMensual] = useState<ResumenMensualPresupuesto[]>([])
-    const [cifrasCompactas, setCifrasCompactas] = useState(false)
+    const [pptoMensualIngresos, setPptoMensualIngresos] = useState<ResumenMensualPresupuesto[]>([])
+    const [flujoAnterior, setFlujoAnterior] = useState<FlujoCajaMes[]>([])
+    const [anioPresupuesto, setAnioPresupuesto] = useState<number>(new Date().getFullYear())
+    const { cifrasEnMillones } = useSettings()
     // ---- LOADING ----
     const [loadingFlujo, setLoadingFlujo] = useState(true)
     const [loadingTop, setLoadingTop] = useState(true)
@@ -75,6 +80,35 @@ export const DashboardPage = () => {
             .reduce((sum, m) => sum + m.presupuestado, 0)
     }, [pptoMensual, mesInicio, mesFin])
 
+    const presupuestoIngresosPeriodo = useMemo(() => {
+        if (!pptoMensualIngresos.length) return 0
+        return pptoMensualIngresos
+            .filter(m => m.mes >= mesInicio && m.mes <= mesFin)
+            .reduce((sum, m) => sum + m.presupuestado, 0)
+    }, [pptoMensualIngresos, mesInicio, mesFin])
+
+    // ---- Gastos sin presupuestar acumulados ----
+    const gastosSinPpto = useMemo(() => {
+        if (!pptoVsReal.length) return 0
+        return pptoVsReal.reduce((sum, d) => sum + (d.ejecutado_sin_ppto ?? 0), 0)
+    }, [pptoVsReal])
+
+    // ---- Fechas año anterior (shift -1 year) ----
+    const desdeAnterior = useMemo(() => `${parseInt(desde.substring(0, 4), 10) - 1}${desde.substring(4)}`, [desde])
+    const hastaAnterior = useMemo(() => `${parseInt(hasta.substring(0, 4), 10) - 1}${hasta.substring(4)}`, [hasta])
+
+    // ---- Totales año anterior ----
+    const totalesAnterior = useMemo(() => {
+        return flujoAnterior.reduce(
+            (acc, m) => ({
+                ingresos: acc.ingresos + m.ingresos,
+                egresos: acc.egresos + m.egresos,
+                saldo: acc.saldo + m.saldo,
+            }),
+            { ingresos: 0, egresos: 0, saldo: 0 }
+        )
+    }, [flujoAnterior])
+
     // ---- CARGA DE DATOS (espera exclusiones + depende de fechas) ----
     const cargarFlujo = useCallback(() => {
         if (!exclusionesListas) return
@@ -94,45 +128,65 @@ export const DashboardPage = () => {
             .finally(() => setLoadingTop(false))
     }, [desde, hasta, centrosExcluidos, exclusionesListas])
 
-    const cargarPresupuesto = useCallback(() => {
+    const cargarFlujoAnterior = useCallback(() => {
+        if (!exclusionesListas) return
+        dashboardService.flujoMensual(desdeAnterior, hastaAnterior, centrosExcluidos)
+            .then(setFlujoAnterior)
+            .catch(err => console.error('Error flujo anterior:', err))
+    }, [desdeAnterior, hastaAnterior, centrosExcluidos, exclusionesListas])
+
+    const cargarPresupuesto = useCallback(async () => {
         if (!exclusionesListas) return
         const excluidos = centrosExcluidos.length ? centrosExcluidos : undefined
-        presupuestoService.widget({ centros_costos_excluidos: excluidos })
-            .then((widget: PresupuestoWidget) => {
-                setCifrasCompactas(widget?.cifras_en_millones ?? false)
-                if (widget?.tiene_presupuesto && widget.presupuesto_id) {
-                    setLoadingPpto(true)
-                    Promise.all([
-                        presupuestoService.comparar(widget.presupuesto_id, {
-                            nivel: 'centro_costo',
-                            mes_inicio: mesInicio,
-                            mes_fin: mesFin,
-                            centros_costos_excluidos: excluidos,
-                        }),
-                        presupuestoService.compararMensual(widget.presupuesto_id, {
-                            centros_costos_excluidos: excluidos,
-                        }),
-                    ])
-                        .then(([comparacion, mensual]) => {
-                            setPptoVsReal(comparacion)
-                            setPptoMensual(mensual)
-                        })
-                        .catch(err => console.error('Error presupuesto:', err))
-                        .finally(() => setLoadingPpto(false))
-                } else {
-                    setPptoVsReal([])
-                    setPptoMensual([])
-                    setLoadingPpto(false)
-                }
-            })
-            .catch(err => {
-                console.error('Error widget presupuesto:', err)
+        try {
+            const widget: PresupuestoWidget = await presupuestoService.widget({ centros_costos_excluidos: excluidos })
+            if (widget?.tiene_presupuesto && widget.presupuesto_id) {
+                setLoadingPpto(true)
+                const [comparacion, comparacionIngresos, mensual, mensualIngresos, pptoActual] = await Promise.all([
+                    presupuestoService.comparar(widget.presupuesto_id, {
+                        nivel: 'centro_costo',
+                        mes_inicio: mesInicio,
+                        mes_fin: mesFin,
+                        centros_costos_excluidos: excluidos,
+                    }),
+                    presupuestoService.comparar(widget.presupuesto_id, {
+                        nivel: 'centro_costo',
+                        mes_inicio: mesInicio,
+                        mes_fin: mesFin,
+                        centros_costos_excluidos: excluidos,
+                        direccion: 'ingreso',
+                    }),
+                    presupuestoService.compararMensual(widget.presupuesto_id, {
+                        centros_costos_excluidos: excluidos,
+                    }),
+                    presupuestoService.compararMensual(widget.presupuesto_id, {
+                        centros_costos_excluidos: excluidos,
+                        direccion: 'ingreso',
+                    }),
+                    presupuestoService.obtener(widget.presupuesto_id),
+                ])
+                setPptoVsReal(comparacion)
+                setPptoVsRealIngresos(comparacionIngresos)
+                setPptoMensual(mensual)
+                setPptoMensualIngresos(mensualIngresos)
+                setAnioPresupuesto(pptoActual.anio)
                 setLoadingPpto(false)
-            })
-    }, [desde, hasta, centrosExcluidos, exclusionesListas, mesInicio, mesFin])
+            } else {
+                setPptoVsReal([])
+                setPptoVsRealIngresos([])
+                setPptoMensual([])
+                setPptoMensualIngresos([])
+                setLoadingPpto(false)
+            }
+        } catch (err) {
+            console.error('Error presupuesto:', err)
+            setLoadingPpto(false)
+        }
+    }, [centrosExcluidos, exclusionesListas, mesInicio, mesFin])
 
     // ---- EFECTOS: recargar al cambiar fechas o exclusiones ----
     useEffect(() => { cargarFlujo() }, [cargarFlujo])
+    useEffect(() => { cargarFlujoAnterior() }, [cargarFlujoAnterior])
     useEffect(() => { cargarTopEgresos() }, [cargarTopEgresos])
     useEffect(() => { cargarPresupuesto() }, [cargarPresupuesto])
 
@@ -140,27 +194,33 @@ export const DashboardPage = () => {
         <div className="max-w-7xl mx-auto space-y-6">
             {/* HERO: KPIs + Date Pills */}
             <DashboardHero
+                realAnterior={totalesAnterior}
+                anioAnterior={parseInt(desde.substring(0, 4), 10) - 1}
                 presupuesto={presupuestoPeriodo}
+                presupuestoIngresos={presupuestoIngresosPeriodo}
+                anioCurrent={anioPresupuesto}
                 ingresos={totales.ingresos}
                 egresos={totales.egresos}
                 flujoNeto={totales.saldo}
+                gastosSinPpto={gastosSinPpto}
                 desde={desde}
                 hasta={hasta}
                 onDesdeChange={setDesde}
                 onHastaChange={setHasta}
                 loading={loadingFlujo}
-                compact={cifrasCompactas}
+                compact={cifrasEnMillones}
             />
 
             {/* PRESUPUESTO: 3 Meses Móvil */}
-            <DashboardBudget3Months centrosExcluidos={centrosExcluidos} compact={cifrasCompactas} />
+            <DashboardBudget3Months centrosExcluidos={centrosExcluidos} compact={cifrasEnMillones} />
 
             {/* FLUJO DE CAJA MENSUAL: Full width chart */}
             <DashboardCashFlowChart
                 data={flujoMensual}
                 presupuestoMensual={pptoMensual}
+                presupuestoMensualIngresos={pptoMensualIngresos}
                 isLoading={loadingFlujo}
-                compact={cifrasCompactas}
+                compact={cifrasEnMillones}
             />
 
             {/* BOTTOM GRID: Top Egresos + Ppto vs Real */}
@@ -168,10 +228,15 @@ export const DashboardPage = () => {
                 <DashboardTopExpenses
                     data={topEgresos}
                     isLoading={loadingTop}
-                    compact={cifrasCompactas}
+                    compact={cifrasEnMillones}
                 />
                 <DashboardBudgetVsReal
-                    data={pptoVsReal}
+                    dataEgresos={pptoVsReal}
+                    dataIngresos={pptoVsRealIngresos}
+                    presupuestoEgresos={presupuestoPeriodo}
+                    presupuestoIngresos={presupuestoIngresosPeriodo}
+                    egresosReales={totales.egresos}
+                    ingresosReales={totales.ingresos}
                     isLoading={loadingPpto}
                 />
             </div>

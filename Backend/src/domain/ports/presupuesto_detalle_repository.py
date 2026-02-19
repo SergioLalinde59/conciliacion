@@ -31,10 +31,12 @@ class PresupuestoDetalleRepository(ABC):
         concepto_id: Optional[int] = None,
         tercero_id: Optional[int] = None,
         mes: Optional[int] = None,
-        version: Optional[int] = None
+        version: Optional[int] = None,
+        direccion: Optional[str] = None
     ) -> List[PresupuestoDetalle]:
         """Lista líneas de un presupuesto con filtros opcionales.
-        Si version=None, usa la versión actual del presupuesto."""
+        Si version=None, usa la versión actual del presupuesto.
+        Si direccion=None, retorna ambas direcciones."""
         pass
 
     @abstractmethod
@@ -113,6 +115,11 @@ class PresupuestoDetalleRepository(ABC):
                         lineas_generadas: int, total_presupuestado,
                         anio_fuente: int, notas: str = None) -> None:
         """Registra metadatos de una versión generada"""
+        pass
+
+    @abstractmethod
+    def contar_reglas_sin_detalle(self, presupuesto_id: int, version: int) -> dict:
+        """Cuenta reglas cuya combinación CC+Concepto no tiene filas en presupuesto_detalle"""
         pass
 
     @abstractmethod

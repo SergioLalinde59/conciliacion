@@ -23,6 +23,7 @@ export const TerceroDescripcionesPage = () => {
     const [searchTerm, setSearchTerm] = useState('')
     const [referenciaFilter, setReferenciaFilter] = useState('')
     const [descripcionFilter, setDescripcionFilter] = useState('')
+    const [filtroTerceroId, setFiltroTerceroId] = useState<number | ''>('')
 
     // Modal State
     const [modalOpen, setModalOpen] = useState(false)
@@ -83,7 +84,7 @@ export const TerceroDescripcionesPage = () => {
         setItemEditando(null)
         setFormDescripcion('')
         setFormReferencia('')
-        setFormTerceroId('')
+        setFormTerceroId(filtroTerceroId)
         setModalOpen(true)
     }
 
@@ -149,7 +150,9 @@ export const TerceroDescripcionesPage = () => {
         const matchesDescripcion = !descripcionFilter ||
             (item.descripcion && item.descripcion.toLowerCase().includes(descripcionFilter.toLowerCase()))
 
-        return matchesSearch && matchesReferencia && matchesDescripcion
+        const matchesTercero = !filtroTerceroId || item.terceroid === filtroTerceroId
+
+        return matchesSearch && matchesReferencia && matchesDescripcion && matchesTercero
     })
 
     const columns: Column<TerceroDescripcionDTO>[] = [
@@ -206,6 +209,14 @@ export const TerceroDescripcionesPage = () => {
 
             {/* Filtros de búsqueda */}
             <div className="mb-4 flex flex-col md:flex-row gap-4">
+                <div className="flex-1">
+                    <EntitySelector
+                        options={terceros}
+                        value={filtroTerceroId.toString()}
+                        onChange={(val) => setFiltroTerceroId(val ? parseInt(val) : '')}
+                        placeholder="Filtrar por tercero..."
+                    />
+                </div>
                 <div className="flex-1">
                     <input
                         type="text"
@@ -280,7 +291,7 @@ export const TerceroDescripcionesPage = () => {
                     )}
                 </div>
             </div>
-            {(searchTerm || referenciaFilter || descripcionFilter) && (
+            {(searchTerm || referenciaFilter || descripcionFilter || filtroTerceroId) && (
                 <p className="text-sm text-gray-600 mb-4">
                     Mostrando {filteredData.length} de {descripciones.length} alias
                 </p>

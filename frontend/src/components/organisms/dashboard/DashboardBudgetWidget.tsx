@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { SemaforoBadge } from '../../atoms/SemaforoBadge'
 import { CurrencyDisplay } from '../../atoms/CurrencyDisplay'
 import { Target, Calendar, ArrowRight } from 'lucide-react'
+import { useSettings } from '../../../context/SettingsContext'
 import type { PresupuestoWidgetMes } from '../../../types/Presupuesto'
 
 interface DashboardBudgetWidgetProps {
@@ -18,7 +19,7 @@ const barColors = {
     rojo: { bar: 'bg-rose-500', bg: 'bg-rose-100' },
 }
 
-const MiniMesBar = ({ mes }: { mes: PresupuestoWidgetMes }) => {
+const MiniMesBar = ({ mes, compact }: { mes: PresupuestoWidgetMes; compact?: boolean }) => {
     const colors = barColors[mes.semaforo] || barColors.verde
     return (
         <div className="flex-1 min-w-0">
@@ -34,10 +35,10 @@ const MiniMesBar = ({ mes }: { mes: PresupuestoWidgetMes }) => {
             </div>
             <div className="flex justify-between mt-0.5">
                 <span className="text-[9px] text-gray-400 font-mono">
-                    <CurrencyDisplay value={mes.ejecutado} colorize={false} decimals={0} />
+                    <CurrencyDisplay value={mes.ejecutado} colorize={false} decimals={0} compact={compact} />
                 </span>
                 <span className="text-[9px] text-gray-400 font-mono">
-                    <CurrencyDisplay value={mes.presupuestado} colorize={false} decimals={0} />
+                    <CurrencyDisplay value={mes.presupuestado} colorize={false} decimals={0} compact={compact} />
                 </span>
             </div>
         </div>
@@ -45,6 +46,7 @@ const MiniMesBar = ({ mes }: { mes: PresupuestoWidgetMes }) => {
 }
 
 export const DashboardBudgetWidget = ({ centrosCostosExcluidos, centroCostoId, conceptoId, terceroId }: DashboardBudgetWidgetProps) => {
+    const { cifrasEnMillones } = useSettings()
     const { data: widget, isLoading } = usePresupuestoWidget({
         centros_costos_excluidos: centrosCostosExcluidos?.length ? centrosCostosExcluidos : undefined,
         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
@@ -114,13 +116,13 @@ export const DashboardBudgetWidget = ({ centrosCostosExcluidos, centroCostoId, c
                 <div>
                     <span className="text-gray-400">Ejecutado: </span>
                     <span className="font-mono font-bold text-slate-700">
-                        <CurrencyDisplay value={widget.ejecutado_mes_actual} colorize={false} decimals={0} />
+                        <CurrencyDisplay value={widget.ejecutado_mes_actual} colorize={false} decimals={0} compact={cifrasEnMillones} />
                     </span>
                 </div>
                 <div>
                     <span className="text-gray-400">Presup.: </span>
                     <span className="font-mono font-bold text-slate-700">
-                        <CurrencyDisplay value={widget.presupuesto_mes_actual} colorize={false} decimals={0} />
+                        <CurrencyDisplay value={widget.presupuesto_mes_actual} colorize={false} decimals={0} compact={cifrasEnMillones} />
                     </span>
                 </div>
             </div>
@@ -136,7 +138,7 @@ export const DashboardBudgetWidget = ({ centrosCostosExcluidos, centroCostoId, c
                 <div className="mt-3 pt-3 border-t border-gray-100">
                     <div className="flex gap-4">
                         {mesesAnteriores.map(m => (
-                            <MiniMesBar key={m.mes} mes={m} />
+                            <MiniMesBar key={m.mes} mes={m} compact={cifrasEnMillones} />
                         ))}
                     </div>
                 </div>

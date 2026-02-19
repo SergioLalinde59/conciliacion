@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { API_BASE_URL, handleResponse } from '../../../services/httpClient'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
-import { formatCompact } from '../../../utils/formatters'
+import { useBudgetFormat } from '../../atoms/CurrencyDisplay'
 
 interface Props {
     isOpen: boolean
@@ -170,8 +170,8 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
         return (
             <>
                 <Button variant="secondary" onClick={handleClose}>Cerrar</Button>
-                <Button onClick={() => { handleClose(); navigate(`/presupuestos/${presupuesto.id}/detalle`) }}>
-                    Ver Detalle <ArrowRight size={16} className="ml-1" />
+                <Button onClick={() => { handleClose(); navigate('/reportes/presupuesto-vs-real') }}>
+                    Ver Análisis <ArrowRight size={16} className="ml-1" />
                 </Button>
             </>
         )
@@ -247,6 +247,7 @@ function Step1Config({ presupuesto, anioFuente, setAnioFuente, umbral, setUmbral
     indicadoresMap: Record<string, { nombre: string; valor: number }>
     tiposGasto: TipoGasto[]
 }) {
+    const fmt = useBudgetFormat()
     const tieneIndicadores = Object.keys(indicadoresMap).length > 0
 
     // Indicadores salariales: todos los que NO son IPC ni null
@@ -322,12 +323,12 @@ function Step1Config({ presupuesto, anioFuente, setAnioFuente, umbral, setUmbral
                             <div className="mt-0.5 space-y-px">
                                 {presupuesto.umbral_minimo_mensual > 0 && (
                                     <div className="text-[11px] font-semibold text-slate-600 leading-tight">
-                                        {formatCompact(presupuesto.umbral_minimo_mensual)}/mes
+                                        {fmt(presupuesto.umbral_minimo_mensual)}/mes
                                     </div>
                                 )}
                                 {presupuesto.umbral_minimo_anual > 0 && (
                                     <div className="text-[11px] font-semibold text-slate-600 leading-tight">
-                                        {formatCompact(presupuesto.umbral_minimo_anual)}/año
+                                        {fmt(presupuesto.umbral_minimo_anual)}/año
                                     </div>
                                 )}
                             </div>
@@ -423,6 +424,7 @@ function Step2Preview({ preview, presupuesto, umbralPareto }: {
     umbralPareto: number
 }) {
     const { resumen, no_repetitivos } = preview
+    const fmt = useBudgetFormat()
 
     const tieneMaterialidad = presupuesto.umbral_minimo_mensual > 0 || presupuesto.umbral_minimo_anual > 0
 
@@ -493,9 +495,9 @@ function Step2Preview({ preview, presupuesto, umbralPareto }: {
                         <>
                             <span className="text-slate-300">|</span>
                             <span>
-                                Materialidad: {presupuesto.umbral_minimo_mensual > 0 && `≥${formatCompact(presupuesto.umbral_minimo_mensual)}/mes`}
+                                Materialidad: {presupuesto.umbral_minimo_mensual > 0 && `≥${fmt(presupuesto.umbral_minimo_mensual)}/mes`}
                                 {presupuesto.umbral_minimo_mensual > 0 && presupuesto.umbral_minimo_anual > 0 && ' • '}
-                                {presupuesto.umbral_minimo_anual > 0 && `≥${formatCompact(presupuesto.umbral_minimo_anual)}/año`}
+                                {presupuesto.umbral_minimo_anual > 0 && `≥${fmt(presupuesto.umbral_minimo_anual)}/año`}
                             </span>
                         </>
                     )}
@@ -510,7 +512,7 @@ function Step2Preview({ preview, presupuesto, umbralPareto }: {
                 return (
                     <div>
                         <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                            Top Centros de Costo ({top.length} de {ccWithPareto.length}) <span className="normal-case font-normal text-slate-400">&ge; {formatCompact(umbralPareto)}/año</span>
+                            Top Centros de Costo ({top.length} de {ccWithPareto.length}) <span className="normal-case font-normal text-slate-400">&ge; {fmt(umbralPareto)}/año</span>
                         </h4>
                         <div className="space-y-1">
                             {top.map(cc => (
@@ -527,7 +529,7 @@ function Step2Preview({ preview, presupuesto, umbralPareto }: {
                                         />
                                     </div>
                                     <span className="w-16 text-right font-mono text-slate-600 shrink-0">
-                                        {formatCompact(cc.monto_presupuestado)}
+                                        {fmt(cc.monto_presupuestado)}
                                     </span>
                                     <span className="w-8 text-right font-mono text-slate-400 shrink-0">
                                         {cc.pct.toFixed(0)}%
@@ -544,7 +546,7 @@ function Step2Preview({ preview, presupuesto, umbralPareto }: {
                                     </span>
                                     <div className="flex-1" />
                                     <span className="w-16 text-right font-mono shrink-0">
-                                        {formatCompact(restTotal)}
+                                        {fmt(restTotal)}
                                     </span>
                                     <span className="w-8 text-right font-mono shrink-0">
                                         {(100 - (top[top.length - 1]?.cumPct || 0)).toFixed(0)}%

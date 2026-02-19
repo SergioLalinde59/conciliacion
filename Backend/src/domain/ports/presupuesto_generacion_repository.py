@@ -10,10 +10,12 @@ class PresupuestoGeneracionRepository(ABC):
     def generar_base_desde_anio(
         self,
         anio_fuente: int,
-        centros_costos_excluidos: Optional[List[int]] = None
+        centros_costos_excluidos: Optional[List[int]] = None,
+        direccion: str = 'egreso'
     ) -> List[PresupuestoDetalle]:
         """
-        Genera líneas de presupuesto base a partir de los egresos reales de un año.
+        Genera líneas de presupuesto base a partir de los movimientos reales de un año.
+        direccion='egreso' filtra Valor < 0, direccion='ingreso' filtra Valor > 0.
         Agrupa por centro_costo + concepto + tercero + mes.
         Retorna lista de PresupuestoDetalle SIN presupuesto_id asignado.
         """
@@ -23,7 +25,8 @@ class PresupuestoGeneracionRepository(ABC):
     def obtener_combinaciones_gasto(
         self,
         anio_fuente: int,
-        centros_costos_excluidos: Optional[List[int]] = None
+        centros_costos_excluidos: Optional[List[int]] = None,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Combinaciones únicas (CC, Concepto) con meses_activos y monto_total."""
         pass
@@ -33,7 +36,8 @@ class PresupuestoGeneracionRepository(ABC):
         self,
         anio_fuente: int,
         centro_costo_id: int,
-        concepto_id: Optional[int] = None
+        concepto_id: Optional[int] = None,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Desglose mensual de un CC/Concepto específico.
         Returns: [{ mes: int, monto: float }]"""

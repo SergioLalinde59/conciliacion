@@ -34,8 +34,7 @@ import { ReconciliationResetPage } from './pages/ReconciliationResetPage'
 import { ReclasificarMovimientosPage } from './pages/mantenimiento/ReclasificarMovimientosPage'
 import { ExportarEstructuraPage } from './pages/mantenimiento/ExportarEstructuraPage'
 import { ResetDemoPage } from './pages/ResetDemoPage'
-import { PresupuestosPage } from './pages/PresupuestosPage'
-import { PresupuestoDetallePage } from './pages/PresupuestoDetallePage'
+import { Navigate } from 'react-router-dom'
 import { PresupuestoVsRealPage } from './pages/PresupuestoVsRealPage'
 import { PresupuestoConfigPage } from './pages/PresupuestoConfigPage'
 import { TiposGastoPage } from './pages/TiposGastoPage'
@@ -86,8 +85,8 @@ function App() {
                     <Route path="/herramientas/mantenimiento/reset-periodo" element={<ReconciliationResetPage />} />
                     <Route path="/herramientas/mantenimiento/reclasificar-movimientos" element={<ReclasificarMovimientosPage />} />
                     <Route path="/admin/reset-demo" element={<ResetDemoPage />} />
-                    <Route path="/presupuestos" element={<PresupuestosPage />} />
-                    <Route path="/presupuestos/:id/detalle" element={<PresupuestoDetallePage />} />
+                    <Route path="/presupuestos" element={<Navigate to="/presupuestos/reglas" replace />} />
+                    <Route path="/presupuestos/:id/detalle" element={<Navigate to="/reportes/presupuesto-vs-real" replace />} />
                     <Route path="/presupuestos/:id/comparar-versiones" element={<ComparacionVersionesPage />} />
                     <Route path="/presupuestos/tipos-gasto" element={<TiposGastoPage />} />
                     <Route path="/presupuestos/indicadores" element={<IndicadoresEconomicosPage />} />

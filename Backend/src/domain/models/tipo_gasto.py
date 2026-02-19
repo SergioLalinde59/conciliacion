@@ -10,6 +10,7 @@ class TipoGasto:
     descripcion: Optional[str] = None
     indicador_default: Optional[str] = None
     excluir_presupuesto: bool = False
+    direccion: str = 'egreso'
     activo: bool = True
     keywords: List[Dict[str, Any]] = field(default_factory=list)
     prioridad: int = 99

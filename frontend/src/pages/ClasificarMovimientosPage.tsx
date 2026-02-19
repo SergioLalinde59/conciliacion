@@ -43,6 +43,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
     const [showBatchModal, setShowBatchModal] = useState(false)
     const [batchPreview, setBatchPreview] = useState<Movimiento[]>([])
     const [batchPatron, setBatchPatron] = useState('')
+    const [batchReferencia, setBatchReferencia] = useState<string | undefined>(undefined)
     const [loadingBatch, setLoadingBatch] = useState(false)
     const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set())
     const [similaresPendientes, setSimilaresPendientes] = useState<number>(0)
@@ -112,8 +113,9 @@ export const ClasificarMovimientosPage: React.FC = () => {
                 if (data.sugerencia.razon) {
                     const palabras = movimientoActual.descripcion.split(' ')
                     const patronDefault = palabras.slice(0, 2).join(' ')
+                    const ref = movimientoActual.referencia || undefined
                     try {
-                        const preview = await apiService.clasificacion.previewLote(patronDefault) as Movimiento[]
+                        const preview = await apiService.clasificacion.previewLote(patronDefault, ref) as Movimiento[]
                         setSimilaresPendientes(preview.length)
                     } catch {
                         setSimilaresPendientes(0)
@@ -233,17 +235,19 @@ export const ClasificarMovimientosPage: React.FC = () => {
         const palabras = movimientoActual.descripcion.split(' ')
         // Default pattern: First 2 words, but user can edit now
         const patronDefault = palabras.slice(0, 2).join(' ')
+        const ref = movimientoActual.referencia || undefined
 
         setBatchPatron(patronDefault)
+        setBatchReferencia(ref)
         setBatchSelectedIds(new Set())
-        await obtenerPreviewLote(patronDefault)
+        await obtenerPreviewLote(patronDefault, ref)
         setShowBatchModal(true)
     }
 
-    const obtenerPreviewLote = async (patron: string) => {
+    const obtenerPreviewLote = async (patron: string, ref?: string) => {
         setLoadingBatch(true)
         try {
-            const preview = await apiService.clasificacion.previewLote(patron) as Movimiento[]
+            const preview = await apiService.clasificacion.previewLote(patron, ref) as Movimiento[]
             setBatchPreview(preview)
             // Select all by default
             setBatchSelectedIds(new Set(preview.map(m => m.id)))
@@ -257,7 +261,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
     const handleRefreshPreview = () => {
         if (!batchPatron.trim()) return
-        obtenerPreviewLote(batchPatron)
+        obtenerPreviewLote(batchPatron, batchReferencia)
     }
 
     const confirmarLote = async () => {
@@ -460,13 +464,40 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Sugerencia Bar */}
-                            {sugerenciaData?.sugerencia.razon && (
-                                <div className="bg-green-50 px-4 py-2 rounded border border-green-200 text-green-800 text-sm flex items-center gap-2 mb-3">
-                                    <Search className="h-4 w-4" />
-                                    <strong>Sugerencia:</strong> {sugerenciaData.sugerencia.razon}
-                                </div>
-                            )}
+                            {/* Sugerencia Bar — color según nivel de confianza */}
+                            {sugerenciaData?.sugerencia.razon && (() => {
+                                const confianza = sugerenciaData.confianza
+                                const colorMap: Record<string, string> = {
+                                    alta: 'bg-green-50 border-green-200 text-green-800',
+                                    media: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+                                    baja: 'bg-gray-50 border-gray-200 text-gray-600',
+                                }
+                                const badgeMap: Record<string, string> = {
+                                    alta: 'bg-green-200 text-green-900',
+                                    media: 'bg-yellow-200 text-yellow-900',
+                                    baja: 'bg-gray-200 text-gray-700',
+                                }
+                                const labelMap: Record<string, string> = {
+                                    alta: 'Alta confianza',
+                                    media: 'Confianza media',
+                                    baja: 'Baja confianza',
+                                }
+                                const colors = colorMap[confianza || ''] || colorMap.media
+                                const badge = badgeMap[confianza || ''] || badgeMap.media
+                                const label = labelMap[confianza || ''] || ''
+
+                                return (
+                                    <div className={`${colors} px-4 py-2 rounded border text-sm flex items-center gap-2 mb-3`}>
+                                        <Search className="h-4 w-4" />
+                                        <strong>Sugerencia:</strong> {sugerenciaData.sugerencia.razon}
+                                        {label && (
+                                            <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full ${badge}`}>
+                                                {label}
+                                            </span>
+                                        )}
+                                    </div>
+                                )
+                            })()}
 
                             {/* Alert: Referencia nueva — con o sin tercero sugerido */}
                             {sugerenciaData?.referencia_no_existe && (() => {
@@ -905,28 +936,43 @@ export const ClasificarMovimientosPage: React.FC = () => {
                         {/* Content */}
                         <div className="p-6 overflow-auto flex-1">
                             <div className="mb-4 bg-gray-50 rounded-lg p-4">
-                                <label className="block text-sm text-gray-700 mb-1">Patrón de búsqueda:</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={batchPatron}
-                                        onChange={(e) => setBatchPatron(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleRefreshPreview()}
-                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                                        placeholder="Escriba patrón para buscar..."
-                                    />
-                                    <button
-                                        onClick={handleRefreshPreview}
-                                        disabled={loadingBatch}
-                                        className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition flex items-center gap-2 disabled:opacity-50"
-                                    >
-                                        {loadingBatch ? (
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                        ) : (
-                                            <RefreshCw className="h-4 w-4" />
-                                        )}
-                                        Refrescar
-                                    </button>
+                                <div className="flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-sm text-gray-700 mb-1">Patrón de búsqueda:</label>
+                                        <input
+                                            type="text"
+                                            value={batchPatron}
+                                            onChange={(e) => setBatchPatron(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleRefreshPreview()}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                                            placeholder="Escriba patrón para buscar..."
+                                        />
+                                    </div>
+                                    <div className="w-48">
+                                        <label className="block text-sm text-gray-700 mb-1">Referencia:</label>
+                                        <input
+                                            type="text"
+                                            value={batchReferencia || ''}
+                                            onChange={(e) => setBatchReferencia(e.target.value || undefined)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleRefreshPreview()}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                                            placeholder="Todas"
+                                        />
+                                    </div>
+                                    <div className="flex items-end">
+                                        <button
+                                            onClick={handleRefreshPreview}
+                                            disabled={loadingBatch}
+                                            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition flex items-center gap-2 disabled:opacity-50"
+                                        >
+                                            {loadingBatch ? (
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                            ) : (
+                                                <RefreshCw className="h-4 w-4" />
+                                            )}
+                                            Refrescar
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 

@@ -72,18 +72,19 @@ class PresupuestoService:
         reglas: list,
         tipos_gasto: list,
         umbral: int,
-        umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL
+        umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL,
+        direccion: str = 'egreso'
     ) -> list:
         """Enriquece la lista de reglas con auto-clasificaciones para combos sin regla CC-específica."""
         combos = self._generacion_repo.obtener_combinaciones_gasto(
-            anio_fuente, centros_costos_excluidos
+            anio_fuente, centros_costos_excluidos, direccion=direccion
         )
         tipos_map = {t.tipo: t for t in tipos_gasto}
 
         auto_reglas = []
         for combo in combos:
             regla = self._generacion_service.resolver_regla(
-                combo["centro_costo_id"], combo["concepto_id"], reglas
+                combo["centro_costo_id"], combo["concepto_id"], reglas, direccion=direccion
             )
             if regla.centro_costo_id is not None:
                 continue  # Ya tiene regla CC-específica
@@ -94,12 +95,10 @@ class PresupuestoService:
                 combo["meses_activos"],
                 tipos_gasto,
                 umbral,
-                umbral_estacional
+                umbral_estacional,
+                direccion=direccion
             )
             tipo_obj = tipos_map.get(tipo)
-            # Sentinel: si el tipo no tiene indicador_default (ej: Fijo), usar IPC Colombia
-            # para que la regla sintética pase validación. El domain service detectará
-            # fijos sin monto_fijo como "fijos_sin_monto" pendientes de input del usuario.
             indicador = (tipo_obj.indicador_default
                          if tipo_obj and tipo_obj.indicador_default
                          else 'IPC Colombia')
@@ -109,7 +108,8 @@ class PresupuestoService:
                 concepto_id=combo["concepto_id"],
                 tipo_gasto=tipo,
                 indicador_nombre=indicador,
-                factor_ajuste=Decimal('0')
+                factor_ajuste=Decimal('0'),
+                direccion=direccion
             ))
 
         return list(reglas) + auto_reglas
@@ -119,7 +119,8 @@ class PresupuestoService:
         centros_costos_excluidos: Optional[List[int]] = None,
         umbral: Optional[int] = None,
         umbral_estacional: Optional[int] = None,
-        validar_estado: bool = True
+        validar_estado: bool = True,
+        direccion: str = 'egreso'
     ):
         """Obtiene datos necesarios para generación/previsualización"""
         presupuesto = self._presupuesto_repo.obtener_por_id(presupuesto_id)
@@ -134,10 +135,14 @@ class PresupuestoService:
         # Obtener datos fuente
         detalles = self._generacion_repo.generar_base_desde_anio(
             anio_fuente=anio_fuente,
-            centros_costos_excluidos=centros_costos_excluidos
+            centros_costos_excluidos=centros_costos_excluidos,
+            direccion=direccion
         )
         if not detalles:
-            raise ValueError(f"No se encontraron datos para el año {anio_fuente}")
+            if direccion == 'egreso':
+                raise ValueError(f"No se encontraron datos de egresos para el año {anio_fuente}")
+            # Para ingresos, no tener datos es válido
+            return presupuesto, [], [], {}, [], umbral_efectivo, umbral_estacional_efectivo
 
         # Obtener reglas e indicadores
         reglas = self._regla_repo.obtener_todos()
@@ -158,7 +163,7 @@ class PresupuestoService:
         # Auto-clasificación: enriquecer reglas con detección inteligente
         reglas = self._enriquecer_reglas_auto(
             anio_fuente, centros_costos_excluidos, reglas, tipos_gasto, umbral_efectivo,
-            umbral_estacional=umbral_estacional_efectivo
+            umbral_estacional=umbral_estacional_efectivo, direccion=direccion
         )
 
         return presupuesto, detalles, reglas, indicadores, tipos_excluidos, umbral_efectivo, umbral_estacional_efectivo
@@ -169,11 +174,23 @@ class PresupuestoService:
         anio_fuente: int,
         centros_costos_excluidos: Optional[List[int]] = None,
         umbral: Optional[int] = None,
-        umbral_estacional: Optional[int] = None
+        umbral_estacional: Optional[int] = None,
+        direccion: str = 'egreso'
     ) -> GeneracionResult:
         """Vista previa de generación sin persistir"""
         presupuesto, detalles, reglas, indicadores, tipos_excluidos, umbral_efectivo, _ = \
-            self._obtener_datos_generacion(presupuesto_id, anio_fuente, centros_costos_excluidos, umbral, umbral_estacional)
+            self._obtener_datos_generacion(
+                presupuesto_id, anio_fuente, centros_costos_excluidos,
+                umbral, umbral_estacional, direccion=direccion
+            )
+
+        if not detalles:
+            # Sin datos para esta dirección (posible para ingresos)
+            return GeneracionResult(regulares=[], no_repetitivos=[], fijos_sin_monto=[], resumen={
+                "total_lineas": 0, "total_excluidas": 0, "total_fijos_sin_monto": 0,
+                "total_base": 0, "total_presupuestado": 0, "pct_aumento_promedio": 0,
+                "por_tipo": {}, "por_indicador": {}, "por_centro_costo": [],
+            })
 
         # Asignar presupuesto_id temporalmente
         for d in detalles:
@@ -184,7 +201,8 @@ class PresupuestoService:
             reglas=reglas,
             indicadores=indicadores,
             tipos_excluidos=tipos_excluidos,
-            umbral=umbral_efectivo
+            umbral=umbral_efectivo,
+            direccion=direccion
         )
 
         # Agregar info de indicadores al resumen
@@ -207,11 +225,15 @@ class PresupuestoService:
         montos_fijos: Optional[List[dict]] = None,
         version: Optional[int] = None
     ) -> dict:
-        """Genera líneas de presupuesto con clasificación inteligente y aumentos"""
-        presupuesto, detalles, reglas, indicadores, tipos_excluidos, umbral_efectivo, umbral_estacional_efectivo = \
-            self._obtener_datos_generacion(presupuesto_id, anio_fuente, centros_costos_excluidos, umbral, umbral_estacional)
+        """Genera líneas de presupuesto para egresos e ingresos"""
 
-        # Asignar presupuesto_id
+        # --- Egresos ---
+        presupuesto, detalles, reglas, indicadores, tipos_excluidos, umbral_efectivo, umbral_estacional_efectivo = \
+            self._obtener_datos_generacion(
+                presupuesto_id, anio_fuente, centros_costos_excluidos,
+                umbral, umbral_estacional, direccion='egreso'
+            )
+
         for d in detalles:
             d.presupuesto_id = presupuesto_id
 
@@ -220,10 +242,11 @@ class PresupuestoService:
             reglas=reglas,
             indicadores=indicadores,
             tipos_excluidos=tipos_excluidos,
-            umbral=umbral_efectivo
+            umbral=umbral_efectivo,
+            direccion='egreso'
         )
 
-        # Incluir no repetitivos seleccionados manualmente
+        # Incluir no repetitivos seleccionados manualmente (solo egresos)
         incluidos_extra = 0
         if no_repetitivos_incluidos:
             for item in no_repetitivos_incluidos:
@@ -233,16 +256,15 @@ class PresupuestoService:
                         nr_linea.tercero_id == item.get('tercero_id') and
                         nr_linea.mes == item.get('mes')):
                         regla = self._generacion_service.resolver_regla(
-                            nr_linea.centro_costo_id, nr_linea.concepto_id, reglas
+                            nr_linea.centro_costo_id, nr_linea.concepto_id, reglas, direccion='egreso'
                         )
                         self._generacion_service._aplicar_aumento(nr_linea, regla, indicadores)
                         result.regulares.append(nr_linea)
                         incluidos_extra += 1
                         break
 
-        # Incluir gastos fijos con montos proporcionados por el usuario
+        # Incluir gastos fijos con montos proporcionados por el usuario (solo egresos)
         fijos_incluidos = 0
-        # Indexar montos_fijos por (cc, concepto) — el monto fijo es a nivel concepto, sin tercero
         montos_fijos_map: Dict[tuple, Decimal] = {}
         if montos_fijos:
             for item in montos_fijos:
@@ -251,7 +273,6 @@ class PresupuestoService:
                 if monto is not None and monto > 0:
                     montos_fijos_map[key] = Decimal(str(monto))
 
-        # Agrupar fijos_sin_monto por (CC, Concepto) para crear 12 líneas mensuales
         fijo_groups: Dict[tuple, list] = {}
         for fijo_info in result.fijos_sin_monto:
             key = (fijo_info['centro_costo_id'], fijo_info['concepto_id'])
@@ -260,10 +281,8 @@ class PresupuestoService:
         for key, fijo_infos in fijo_groups.items():
             monto_fijo = montos_fijos_map.get(key)
             sample = fijo_infos[0]
-            # Calcular monto: usar el fijo del usuario, o promedio del año anterior
             monto = monto_fijo if monto_fijo else Decimal(str(sample.get('monto_base', 0)))
 
-            # Crear 12 líneas mensuales a nivel CC+Concepto (sin tercero)
             for mes in range(1, 13):
                 new_line = PresupuestoDetalle(
                     presupuesto_id=presupuesto_id,
@@ -274,26 +293,61 @@ class PresupuestoService:
                     monto_presupuestado=monto,
                     monto_base=Decimal('0'),
                     tipo='Fijo',
+                    direccion='egreso',
                 )
                 result.regulares.append(new_line)
                 fijos_incluidos += 1
 
-        # Persistir umbrales usados en la generación
+        # --- Ingresos ---
+        ingresos_generados = 0
+        try:
+            detalles_in = self._generacion_repo.generar_base_desde_anio(
+                anio_fuente=anio_fuente,
+                centros_costos_excluidos=centros_costos_excluidos,
+                direccion='ingreso'
+            )
+            if detalles_in:
+                for d in detalles_in:
+                    d.presupuesto_id = presupuesto_id
+
+                reglas_base = self._regla_repo.obtener_todos()
+                tipos_gasto = self._tipo_gasto_repo.obtener_todos()
+                tipos_excluidos_in = [t.tipo for t in tipos_gasto if t.excluir_presupuesto]
+                indicadores_in = indicadores  # Mismos indicadores
+
+                reglas_in = self._enriquecer_reglas_auto(
+                    anio_fuente, centros_costos_excluidos, reglas_base, tipos_gasto,
+                    umbral_efectivo, umbral_estacional=umbral_estacional_efectivo,
+                    direccion='ingreso'
+                )
+
+                result_in = self._generacion_service.clasificar_y_aumentar(
+                    lineas_raw=detalles_in,
+                    reglas=reglas_in,
+                    indicadores=indicadores_in,
+                    tipos_excluidos=tipos_excluidos_in,
+                    umbral=umbral_efectivo,
+                    direccion='ingreso'
+                )
+                result.regulares.extend(result_in.regulares)
+                ingresos_generados = len(result_in.regulares)
+                logger.info(f"Ingresos: {ingresos_generados} líneas generadas")
+        except Exception as e:
+            logger.warning(f"Generación de ingresos falló (no crítico): {e}")
+
+        # --- Persistir todo ---
         presupuesto.umbral_no_repetitivo = umbral_efectivo
         presupuesto.umbral_estacional = umbral_estacional_efectivo
         self._presupuesto_repo.guardar(presupuesto)
 
-        # Asignar versión a todas las líneas
         effective_version = version or presupuesto.version_actual
         for line in result.regulares:
             line.version = effective_version
 
-        # Persistir líneas
         logger.info(f"Generando presupuesto {presupuesto_id} v{effective_version} desde año {anio_fuente}")
         count = self._detalle_repo.guardar_lote(result.regulares)
-        logger.info(f"Se generaron {count} líneas de presupuesto desde año {anio_fuente}")
+        logger.info(f"Se generaron {count} líneas (egresos={count - ingresos_generados}, ingresos={ingresos_generados})")
 
-        # Guardar metadatos de versión
         total_ppto = result.resumen.get('total_presupuestado', 0)
         self._detalle_repo.guardar_version(
             presupuesto_id=presupuesto_id,
@@ -308,6 +362,7 @@ class PresupuestoService:
             "lineas_excluidas": len(result.no_repetitivos),
             "incluidos_manualmente": incluidos_extra,
             "fijos_incluidos": fijos_incluidos,
+            "ingresos_generados": ingresos_generados,
             "resumen": result.resumen,
             "version": effective_version
         }
@@ -343,12 +398,19 @@ class PresupuestoService:
         return self._detalle_repo.aplicar_ajuste_linea(detalle_id, monto)
 
     def activar_presupuesto(self, presupuesto_id: int) -> Presupuesto:
-        """Activa un presupuesto. Solo uno puede estar activo por año."""
+        """Activa un presupuesto. Solo uno puede estar activo por año.
+        Al activar, regenera el detalle para capturar reglas modificadas durante borrador."""
         presupuesto = self._presupuesto_repo.obtener_por_id(presupuesto_id)
         if not presupuesto:
             raise ValueError("Presupuesto no encontrado")
         presupuesto.activar()
-        return self._presupuesto_repo.cambiar_estado(presupuesto_id, 'activo')
+        resultado = self._presupuesto_repo.cambiar_estado(presupuesto_id, 'activo')
+        try:
+            self.regenerar_en_version_actual(presupuesto_id)
+            logger.info(f"Regeneración al activar presupuesto {presupuesto_id} exitosa")
+        except Exception as e:
+            logger.warning(f"Regeneración al activar presupuesto {presupuesto_id} falló: {e}")
+        return resultado
 
     def cerrar_presupuesto(self, presupuesto_id: int) -> Presupuesto:
         """Cierra un presupuesto activo"""
@@ -370,11 +432,12 @@ class PresupuestoService:
         self,
         anio_fuente: int,
         centros_costos_excluidos: Optional[List[int]] = None,
-        umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL
+        umbral_estacional: int = DEFAULT_UMBRAL_ESTACIONAL,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Preview de clasificación: muestra cada combo CC/Concepto con regla explícita o auto-clasificación."""
         combos = self._generacion_repo.obtener_combinaciones_gasto(
-            anio_fuente, centros_costos_excluidos
+            anio_fuente, centros_costos_excluidos, direccion=direccion
         )
         if not combos:
             return []
@@ -388,7 +451,8 @@ class PresupuestoService:
             regla = self._generacion_service.resolver_regla(
                 combo["centro_costo_id"],
                 combo["concepto_id"],
-                reglas
+                reglas,
+                direccion=direccion
             )
 
             # Nivel de match de la regla explícita
@@ -413,6 +477,7 @@ class PresupuestoService:
                     combo["meses_activos"],
                     tipos_gasto,
                     umbral_estacional=umbral_estacional,
+                    direccion=direccion
                 )
                 tipo_obj = tipos_map.get(tipo)
                 tipo_gasto = tipo
@@ -439,7 +504,8 @@ class PresupuestoService:
 
     def simular_impacto_reglas(
         self, presupuesto_id: int, anio_fuente: Optional[int] = None,
-        centros_costos_excluidos: Optional[List[int]] = None
+        centros_costos_excluidos: Optional[List[int]] = None,
+        direccion: str = 'egreso'
     ) -> dict:
         """Simula el impacto de las reglas actuales sobre el presupuesto.
         Usa clasificacion-preview (CC+Concepto) para calcular proyectado,
@@ -461,7 +527,8 @@ class PresupuestoService:
         # 2. Proyectado: desde clasificacion-preview (misma fuente que panel izquierdo)
         preview = self.obtener_clasificacion_preview(
             anio_fuente_efectivo, centros_costos_excluidos,
-            umbral_estacional=presupuesto.umbral_estacional
+            umbral_estacional=presupuesto.umbral_estacional,
+            direccion=direccion
         )
         if not preview:
             return {
@@ -487,7 +554,7 @@ class PresupuestoService:
         for item in preview:
             cc_id = item["centro_costo_id"]
 
-            if item.get("tipo_gasto") == "No Repetitivo":
+            if "No Repetitivo" in (item.get("tipo_gasto") or ""):
                 # Asegurar que el CC existe en el mapa para el JOIN, pero sin sumar
                 if cc_id not in proyectado_map:
                     proyectado_map[cc_id] = {"total": 0.0, "nombre": item["centro_costo_nombre"]}
@@ -605,24 +672,27 @@ class PresupuestoService:
 
     def regenerar_en_version_actual(self, presupuesto_id: int) -> dict:
         """Regenera el presupuesto sobreescribiendo la versión actual (DELETE + INSERT).
-        No incrementa version_actual. Usado para auto-regeneración al cambiar reglas."""
+        No incrementa version_actual. Usado para auto-regeneración al cambiar reglas.
+        Funciona con presupuestos en estado activo o borrador."""
         presupuesto = self._presupuesto_repo.obtener_por_id(presupuesto_id)
         if not presupuesto:
             raise ValueError("Presupuesto no encontrado")
-        if presupuesto.estado != 'activo':
-            raise ValueError(f"Solo se auto-regeneran presupuestos activos (actual: '{presupuesto.estado}')")
+        if presupuesto.estado not in ('activo', 'borrador'):
+            raise ValueError(f"Solo se auto-regeneran presupuestos activos o en borrador (actual: '{presupuesto.estado}')")
 
+        estado_original = presupuesto.estado
         version = presupuesto.version_actual
         anio_fuente = presupuesto.anio - 1
 
-        logger.info(f"Auto-regenerar: sobreescribir v{version} para presupuesto {presupuesto_id}")
+        logger.info(f"Auto-regenerar: sobreescribir v{version} para presupuesto {presupuesto_id} (estado: {estado_original})")
 
         # Borrar filas de la versión actual
         eliminadas = self._detalle_repo.eliminar_por_version(presupuesto_id, version)
         logger.info(f"Auto-regenerar: eliminadas {eliminadas} filas de v{version}")
 
-        # Temporalmente borrador para pasar la validación de generar
-        self._presupuesto_repo.cambiar_estado(presupuesto_id, 'borrador')
+        # Si estaba activo, cambiar temporalmente a borrador para pasar validación de generar
+        if estado_original == 'activo':
+            self._presupuesto_repo.cambiar_estado(presupuesto_id, 'borrador')
 
         try:
             resultado = self.generar_desde_anio_anterior(
@@ -631,12 +701,54 @@ class PresupuestoService:
                 version=version
             )
         finally:
-            # Re-activar siempre, incluso si falla la generación
-            self._presupuesto_repo.cambiar_estado(presupuesto_id, 'activo')
+            # Restaurar estado original
+            if estado_original == 'activo':
+                self._presupuesto_repo.cambiar_estado(presupuesto_id, 'activo')
 
         resultado["mensaje"] = f"Presupuesto auto-regenerado (v{version})"
         resultado["version"] = version
         return resultado
+
+    def contar_reglas_pendientes(self, presupuesto_id: int) -> dict:
+        """Cuenta reglas de presupuesto cuya combinación CC+Concepto no tiene filas en presupuesto_detalle."""
+        presupuesto = self._presupuesto_repo.obtener_por_id(presupuesto_id)
+        if not presupuesto:
+            raise ValueError("Presupuesto no encontrado")
+        return self._detalle_repo.contar_reglas_sin_detalle(presupuesto_id, presupuesto.version_actual)
+
+    def obtener_gastos_sin_presupuesto(
+        self,
+        presupuesto_id: int,
+        centros_costos_excluidos: Optional[List[int]] = None,
+        direccion: str = 'egreso'
+    ) -> dict:
+        """Retorna gastos del año actual sin presupuesto asignado, con info de regla existente."""
+        presupuesto = self._presupuesto_repo.obtener_por_id(presupuesto_id)
+        if not presupuesto:
+            raise ValueError("Presupuesto no encontrado")
+
+        items = self._comparacion_repo.obtener_gastos_sin_presupuesto(
+            presupuesto_id, presupuesto.anio, centros_costos_excluidos,
+            direccion=direccion
+        )
+        # Clasificar por categoría
+        cat_sin_regla = [i for i in items if not i['tiene_regla']]
+        cat_no_rep = [i for i in items if i['tiene_regla'] and 'No Repetitivo' in (i['regla_tipo_gasto'] or '')]
+        cat_pend = [i for i in items if i['tiene_regla'] and 'No Repetitivo' not in (i.get('regla_tipo_gasto') or '')]
+
+        def cat_sum(lst):
+            return {"count": len(lst), "total": sum(i['monto_acumulado'] for i in lst)}
+
+        return {
+            "total_sin_ppto": sum(i['monto_acumulado'] for i in items),
+            "count": len(items),
+            "por_categoria": {
+                "sin_regla": cat_sum(cat_sin_regla),
+                "no_repetitivo": cat_sum(cat_no_rep),
+                "pendiente_regen": cat_sum(cat_pend),
+            },
+            "items": items
+        }
 
     def comparar_presupuesto_vs_real(
         self,
@@ -647,7 +759,8 @@ class PresupuestoService:
         centro_costo_id: Optional[int] = None,
         concepto_id: Optional[int] = None,
         centros_costos_excluidos: Optional[List[int]] = None,
-        excluir_estacionales: bool = False
+        excluir_estacionales: bool = False,
+        direccion: str = 'egreso'
     ) -> List[dict]:
         """Compara presupuesto vs ejecución real al nivel solicitado"""
         presupuesto = self._presupuesto_repo.obtener_por_id(presupuesto_id)
@@ -662,7 +775,8 @@ class PresupuestoService:
             return self._comparacion_repo.comparar_por_centro_costo(
                 presupuesto_id, anio, mes_inicio, mes_fin, centros_costos_excluidos,
                 verde_hasta=verde, amarillo_hasta=amarillo,
-                excluir_estacionales=excluir_estacionales
+                excluir_estacionales=excluir_estacionales,
+                direccion=direccion
             )
         elif nivel == 'concepto':
             if not centro_costo_id:
@@ -670,7 +784,8 @@ class PresupuestoService:
             return self._comparacion_repo.comparar_por_concepto(
                 presupuesto_id, anio, centro_costo_id, mes_inicio, mes_fin, centros_costos_excluidos,
                 verde_hasta=verde, amarillo_hasta=amarillo,
-                excluir_estacionales=excluir_estacionales
+                excluir_estacionales=excluir_estacionales,
+                direccion=direccion
             )
         elif nivel == 'tercero':
             if not centro_costo_id:
@@ -678,7 +793,8 @@ class PresupuestoService:
             return self._comparacion_repo.comparar_por_tercero(
                 presupuesto_id, anio, centro_costo_id, concepto_id, mes_inicio, mes_fin, centros_costos_excluidos,
                 verde_hasta=verde, amarillo_hasta=amarillo,
-                excluir_estacionales=excluir_estacionales
+                excluir_estacionales=excluir_estacionales,
+                direccion=direccion
             )
         else:
             raise ValueError(f"Nivel inválido: {nivel}. Debe ser centro_costo, concepto o tercero")

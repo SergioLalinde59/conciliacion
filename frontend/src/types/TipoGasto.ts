@@ -12,4 +12,5 @@ export interface TipoGasto {
     activo: boolean
     keywords: KeywordPair[]
     prioridad: number
+    direccion: 'ingreso' | 'egreso'
 }

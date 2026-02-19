@@ -38,7 +38,7 @@ import {
 import { useSettings } from '../../context/SettingsContext';
 
 export const Sidebar = () => {
-    const { showDecimals, toggleShowDecimals } = useSettings();
+    const { showDecimals, toggleShowDecimals, cifrasEnMillones, toggleCifrasEnMillones } = useSettings();
     const location = useLocation();
 
     const sectionMenus: Record<string, { path: string }[]> = useMemo(() => ({
@@ -59,11 +59,9 @@ export const Sidebar = () => {
         ],
         presupuestos: [
             { path: '/reportes/presupuesto-vs-real' },
-            { path: '/presupuestos' },
-            { path: '/presupuestos/ejecucion-mensual' },
-            { path: '/presupuestos/comparativo-cifras' },
-            { path: '/presupuestos/clasificacion' },
             { path: '/presupuestos/reglas' },
+            { path: '/presupuestos/ejecucion-mensual' },
+            { path: '/presupuestos/clasificacion' },
             { path: '/presupuestos/indicadores' },
             { path: '/presupuestos/tipos-gasto' },
             { path: '/maestros/presupuesto-config' },
@@ -168,11 +166,10 @@ export const Sidebar = () => {
 
     const menuPresupuestos = [
         { name: 'Ppto vs Real', path: '/reportes/presupuesto-vs-real', icon: Target },
-        { name: 'Presupuestos', path: '/presupuestos', icon: Calculator },
-        { name: 'Ejecución Mensual', path: '/presupuestos/ejecucion-mensual', icon: Calendar },
-        { name: 'Comparativo Cifras', path: '/presupuestos/comparativo-cifras', icon: GitCompare },
-        { name: 'Clasif. Gastos', path: '/presupuestos/clasificacion', icon: Eye },
         { name: 'Reglas Clasificación', path: '/presupuestos/reglas', icon: Zap },
+
+        { name: 'Ejecución Mensual', path: '/presupuestos/ejecucion-mensual', icon: Calendar },
+        { name: 'Clasif. Gastos', path: '/presupuestos/clasificacion', icon: Eye },
         { name: 'Indicadores Económicos', path: '/presupuestos/indicadores', icon: TrendingUp },
         { name: 'Tipos de Gasto', path: '/presupuestos/tipos-gasto', icon: Tags },
         { name: 'Config. Ppto', path: '/maestros/presupuesto-config', icon: Settings },
@@ -257,6 +254,23 @@ export const Sidebar = () => {
 
 
             <div className="p-4 border-t border-slate-800">
+                <div className="mb-3">
+                    <label className="flex items-center cursor-pointer">
+                        <div className="relative">
+                            <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={cifrasEnMillones}
+                                onChange={toggleCifrasEnMillones}
+                            />
+                            <div className={`block w-10 h-6 rounded-full transition-colors ${cifrasEnMillones ? 'bg-blue-600' : 'bg-slate-700'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${cifrasEnMillones ? 'transform translate-x-4' : ''}`}></div>
+                        </div>
+                        <div className="ml-3 text-slate-400 text-xs font-medium">
+                            Cifras (mm)
+                        </div>
+                    </label>
+                </div>
                 <div className="mb-4">
                     <label className="flex items-center cursor-pointer">
                         <div className="relative">

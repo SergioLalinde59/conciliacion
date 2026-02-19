@@ -119,6 +119,16 @@ class PostgresPresupuestoRepository(PresupuestoRepository):
         cursor.close()
         return self._row_to_entity(row)
 
+    def obtener_borrador(self, anio: int) -> Optional[Presupuesto]:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            f"SELECT {_COLUMNS} FROM presupuestos WHERE anio = %s AND estado = 'borrador' LIMIT 1",
+            (anio,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return self._row_to_entity(row)
+
     def eliminar(self, presupuesto_id: int) -> None:
         cursor = self.conn.cursor()
         try:

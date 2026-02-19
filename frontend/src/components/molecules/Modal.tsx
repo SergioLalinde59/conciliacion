@@ -26,6 +26,8 @@ export interface ModalProps {
     footer?: ReactNode
     /** Clases adicionales para el contenedor */
     className?: string
+    /** Clases para el overlay (ej: z-[60] para modales apilados) */
+    overlayClassName?: string
     /** Si el modal tiene padding en el contenido */
     padded?: boolean
 }
@@ -74,6 +76,7 @@ export const Modal = ({
     closeOnEscape = true,
     footer,
     className = '',
+    overlayClassName,
     padded = true,
 }: ModalProps) => {
     // Cerrar con Escape
@@ -106,7 +109,7 @@ export const Modal = ({
 
     const modalContent = (
         <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150"
+            className={`fixed inset-0 ${overlayClassName || 'z-50'} flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150`}
             onClick={handleOverlayClick}
         >
             <div
