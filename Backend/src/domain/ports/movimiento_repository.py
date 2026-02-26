@@ -83,6 +83,7 @@ class MovimientoRepository(ABC):
                        centro_costo_id: Optional[int] = None,
                        concepto_id: Optional[int] = None,
                        centros_costos_excluidos: Optional[List[int]] = None,
+                       centros_costos_incluidos: Optional[List[int]] = None,
                        solo_pendientes: bool = False,
                        tipo_movimiento: Optional[str] = None,
                        descripcion_contiene: Optional[str] = None,
@@ -99,15 +100,16 @@ class MovimientoRepository(ABC):
         pass
 
     @abstractmethod
-    def resumir_por_clasificacion(self, 
+    def resumir_por_clasificacion(self,
                                  tipo_agrupacion: str,
-                                 fecha_inicio: Optional[date] = None, 
+                                 fecha_inicio: Optional[date] = None,
                                  fecha_fin: Optional[date] = None,
                                  cuenta_id: Optional[int] = None,
                                  tercero_id: Optional[int] = None,
                                  centro_costo_id: Optional[int] = None,
                                  concepto_id: Optional[int] = None,
                                  centros_costos_excluidos: Optional[List[int]] = None,
+                                 centros_costos_incluidos: Optional[List[int]] = None,
                                  tipo_movimiento: Optional[str] = None
     ) -> List[dict]:
         """Agrupa y resume movimientos por tercero o grupo"""
@@ -131,15 +133,16 @@ class MovimientoRepository(ABC):
         pass
 
     @abstractmethod
-    def obtener_desglose_gastos(self, 
+    def obtener_desglose_gastos(self,
                                nivel: str,
-                               fecha_inicio: Optional[date] = None, 
+                               fecha_inicio: Optional[date] = None,
                                fecha_fin: Optional[date] = None,
                                cuenta_id: Optional[int] = None,
                                tercero_id: Optional[int] = None,
                                centro_costo_id: Optional[int] = None,
                                concepto_id: Optional[int] = None,
-                               centros_costos_excluidos: Optional[List[int]] = None
+                               centros_costos_excluidos: Optional[List[int]] = None,
+                               centros_costos_incluidos: Optional[List[int]] = None
     ) -> List[dict]:
         """
         Obtiene el desglose de gastos para el reporte jerárquico.

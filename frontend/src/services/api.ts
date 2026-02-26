@@ -25,6 +25,7 @@ import { matchingService } from './matching.service'
 import { dashboardService } from './dashboard.service'
 import { adminService } from './admin.service'
 import { presupuestoService } from './presupuesto.service'
+import { perspectivaService } from './perspectiva.service'
 
 /**
  * Objeto apiService unificado para compatibilidad con código existente
@@ -74,7 +75,10 @@ export const apiService = {
     admin: adminService,
 
     // Presupuesto
-    presupuesto: presupuestoService
+    presupuesto: presupuestoService,
+
+    // Perspectivas
+    perspectivas: perspectivaService
 }
 
 // Exportar servicios individuales para uso directo
@@ -95,5 +99,6 @@ export {
     matchingService,
     dashboardService,
     adminService,
-    presupuestoService
+    presupuestoService,
+    perspectivaService
 }

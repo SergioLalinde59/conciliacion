@@ -318,7 +318,7 @@ export const BudgetExecutionTable = ({
                                         <td className="px-3 py-2 text-center">
                                             {ingRow && <SemaforoBadge valor={ingRow.semaforo} variacionPct={ingRow.variacion_pct} size="sm" />}
                                         </td>
-                                        <td className={`${tdMono} text-slate-600`}>
+                                        <td className={`${tdMono} text-emerald-600`}>
                                             <CurrencyDisplay value={pIng?.acumulado ?? 0} colorize={false} decimals={0} compact={compact} />
                                         </td>
                                         <td className={`${tdMono} font-semibold text-emerald-600`}>
@@ -354,7 +354,7 @@ export const BudgetExecutionTable = ({
                                         <td className="px-3 py-2 text-center">
                                             {egrRow && <SemaforoBadge valor={egrRow.semaforo} variacionPct={egrRow.variacion_pct} size="sm" />}
                                         </td>
-                                        <td className={`${tdMono} text-slate-600`}>
+                                        <td className={`${tdMono} text-rose-600`}>
                                             <CurrencyDisplay value={pEgr?.acumulado ?? 0} colorize={false} decimals={0} compact={compact} />
                                         </td>
                                         <td className={`${tdMono} font-semibold text-rose-600`}>

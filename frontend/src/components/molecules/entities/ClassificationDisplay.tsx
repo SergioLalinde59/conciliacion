@@ -10,30 +10,14 @@ interface Entity {
 interface ClassificationDisplayProps {
     centroCosto?: Entity | null
     concepto?: Entity | null
-    detallesCount?: number
     className?: string
 }
 
 export const ClassificationDisplay = ({
     centroCosto,
     concepto,
-    detallesCount,
     className
 }: ClassificationDisplayProps) => {
-
-    // Case: Multiple Details (Split transaction)
-    if (detallesCount && detallesCount > 1) {
-        return (
-            <div className={cn("flex flex-col gap-0", className)} title="Movimiento con múltiples clasificaciones">
-                <span className="text-[13px] font-bold text-purple-700 leading-tight flex items-center gap-1">
-                    <span className="text-xs bg-purple-100 px-1 rounded">MULTI</span> {detallesCount} ítems
-                </span>
-                <span className="text-[12px] text-slate-400 italic font-medium leading-tight">
-                    Ver detalle para desglosar
-                </span>
-            </div>
-        )
-    }
 
     // Case: Unclassified
     if (!centroCosto && !concepto) {

@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { apiService } from '../services/api'
 import { Download, Search, FileSpreadsheet, ArrowLeft, X, LayoutList, TrendingUp, TrendingDown, Wallet, Eye } from 'lucide-react'
 import { StatCard } from '../components/molecules/StatCard'
-import { useReporteClasificacion, useConfiguracionExclusion } from '../hooks/useReportes'
+import { useReporteClasificacion } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
 import { useSessionStorage } from '../hooks/useSessionStorage'
 import { getMesActual, getPreviousPeriod } from '../utils/dateUtils'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
@@ -51,17 +52,8 @@ export const ReporteClasificacionesPage = () => {
     const [mostrarIngresos, setMostrarIngresos] = useSessionStorage('rep_clasif_ingresos', false)
     const [mostrarEgresos, setMostrarEgresos] = useSessionStorage('rep_clasif_egresos', true)
 
-    // Dynamic Exclusion
-    const { data: configExclusion = [] } = useConfiguracionExclusion()
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useSessionStorage<number[] | null>('rep_clasif_cc_excluidos', null)
-    const actualCentrosCostosExcluidos = centrosCostosExcluidos || []
-
-    useEffect(() => {
-        if (configExclusion.length > 0 && centrosCostosExcluidos === null) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configExclusion, centrosCostosExcluidos, setCentrosCostosExcluidos])
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
 
     // Modals
     const [terceroModal, setTerceroModal] = useState<DrilldownLevel>({
@@ -83,10 +75,10 @@ export const ReporteClasificacionesPage = () => {
         tercero_id: terceroId ? Number(terceroId) : undefined,
         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
         concepto_id: conceptoId ? Number(conceptoId) : undefined,
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+        ...filterParams,
         ver_ingresos: mostrarIngresos,
         ver_egresos: mostrarEgresos
-    }), [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, actualCentrosCostosExcluidos, mostrarIngresos, mostrarEgresos])
+    }), [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, filterParams, mostrarIngresos, mostrarEgresos])
 
     const { data: gruposDataRaw, isLoading: loadingMain } = useReporteClasificacion(paramsMain)
     const gruposData = (gruposDataRaw as ItemDesglose[]) || []
@@ -99,10 +91,10 @@ export const ReporteClasificacionesPage = () => {
         tercero_id: terceroId ? Number(terceroId) : undefined,
         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
         concepto_id: conceptoId ? Number(conceptoId) : undefined,
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+        ...filterParams,
         ver_ingresos: mostrarIngresos,
         ver_egresos: mostrarEgresos
-    }), [prevPeriod, cuentaId, terceroId, centroCostoId, conceptoId, actualCentrosCostosExcluidos, mostrarIngresos, mostrarEgresos])
+    }), [prevPeriod, cuentaId, terceroId, centroCostoId, conceptoId, filterParams, mostrarIngresos, mostrarEgresos])
     const { data: datosAnteriorRaw } = useReporteClasificacion(paramsAnterior)
 
     // ---- Handlers ----
@@ -125,7 +117,7 @@ export const ReporteClasificacionesPage = () => {
             tercero_id: terceroId ? Number(terceroId) : undefined,
             // centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined, // Removed duplicate/conflicting param since item.id is the CC
             concepto_id: conceptoId ? Number(conceptoId) : undefined,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+            ...filterParams,
             ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos
         } as any)
         setTerceroModal(prev => ({ ...prev, data: (data as ItemDesglose[]) || [] }))
@@ -151,7 +143,7 @@ export const ReporteClasificacionesPage = () => {
             centro_costo_id: terceroModal.parentId, // CORE FIX: Use the L1 CC ID
             fecha_inicio: desde, fecha_fin: hasta,
             cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+            ...filterParams,
             ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos
         } as any)
         setConceptoModal(prev => ({ ...prev, data: (data as ItemDesglose[]) || [] }))
@@ -179,7 +171,7 @@ export const ReporteClasificacionesPage = () => {
             concepto_id: item.id,
             desde, hasta, limit: 1000,
             ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined
+            ...filterParams
         } as any).then((response: any) => {
             setDetallesModal(prev => ({ ...prev, data: response.items || [], loading: false }))
         })
@@ -189,8 +181,6 @@ export const ReporteClasificacionesPage = () => {
         const mes = getMesActual()
         setDesde(mes.inicio); setHasta(mes.fin); setCuentaId('')
         setTerceroId(''); setCentroCostoId(''); setConceptoId('')
-        if (configExclusion.length > 0) setCentrosCostosExcluidos(configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id))
-        else setCentrosCostosExcluidos([])
     }
 
     const filteredGrupos = useMemo(() => {
@@ -268,9 +258,9 @@ export const ReporteClasificacionesPage = () => {
                 terceroId={terceroId} setTerceroId={setTerceroId}
                 centroCostoId={centroCostoId} setCentroCostoId={setCentroCostoId}
                 conceptoId={conceptoId} setConceptoId={setConceptoId}
-                configuracionExclusion={configExclusion}
-                centrosCostosExcluidos={actualCentrosCostosExcluidos}
-                setCentrosCostosExcluidos={setCentrosCostosExcluidos}
+                perspectivas={perspectivas}
+                selectedSlug={selectedSlug}
+                onPerspectivaChange={setSelectedSlug}
                 mostrarIngresos={mostrarIngresos}
                 setMostrarIngresos={setMostrarIngresos}
                 mostrarEgresos={mostrarEgresos}

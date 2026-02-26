@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { usePresupuestos, usePresupuestoComparacion, usePresupuestoComparacionMensual } from '../hooks/usePresupuesto'
-import { useConfiguracionExclusion } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
+import PerspectiveSelector from '../components/molecules/PerspectiveSelector'
 import { BudgetExecutionTable } from '../components/organisms/BudgetExecutionTable'
 import { EjecucionMensualChart } from '../components/organisms/EjecucionMensualChart'
 import { EntitySelector } from '../components/molecules/entities/EntitySelector'
@@ -12,15 +13,13 @@ import { Target, TrendingDown, TrendingUp, BarChart3, AlertTriangle } from 'luci
 
 export const EjecucionMensualPage = () => {
     const { data: presupuestos = [] } = usePresupuestos()
-    const { data: configExclusion = [], isFetched: exclusionConfigLoaded } = useConfiguracionExclusion()
     const fmt = useBudgetFormat()
 
     const [presupuestoId, setPresupuestoId] = useState<number>(0)
     const [centroCostoId, setCentroCostoId] = useState('')
 
-    // CC Exclusion (default business rule)
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[] | null>(null)
-    const actualCentrosCostosExcluidos = useMemo(() => centrosCostosExcluidos ?? [], [centrosCostosExcluidos])
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
 
     const selectedPresupuesto = presupuestos.find(p => p.id === presupuestoId)
     const { cifrasEnMillones } = useSettings()
@@ -33,19 +32,12 @@ export const EjecucionMensualPage = () => {
         }
     }, [presupuestos, presupuestoId])
 
-    useEffect(() => {
-        if (exclusionConfigLoaded && centrosCostosExcluidos === null) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configExclusion, centrosCostosExcluidos, exclusionConfigLoaded])
-
     const ccIdFilter = centroCostoId ? Number(centroCostoId) : undefined
 
     const queryParams = useMemo(() => ({
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+        ...filterParams,
         centro_costo_id: ccIdFilter,
-    }), [actualCentrosCostosExcluidos, ccIdFilter])
+    }), [filterParams, ccIdFilter])
 
     const egresoParams = useMemo(() => ({ ...queryParams, direccion: 'egreso' as const }), [queryParams])
     const ingresoParams = useMemo(() => ({ ...queryParams, direccion: 'ingreso' as const }), [queryParams])
@@ -57,8 +49,8 @@ export const EjecucionMensualPage = () => {
     const ccQueryParams = useMemo(() => ({
         nivel: 'centro_costo',
         direccion: 'egreso',
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-    }), [actualCentrosCostosExcluidos])
+        ...filterParams,
+    }), [filterParams])
     const { data: ccComparacion = [] } = usePresupuestoComparacion(presupuestoId, ccQueryParams)
 
     // KPI totales
@@ -66,7 +58,8 @@ export const EjecucionMensualPage = () => {
     const semaforoAmarillo = selectedPresupuesto?.semaforo_amarillo_hasta ?? 25
 
     // KPIs for both directions
-    const calcKpis = (data: typeof mensualEgreso) => {
+    // direccion: 'egreso' = gastar más es malo, 'ingreso' = cobrar más es bueno
+    const calcKpis = (data: typeof mensualEgreso, direccion: 'egreso' | 'ingreso') => {
         const presupuestado = data.reduce((s, r) => s + r.presupuestado, 0)
         const ejecutado = data.reduce((s, r) => s + r.ejecutado, 0)
         // Pro-rata: solo comparar ppto de meses con ejecución real
@@ -77,16 +70,20 @@ export const EjecucionMensualPage = () => {
         const consumo = pptoEjecutado > 0 ? ((ejecutado / pptoEjecutado) * 100) : 0
         const mesesConDatos = data.filter(m => m.presupuestado > 0 || m.ejecutado > 0).length
         const mesesAlerta = data.filter(m => m.semaforo === 'amarillo' || m.semaforo === 'rojo').length
+        // Semáforo dirección-aware:
+        // Egresos: variación positiva (gastó más) = malo
+        // Ingresos: variación negativa (cobró menos) = malo → invertir
+        const desvio = direccion === 'ingreso' ? -variacionPct : variacionPct
         const semaforo: 'verde' | 'amarillo' | 'rojo' =
-            variacionPct <= 0 ? 'verde'
-            : variacionPct <= semaforoVerde ? 'verde'
-            : variacionPct <= semaforoAmarillo ? 'amarillo'
+            desvio <= 0 ? 'verde'
+            : desvio <= semaforoVerde ? 'verde'
+            : desvio <= semaforoAmarillo ? 'amarillo'
             : 'rojo'
-        return { presupuestado, ejecutado, variacion, variacionPct, consumo, mesesConDatos, mesesAlerta, semaforo }
+        return { presupuestado, pptoEjecutado, ejecutado, variacion, variacionPct, consumo, mesesConDatos, mesesEjecutados: mesesEjecutados.length, mesesAlerta, semaforo }
     }
 
-    const egr = useMemo(() => calcKpis(mensualEgreso), [mensualEgreso, semaforoVerde, semaforoAmarillo]) // eslint-disable-line
-    const ing = useMemo(() => calcKpis(mensualIngreso), [mensualIngreso, semaforoVerde, semaforoAmarillo]) // eslint-disable-line
+    const egr = useMemo(() => calcKpis(mensualEgreso, 'egreso'), [mensualEgreso, semaforoVerde, semaforoAmarillo]) // eslint-disable-line
+    const ing = useMemo(() => calcKpis(mensualIngreso, 'ingreso'), [mensualIngreso, semaforoVerde, semaforoAmarillo]) // eslint-disable-line
 
     // CC options from budget data, sorted by ejecutado desc
     const ccOptions = useMemo(() =>
@@ -101,33 +98,39 @@ export const EjecucionMensualPage = () => {
         <div className="flex flex-col h-full bg-slate-50/50 overflow-hidden">
             {/* Hero: Header + Stats */}
             <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-indigo-950 px-6 pt-6 pb-5 text-white">
-                {/* Title row */}
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Ejecución Mensual</h1>
-                        <p className="text-slate-400 text-sm mt-0.5">Detalle mes a mes: presupuestado, ejecutado, variación y consumo</p>
+                {/* Row 1: Title + Perspectiva */}
+                <div className="flex items-center gap-4 mb-3">
+                    <h1 className="text-2xl font-bold tracking-tight shrink-0">Ejecución Mensual</h1>
+                    <div className="[&_div.flex]:bg-white/10 [&_div.flex]:p-1 [&_button]:text-slate-300 [&_button]:hover:text-white [&_button.bg-white]:bg-white/20 [&_button.bg-white]:text-white [&_button.bg-white]:font-semibold">
+                        <PerspectiveSelector
+                            perspectivas={perspectivas}
+                            selectedSlug={selectedSlug}
+                            onChange={setSelectedSlug}
+                        />
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="w-56 [&_input]:bg-white/10 [&_input]:border-white/20 [&_input]:text-white [&_input]:placeholder-slate-400">
-                            <EntitySelector
-                                options={ccOptions}
-                                value={centroCostoId}
-                                onChange={setCentroCostoId}
-                                placeholder="Todos los CC"
-                            />
-                        </div>
-                        <select
-                            value={presupuestoId}
-                            onChange={e => setPresupuestoId(parseInt(e.target.value))}
-                            className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none [&>option]:text-slate-900"
-                        >
-                            {presupuestos.map(p => (
-                                <option key={p.id} value={p.id}>
-                                    {p.nombre} ({p.anio}) - {p.estado}
-                                </option>
-                            ))}
-                        </select>
+                </div>
+
+                {/* Row 2: Filters */}
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-56 [&_input]:bg-white/10 [&_input]:border-white/20 [&_input]:text-white [&_input]:placeholder-slate-400">
+                        <EntitySelector
+                            options={ccOptions}
+                            value={centroCostoId}
+                            onChange={setCentroCostoId}
+                            placeholder="Todos los CC"
+                        />
                     </div>
+                    <select
+                        value={presupuestoId}
+                        onChange={e => setPresupuestoId(parseInt(e.target.value))}
+                        className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none [&>option]:text-slate-900"
+                    >
+                        {presupuestos.map(p => (
+                            <option key={p.id} value={p.id}>
+                                {p.nombre} ({p.anio}) - {p.estado}
+                            </option>
+                        ))}
+                    </select>
                 </div>
 
                 {/* KPI Cards */}
@@ -141,16 +144,16 @@ export const EjecucionMensualPage = () => {
                         renderValue={
                             <div className="space-y-0.5">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-emerald-400 text-lg font-black font-mono">{fmt(ing.presupuestado)}</span>
+                                    <span className="text-emerald-400 text-lg font-black font-mono">{fmt(ing.pptoEjecutado)}</span>
                                     <span className="text-[9px] text-slate-500 uppercase font-bold">Ing</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-rose-400 text-lg font-black font-mono">{fmt(egr.presupuestado)}</span>
+                                    <span className="text-rose-400 text-lg font-black font-mono">{fmt(egr.pptoEjecutado)}</span>
                                     <span className="text-[9px] text-slate-500 uppercase font-bold">Egr</span>
                                 </div>
                             </div>
                         }
-                        subtitle={`${Math.max(egr.mesesConDatos, ing.mesesConDatos)} meses con datos`}
+                        subtitle={`${Math.max(ing.mesesEjecutados, egr.mesesEjecutados)} meses con ejecución`}
                         compact={compact}
                     />
                     <DarkStatCard
@@ -183,11 +186,19 @@ export const EjecucionMensualPage = () => {
                         renderValue={
                             <div className="space-y-0.5">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-emerald-400 text-lg font-black font-mono">{fmt(ing.variacion)}</span>
+                                    {ing.variacion >= 0
+                                        ? <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                                        : <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
+                                    }
+                                    <span className={`text-lg font-black font-mono ${ing.variacion >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmt(ing.variacion)}</span>
                                     <span className="text-[9px] text-slate-500 uppercase font-bold">Ing</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-rose-400 text-lg font-black font-mono">{fmt(egr.variacion)}</span>
+                                    {egr.variacion <= 0
+                                        ? <TrendingDown className="w-3.5 h-3.5 text-emerald-400" />
+                                        : <TrendingUp className="w-3.5 h-3.5 text-rose-400" />
+                                    }
+                                    <span className={`text-lg font-black font-mono ${egr.variacion <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmt(egr.variacion)}</span>
                                     <span className="text-[9px] text-slate-500 uppercase font-bold">Egr</span>
                                 </div>
                             </div>
@@ -202,23 +213,39 @@ export const EjecucionMensualPage = () => {
                         colorClass="text-white"
                         iconBgClass="bg-white/10 text-slate-300"
                         renderValue={
-                            <div className="space-y-0.5">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-emerald-400 text-lg font-black font-mono">{ing.consumo.toFixed(1)}%</span>
-                                    <SemaforoBadge valor={ing.semaforo} size="sm" />
-                                    <span className="text-[9px] text-slate-500 uppercase font-bold">Ing</span>
+                            <div className="space-y-1.5">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-emerald-400 text-lg font-black font-mono">{ing.consumo.toFixed(1)}%</span>
+                                        <SemaforoBadge valor={ing.semaforo} size="sm" />
+                                        <span className="text-[9px] text-slate-500 uppercase font-bold">Ing</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-white/10 rounded-full mt-1">
+                                        <div
+                                            className={`h-full rounded-full transition-all ${ing.semaforo === 'verde' ? 'bg-emerald-400' : ing.semaforo === 'amarillo' ? 'bg-amber-400' : 'bg-rose-400'}`}
+                                            style={{ width: `${Math.min(ing.consumo, 100)}%` }}
+                                        />
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-rose-400 text-lg font-black font-mono">{egr.consumo.toFixed(1)}%</span>
-                                    <SemaforoBadge valor={egr.semaforo} size="sm" />
-                                    <span className="text-[9px] text-slate-500 uppercase font-bold">Egr</span>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-rose-400 text-lg font-black font-mono">{egr.consumo.toFixed(1)}%</span>
+                                        <SemaforoBadge valor={egr.semaforo} size="sm" />
+                                        <span className="text-[9px] text-slate-500 uppercase font-bold">Egr</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-white/10 rounded-full mt-1">
+                                        <div
+                                            className={`h-full rounded-full transition-all ${egr.semaforo === 'verde' ? 'bg-emerald-400' : egr.semaforo === 'amarillo' ? 'bg-amber-400' : 'bg-rose-400'}`}
+                                            style={{ width: `${Math.min(egr.consumo, 100)}%` }}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         }
                         compact={compact}
                     />
                     <DarkStatCard
-                        label="Meses en Alerta"
+                        label="Alertas"
                         value={0}
                         icon={<AlertTriangle className="w-5 h-5" />}
                         colorClass={Math.max(egr.mesesAlerta, ing.mesesAlerta) === 0 ? 'text-emerald-400' : 'text-amber-400'}

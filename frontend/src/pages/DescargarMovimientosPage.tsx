@@ -7,6 +7,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
 import { useSessionStorage } from '../hooks/useSessionStorage'
+import { usePerspectiva } from '../hooks/usePerspectiva'
 import { getMesActual } from '../utils/dateUtils'
 import type { Movimiento } from '../types'
 
@@ -43,10 +44,8 @@ export const DescargarMovimientosPage: React.FC = () => {
     const [centroCostoId, setCentroCostoId] = useSessionStorage('desc_filtro_centroCostoId', '')
     const [conceptoId, setConceptoId] = useSessionStorage('desc_filtro_conceptoId', '')
 
-    // Dynamic Exclusion
-    const [configuracionExclusion, setConfiguracionExclusion] = useState<Array<{ centro_costo_id: number; etiqueta: string; activo_por_defecto: boolean }>>([])
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useSessionStorage<number[]>('desc_filtro_centrosCostosExcluidos', [])
-    const actualCentrosCostosExcluidos = centrosCostosExcluidos
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams: perspectivaParams } = usePerspectiva()
 
     // Export Options
     const [plainFormat, setPlainFormat] = useState(false)
@@ -68,16 +67,6 @@ export const DescargarMovimientosPage: React.FC = () => {
     const [movimientos, setMovimientos] = useState<Movimiento[]>([])
     const [loading, setLoading] = useState(false)
 
-    // Load Exclusion Config
-    useEffect(() => {
-        apiService.movimientos.obtenerConfiguracionFiltrosExclusion()
-            .then((data: any) => {
-                setConfiguracionExclusion(data)
-                // No defaults - user must choose which groups to exclude
-            })
-            .catch((err: any) => console.error("Error fetching filter config", err))
-    }, [])
-
     // Fetch Data
     const cargarDatos = () => {
         setLoading(true)
@@ -87,17 +76,17 @@ export const DescargarMovimientosPage: React.FC = () => {
         const parsedCentroCostoId = centroCostoId && centroCostoId !== '' ? parseInt(centroCostoId) : undefined
         const parsedConceptoId = conceptoId && conceptoId !== '' ? parseInt(conceptoId) : undefined
 
-        const filterParams = {
+        const fetchParams = {
             desde,
             hasta,
             cuenta_id: parsedCuentaId,
             tercero_id: parsedTerceroId,
             centro_costo_id: parsedCentroCostoId,
             concepto_id: parsedConceptoId,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+            ...perspectivaParams,
         }
 
-        apiService.movimientos.listar(filterParams)
+        apiService.movimientos.listar(fetchParams)
             .then((response: any) => {
                 setMovimientos(response.items || [])
                 setLoading(false)
@@ -112,7 +101,7 @@ export const DescargarMovimientosPage: React.FC = () => {
     // Effect to reload when filters change
     useEffect(() => {
         cargarDatos()
-    }, [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, actualCentrosCostosExcluidos])
+    }, [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, perspectivaParams])
 
     const handleLimpiar = () => {
         const mesActual = getMesActual()
@@ -122,12 +111,6 @@ export const DescargarMovimientosPage: React.FC = () => {
         setTerceroId('')
         setCentroCostoId('')
         setConceptoId('')
-        if (configuracionExclusion.length > 0) {
-            const defaults = configuracionExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        } else {
-            setCentrosCostosExcluidos([])
-        }
     }
 
     const toggleColumn = (key: string) => {
@@ -472,9 +455,9 @@ export const DescargarMovimientosPage: React.FC = () => {
                     conceptoId={conceptoId}
                     onConceptoChange={setConceptoId}
                     showClasificacionFilters={true}
-                    configuracionExclusion={configuracionExclusion}
-                    centrosCostosExcluidos={actualCentrosCostosExcluidos}
-                    onCentrosCostosExcluidosChange={setCentrosCostosExcluidos}
+                    perspectivas={perspectivas}
+                    selectedSlug={selectedSlug}
+                    onPerspectivaChange={setSelectedSlug}
                     onLimpiar={handleLimpiar}
                 />
             </div>

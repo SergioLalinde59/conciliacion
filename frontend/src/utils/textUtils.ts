@@ -26,8 +26,11 @@ export const extraerNombreTercero = (descripcion: string): string => {
         'Abono ',
     ]
 
-    const upper = descripcion.toUpperCase()
+    const upper = descripcion.toUpperCase().trim()
     for (const prefijo of prefijos) {
+        const prefijoUpper = prefijo.toUpperCase().trimEnd()
+        // Si la descripción ES exactamente el prefijo (sin nombre después), no hay tercero que extraer
+        if (upper === prefijoUpper) return ''
         if (upper.startsWith(prefijo.toUpperCase())) {
             const resto = descripcion.slice(prefijo.length).trim()
             if (resto.length > 0) return resto

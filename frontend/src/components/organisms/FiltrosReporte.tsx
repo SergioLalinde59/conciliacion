@@ -1,10 +1,11 @@
-import { RotateCcw, Filter } from 'lucide-react'
+import { RotateCcw, Filter, Eye } from 'lucide-react'
 import { SelectorCuenta } from '../molecules/SelectorCuenta'
 import { Button } from '../atoms/Button'
 import { DateRangeButtons, DateRangeInputs } from '../molecules/DateRangeSelector'
 import { ClassificationFilters } from '../molecules/ClassificationFilters'
 import { FilterToggles } from '../molecules/FilterToggles'
-import type { Tercero, CentroCosto, Concepto } from '../../types'
+import PerspectiveSelector from '../molecules/PerspectiveSelector'
+import type { Tercero, CentroCosto, Concepto, Perspectiva } from '../../types'
 import type { ConfigFiltroExclusion } from '../../types/filters'
 import { useCatalogo } from '../../hooks/useCatalogo'
 
@@ -46,6 +47,10 @@ interface FiltrosReporteProps {
     soloConciliables?: boolean
     extraActions?: React.ReactNode
     showAdvancedFilters?: boolean
+    // Perspectiva (nuevo) - cuando se proporcionan, reemplaza checkboxes de exclusión
+    perspectivas?: Perspectiva[]
+    selectedSlug?: string
+    onPerspectivaChange?: (slug: string) => void
 }
 
 export const FiltrosReporte = ({
@@ -58,14 +63,17 @@ export const FiltrosReporte = ({
     terceros = [], centrosCostos = [], conceptos = [],
     onLimpiar,
     showClasificacionFilters = true,
-    showIngresosEgresos = true,
+    showIngresosEgresos = false,
     mostrarIngresos = true, onMostrarIngresosChange, setMostrarIngresos,
     mostrarEgresos = true, onMostrarEgresosChange, setMostrarEgresos,
     configuracionExclusion = [],
     centrosCostosExcluidos = [], onCentrosCostosExcluidosChange, setCentrosCostosExcluidos,
     soloConciliables = true,
     extraActions,
-    showAdvancedFilters = true
+    showAdvancedFilters = true,
+    perspectivas,
+    selectedSlug,
+    onPerspectivaChange,
 }: FiltrosReporteProps) => {
 
     // Helper to prioritize the new "set" naming convetion or the old "on" one
@@ -147,23 +155,47 @@ export const FiltrosReporte = ({
                 </div>
             </div>
 
-            {/* Fila 4: Filtros Avanzados */}
+            {/* Fila 4: Perspectiva / Filtros Avanzados */}
             {showAdvancedFilters && <div className="flex items-center gap-6 pt-2 border-t border-slate-100">
-                <div className="flex items-center gap-2 text-slate-400">
-                    <Filter size={14} className="opacity-50" />
-                    <span className="text-[9px] font-black uppercase tracking-[0.2em]">Filtros Avanzados</span>
-                </div>
-
-                <FilterToggles
-                    mostrarIngresos={mostrarIngresos}
-                    onMostrarIngresosChange={_onMostrarIngresos}
-                    mostrarEgresos={mostrarEgresos}
-                    onMostrarEgresosChange={_onMostrarEgresos}
-                    showIngresosEgresos={showIngresosEgresos}
-                    configuracionExclusion={configuracionExclusion}
-                    centrosCostosExcluidos={centrosCostosExcluidos}
-                    onCentrosCostosExcluidosChange={_onExcluidos}
-                />
+                {perspectivas && selectedSlug && onPerspectivaChange ? (
+                    <>
+                        <div className="flex items-center gap-2 text-slate-400">
+                            <Eye size={14} className="opacity-50" />
+                            <span className="text-[9px] font-black uppercase tracking-[0.2em]">Perspectiva</span>
+                        </div>
+                        <PerspectiveSelector
+                            perspectivas={perspectivas}
+                            selectedSlug={selectedSlug}
+                            onChange={onPerspectivaChange}
+                        />
+                        {showIngresosEgresos && (
+                            <FilterToggles
+                                mostrarIngresos={mostrarIngresos}
+                                onMostrarIngresosChange={_onMostrarIngresos}
+                                mostrarEgresos={mostrarEgresos}
+                                onMostrarEgresosChange={_onMostrarEgresos}
+                                showIngresosEgresos={true}
+                            />
+                        )}
+                    </>
+                ) : (
+                    <>
+                        <div className="flex items-center gap-2 text-slate-400">
+                            <Filter size={14} className="opacity-50" />
+                            <span className="text-[9px] font-black uppercase tracking-[0.2em]">Filtros Avanzados</span>
+                        </div>
+                        <FilterToggles
+                            mostrarIngresos={mostrarIngresos}
+                            onMostrarIngresosChange={_onMostrarIngresos}
+                            mostrarEgresos={mostrarEgresos}
+                            onMostrarEgresosChange={_onMostrarEgresos}
+                            showIngresosEgresos={showIngresosEgresos}
+                            configuracionExclusion={configuracionExclusion}
+                            centrosCostosExcluidos={centrosCostosExcluidos}
+                            onCentrosCostosExcluidosChange={_onExcluidos}
+                        />
+                    </>
+                )}
             </div>}
         </div>
     )

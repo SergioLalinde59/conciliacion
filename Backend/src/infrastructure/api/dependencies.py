@@ -135,6 +135,12 @@ def get_indicador_economico_repository(conn=Depends(get_db_connection)) -> Indic
 def get_regla_presupuesto_repository(conn=Depends(get_db_connection)) -> ReglaPresupuestoRepository:
     return PostgresReglaPresupuestoRepository(conn)
 
+from src.infrastructure.database.postgres_perspectiva_repository import PostgresPerspectivaRepository
+from src.domain.ports.perspectiva_repository import PerspectivaRepository
+
+def get_perspectiva_repository(conn=Depends(get_db_connection)) -> PerspectivaRepository:
+    return PostgresPerspectivaRepository(conn)
+
 from src.domain.services.presupuesto_generacion_service import PresupuestoGeneracionDomainService
 
 def get_presupuesto_generacion_domain_service() -> PresupuestoGeneracionDomainService:

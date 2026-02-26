@@ -2,7 +2,6 @@ from typing import List, Optional, Tuple
 from decimal import Decimal
 from datetime import date
 import os
-from difflib import SequenceMatcher
 from src.domain.models.movimiento import Movimiento
 from src.domain.ports.movimiento_repository import MovimientoRepository
 from src.domain.ports.reglas_repository import ReglasRepository
@@ -12,75 +11,7 @@ from src.domain.ports.centro_costo_repository import CentroCostoRepository
 from src.domain.ports.concepto_repository import ConceptoRepository
 from src.domain.ports.cuenta_repository import CuentaRepository
 from src.domain.ports.matching_alias_repository import MatchingAliasRepository
-import unicodedata
-
-def _normalizar_acentos(texto: str) -> str:
-    """Elimina acentos y diacríticos de un texto para comparación."""
-    if not texto:
-        return ""
-    # NFD descompone caracteres (é → e + ́), luego filtramos los diacríticos
-    nfkd = unicodedata.normalize('NFKD', texto)
-    return ''.join(c for c in nfkd if not unicodedata.combining(c))
-
-def calcular_similitud_texto(texto1: str, texto2: str) -> float:
-    """
-    Calcula la similitud entre dos textos usando SequenceMatcher.
-    Retorna un valor entre 0 y 100 (porcentaje de similitud).
-    """
-    if not texto1 or not texto2:
-        return 0.0
-    
-    # Normalizar textos: minúsculas y sin espacios extras
-    t1 = " ".join(texto1.lower().split())
-    t2 = " ".join(texto2.lower().split())
-    
-    # Calcular similitud
-    ratio = SequenceMatcher(None, t1, t2).ratio()
-    return ratio * 100
-
-def calcular_similitud_palabras(texto1: str, texto2: str) -> float:
-    """
-    Calcula similitud basada en palabras compartidas usando el coeficiente de Jaccard.
-    Retorna un valor entre 0 y 100 (porcentaje de similitud).
-    
-    Esta métrica es más robusta para textos con palabras en diferente orden.
-    Ejemplo: "PAGO TC MASTER" vs "MASTER TC PAGO" → alta similitud
-    """
-    if not texto1 or not texto2:
-        return 0.0
-    
-    # Normalizar y extraer palabras
-    palabras1 = set(texto1.lower().split())
-    palabras2 = set(texto2.lower().split())
-    
-    # Eliminar palabras muy cortas (1-2 caracteres) que no aportan significado
-    palabras1 = {p for p in palabras1 if len(p) > 2}
-    palabras2 = {p for p in palabras2 if len(p) > 2}
-    
-    if not palabras1 or not palabras2:
-        return 0.0
-    
-    # Coeficiente de Jaccard: |intersección| / |unión|
-    comunes = palabras1.intersection(palabras2)
-    union = palabras1.union(palabras2)
-    
-    return (len(comunes) / len(union)) * 100
-
-def calcular_similitud_hibrida(texto1: str, texto2: str) -> float:
-    """
-    Combina similitud de palabras (Jaccard) y similitud de secuencia (SequenceMatcher).
-    
-    Pesos:
-    - 60% similitud de palabras (más importante para coincidencias conceptuales)
-    - 40% similitud de secuencia (importante para orden y estructura)
-    
-    Retorna un valor entre 0 y 100 (porcentaje de similitud).
-    """
-    sim_palabras = calcular_similitud_palabras(texto1, texto2)
-    sim_secuencia = calcular_similitud_texto(texto1, texto2)
-    
-    # Peso: 60% palabras, 40% secuencia
-    return (sim_palabras * 0.6) + (sim_secuencia * 0.4)
+from src.domain.utils.text_similarity import normalizar_acentos, calcular_similitud_texto, calcular_similitud_palabras, calcular_similitud_hibrida
 
 
 class ClasificacionService:
@@ -169,11 +100,11 @@ class ClasificacionService:
 
         desc_norm = descripcion.upper().strip()
         # Versión sin acentos para comparación
-        desc_sin_acentos = _normalizar_acentos(desc_norm)
+        desc_sin_acentos = normalizar_acentos(desc_norm)
 
         for alias in aliases:
             # Normalizar patrón sin acentos para comparación
-            patron_sin_acentos = _normalizar_acentos(alias.patron)
+            patron_sin_acentos = normalizar_acentos(alias.patron)
             if patron_sin_acentos in desc_sin_acentos:
                 # Reemplazar en la versión sin acentos
                 desc_sin_acentos = desc_sin_acentos.replace(patron_sin_acentos, alias.reemplazo)
@@ -221,8 +152,7 @@ class ClasificacionService:
             if coincide:
                 modificado = False
                 if regla.tercero_id and not movimiento.tercero_id:
-                    movimiento.tercero_id = regla.tercero_id
-                    # Propagar al detalle si es único (consistencia)
+                    # Tercero se asigna solo a detalles, no al encabezado
                     if len(movimiento.detalles) == 1:
                         movimiento.detalles[0].tercero_id = regla.tercero_id
                     modificado = True
@@ -254,8 +184,7 @@ class ClasificacionService:
                 # Tomar el más reciente
                 mejor_candidato = candidatos[0] # Asumimos que repo devuelve ordenados, sino ordenar
                 
-                movimiento.tercero_id = mejor_candidato.tercero_id
-                # Propagar al detalle si es único
+                # Tercero se asigna solo a detalles, no al encabezado
                 if len(movimiento.detalles) == 1:
                     movimiento.detalles[0].tercero_id = mejor_candidato.tercero_id
                 movimiento.centro_costo_id = mejor_candidato.centro_costo_id
@@ -270,8 +199,7 @@ class ClasificacionService:
             
             td = self.tercero_descripcion_repo.buscar_por_referencia(movimiento.referencia)
             if td:
-                movimiento.tercero_id = td.terceroid
-                # Propagar al detalle si es único
+                # Tercero se asigna solo a detalles, no al encabezado
                 if len(movimiento.detalles) == 1:
                     movimiento.detalles[0].tercero_id = td.terceroid
                 return True, f"Referencia Catálogo Exacta: {movimiento.referencia}"
@@ -423,8 +351,9 @@ class ClasificacionService:
         # ============================================
         # Busca aliases/descripciones en el catálogo de terceros usando patrones de la descripción.
         # Se ejecuta SIEMPRE que no haya match previo (con o sin referencia).
+        # Si la referencia es nueva, NO sugerir tercero por texto (la referencia identifica un tercero nuevo).
 
-        if not match_referencia_encontrado and not sugerencia['tercero_id'] and self.tercero_descripcion_repo:
+        if not match_referencia_encontrado and not referencia_no_existe and not sugerencia['tercero_id'] and self.tercero_descripcion_repo:
             descripcion = movimiento.descripcion or ""
             palabras_ignorar = {'y', 'de', 'la', 'el', 'en', 'a', 'por', 'para', 'con', 'cop', 'usd'}
             palabras = descripcion.split()
@@ -454,7 +383,8 @@ class ClasificacionService:
         # ============================================
         # Busca terceros cuyo nombre aparece como palabra en la descripción.
         # Útil para movimientos nuevos sin historial previo (ej: "Presto Las Vegas" → tercero "Presto")
-        if not match_referencia_encontrado and not sugerencia['tercero_id']:
+        # Si la referencia es nueva, NO sugerir (el tercero probablemente no existe aún).
+        if not match_referencia_encontrado and not referencia_no_existe and not sugerencia['tercero_id']:
             descripcion_match = movimiento.descripcion or ""
             if len(descripcion_match.strip()) >= 4:
                 terceros_match = self.tercero_repo.buscar_en_texto(descripcion_match)
@@ -561,6 +491,9 @@ class ClasificacionService:
         valor_min = valor_abs * (1 - margen_pct)
         valor_max = valor_abs * (1 + margen_pct)
 
+        # Descripción normalizada del movimiento actual (constante para todo el scoring)
+        desc_norm = self._aplicar_aliases(descripcion, movimiento.cuenta_id)
+
         for mid, data in candidatos_map.items():
             cand = data['mov']
 
@@ -574,7 +507,6 @@ class ClasificacionService:
 
             # 2. Similitud Texto (Híbrida) - CON NORMALIZACIÓN
             # Aplicar aliases de normalización antes de comparar
-            desc_norm = self._aplicar_aliases(descripcion, movimiento.cuenta_id)
             cand_desc_norm = self._aplicar_aliases(cand.descripcion or "", movimiento.cuenta_id)
             sim_texto = calcular_similitud_hibrida(desc_norm, cand_desc_norm)
 
@@ -632,17 +564,72 @@ class ClasificacionService:
             print(f"      {i+1}. [{res['score_final']:.1f} pts] ID {m.id} - '{m.descripcion}'")
             print(f"         Ref: {res['match_ref']} | Txt: {res['sim_texto']:.1f}% | Val: {res['score_valor']} | Origen: {res['origen']}")
             
-        # Seleccionar contexto top 5 con filtro de calidad mínima
-        contexto_con_score = [
+        # Candidatos evaluados para uso interno de las estrategias.
+        # El contexto final para el frontend se construye al final, después de todas las reglas.
+        candidatos_evaluados = [
             {'movimiento': r['movimiento'], 'score': round(r['score_final'], 1)}
-            for r in resultados_scoring[:10]  # Pool más amplio para compensar filtrado
+            for r in resultados_scoring[:10]
             if r['score_final'] >= UMBRAL_MINIMO_HISTORIAL
         ][:5]
-        
+
+        # ============================================
+        # 4.5. REGLA: DETECCIÓN DE DESCRIPCIÓN GENÉRICA
+        # ============================================
+        # REGLA DE NEGOCIO: Una descripción es "genérica" cuando el historial demuestra
+        # que MÚLTIPLES terceros distintos la comparten. Ejemplos reales:
+        #   - "Transferencias A Nequi" → usada por Luz Marina, Andrea Latorre, Maria Paula...
+        #   - "Transferencia Cta Suc Virtual" → usada por Materiales Construcentro, Lina María, Pasteur...
+        #
+        # En estos casos la descripción por sí sola NO identifica al tercero.
+        # Sugerir cualquiera de ellos sería engañoso (ej: "Alta confianza" cuando hay 66%
+        # de probabilidad de error).
+        #
+        # DETECCIÓN: Entre los candidatos con alta similitud de texto (≥ umbral configurable),
+        # si hay 2 o más terceros distintos → la descripción es genérica.
+        #
+        # EFECTO:
+        #   - NO se sugiere ningún tercero (se limpian sugerencias previas de texto)
+        #   - NO se muestra barra de sugerencia (sin razón, sin confianza)
+        #   - SÍ se muestra el Historial Relacionado para decisión manual del usuario
+        #   - Se retorna flag 'descripcion_generica' al frontend para mensaje informativo
+        #
+        # EXCEPCIÓN: Solo se respeta la sugerencia previa si vino de REFERENCIA EXACTA
+        # (match_referencia_encontrado = True), porque la referencia es un identificador
+        # inequívoco. Las estrategias de texto (patrón catálogo, nombre tercero) NO son
+        # confiables cuando la descripción es genérica y se limpian.
+
+        descripcion_generica = False
+
+        if not match_referencia_encontrado and not referencia_no_existe and resultados_scoring:
+            UMBRAL_SIM_GENERICA = float(os.getenv('CLASIFICACION_UMBRAL_SIM_TEXTO_GENERICA', '90'))
+            candidatos_alta_sim = [r for r in resultados_scoring if r['sim_texto'] >= UMBRAL_SIM_GENERICA]
+
+            if candidatos_alta_sim:
+                terceros_distintos = set(
+                    r['movimiento'].tercero_id for r in candidatos_alta_sim
+                    if r['movimiento'].tercero_id
+                )
+                if len(terceros_distintos) >= 2:
+                    descripcion_generica = True
+                    print(f"   ⚠️ DESCRIPCIÓN GENÉRICA detectada: {len(terceros_distintos)} terceros distintos con sim_texto ≥ {UMBRAL_SIM_GENERICA}%")
+                    print(f"      Terceros IDs: {terceros_distintos}")
+
+                    # Limpiar sugerencia previa si vino de estrategias de TEXTO
+                    # (patrón catálogo, nombre tercero, historial). Solo se respeta referencia_exacta.
+                    if sugerencia['tipo_match'] and sugerencia['tipo_match'] != 'referencia_exacta':
+                        print(f"   🧹 Limpiando sugerencia previa (tipo: {sugerencia['tipo_match']}) por descripción genérica")
+                        sugerencia['tercero_id'] = None
+                        sugerencia['centro_costo_id'] = None
+                        sugerencia['concepto_id'] = None
+                        sugerencia['razon'] = None
+                        sugerencia['tipo_match'] = None
+
         # ============================================
         # 5. INFERIR SUGERENCIAS DESDE EL GANADOR
         # ============================================
-        if not sugerencia['tercero_id'] and contexto_con_score:
+        # Si la referencia es nueva, no inferir tercero del historial (es un tercero nuevo).
+        # Si la descripción es genérica, no inferir (múltiples terceros posibles).
+        if not sugerencia['tercero_id'] and not referencia_no_existe and not descripcion_generica and candidatos_evaluados:
             ganador = resultados_scoring[0]
             
             # Umbral de confianza: score global + similitud de texto mínima
@@ -663,9 +650,11 @@ class ClasificacionService:
         # ============================================
         # 6. SUGERIR TERCERO SI TODOS SON IGUALES (Consistencia)
         # ============================================
-        if not sugerencia['tercero_id'] and contexto_con_score:
+        # Si la referencia es nueva, no sugerir por consistencia (es un tercero nuevo).
+        # Si la descripción es genérica, no sugerir (múltiples terceros posibles).
+        if not sugerencia['tercero_id'] and not referencia_no_existe and not descripcion_generica and candidatos_evaluados:
             # Solo candidatos con score significativo participan en la regla de consistencia
-            candidatos_significativos = [c for c in contexto_con_score if c['score'] >= UMBRAL_CONSISTENCIA_MIN]
+            candidatos_significativos = [c for c in candidatos_evaluados if c['score'] >= UMBRAL_CONSISTENCIA_MIN]
             if candidatos_significativos:
                 terceros_unicos = set(c['movimiento'].tercero_id for c in candidatos_significativos if c['movimiento'].tercero_id)
                 if len(terceros_unicos) == 1:
@@ -682,7 +671,7 @@ class ClasificacionService:
         if sugerencia['tercero_id'] and (not sugerencia['centro_costo_id'] or not sugerencia['concepto_id']):
             # Filtrar candidatos que tengan el mismo tercero sugerido Y score significativo
             candidatos_tercero = [
-                c['movimiento'] for c in contexto_con_score
+                c['movimiento'] for c in candidatos_evaluados
                 if c['movimiento'].tercero_id == sugerencia['tercero_id']
                 and c['score'] >= UMBRAL_CONSISTENCIA_MIN
             ]
@@ -722,9 +711,82 @@ class ClasificacionService:
             t = self.tercero_repo.obtener_por_id(sugerencia['tercero_id'])
             sugerencia['tercero_nombre'] = t.tercero if t else None
 
+        # ============================================
+        # 7.5. HISTORIAL POR TERCERO SUGERIDO
+        # ============================================
+        # Si ya tenemos tercero pero el contexto está vacío (ej: referencia encontrada en
+        # catálogo pero sin historial con esa referencia exacta), buscar historial del tercero.
+        if sugerencia['tercero_id'] and not candidatos_evaluados:
+            tercero_id_sugerido = sugerencia['tercero_id']
+            cands_tercero, _ = self.movimiento_repo.buscar_avanzado(
+                tercero_id=tercero_id_sugerido,
+                solo_clasificados=True,
+                limit=20
+            )
+            cands_tercero = [m for m in cands_tercero if m.id != movimiento.id]
+
+            if cands_tercero:
+                # Redistribuir peso de referencia entre texto y valor
+                # (el tercero ya fue identificado, la referencia no aporta al scoring)
+                _peso_desc = pesos_cuenta['peso_descripcion']
+                _peso_val = pesos_cuenta['peso_valor']
+                _peso_ref = pesos_cuenta['peso_referencia']
+                _suma_dv = _peso_desc + _peso_val
+                if _peso_ref > 0 and _suma_dv > 0:
+                    _peso_desc += _peso_ref * _peso_desc / _suma_dv
+                    _peso_val += _peso_ref * _peso_val / _suma_dv
+                _suma = _peso_desc + _peso_val
+                _peso_txt_n = _peso_desc / _suma if _suma > 0 else 0.7
+                _peso_val_n = _peso_val / _suma if _suma > 0 else 0.3
+
+                print(f"   📋 Historial por tercero sugerido {tercero_id_sugerido}: {len(cands_tercero)} movimientos")
+                for cand in cands_tercero:
+                    cand_desc_norm = self._aplicar_aliases(cand.descripcion or "", movimiento.cuenta_id)
+                    sim_texto = calcular_similitud_hibrida(desc_norm, cand_desc_norm)
+
+                    score_valor = 0
+                    cand_valor_abs = abs(cand.valor) if cand.valor else Decimal(0)
+                    if cand.valor == movimiento.valor:
+                        score_valor = 100
+                    elif (cand.valor is not None and movimiento.valor is not None
+                          and (cand.valor < 0) == (movimiento.valor < 0)
+                          and valor_min <= cand_valor_abs <= valor_max):
+                        score_valor = 80
+
+                    score_final = (sim_texto * _peso_txt_n) + (score_valor * _peso_val_n)
+
+                    resultados_scoring.append({
+                        'movimiento': cand, 'score_final': score_final,
+                        'match_ref': 0, 'sim_texto': sim_texto,
+                        'score_valor': score_valor, 'origen': ['tercero_sugerido']
+                    })
+
+                resultados_scoring.sort(
+                    key=lambda x: (-x['score_final'], -(x['movimiento'].fecha if x['movimiento'].fecha else fecha_min).toordinal())
+                )
+                candidatos_evaluados = [
+                    {'movimiento': r['movimiento'], 'score': round(r['score_final'], 1)}
+                    for r in resultados_scoring[:10]
+                    if r['score_final'] >= UMBRAL_MINIMO_HISTORIAL
+                ][:5]
+
+        # ============================================
+        # 8. CONSTRUIR CONTEXTO FINAL (Historial Relacionado)
+        # ============================================
+        # Se construye al final, después de todas las reglas, para decidir en un solo lugar
+        # qué se muestra al usuario:
+        #   - referencia_no_existe → sin historial (el tercero es nuevo, el historial es ruido)
+        #   - descripcion_generica → sin historial (múltiples terceros, el historial confunde)
+        #   - caso normal → top 5 candidatos evaluados
+        if referencia_no_existe or descripcion_generica:
+            contexto_con_score = []
+        else:
+            contexto_con_score = candidatos_evaluados
+
         # Calcular nivel de confianza para el frontend
+        # Descripción genérica → sin confianza (no hay sugerencia que calificar)
         confianza = None
-        if sugerencia['razon']:
+        if not descripcion_generica and sugerencia['razon']:
             if sugerencia['tipo_match'] == 'referencia_exacta':
                 confianza = 'alta'
             elif contexto_con_score:
@@ -744,6 +806,174 @@ class ClasificacionService:
             'contexto': contexto_con_score,
             'referencia_no_existe': referencia_no_existe,
             'referencia': movimiento.referencia if referencia_no_existe else None,
+            'descripcion_generica': descripcion_generica,
+            'confianza': confianza
+        }
+
+    def obtener_contexto_por_tercero(self, movimiento_id: int, tercero_id: int) -> dict:
+        """
+        Dado un movimiento y un tercero_id seleccionado manualmente, busca el historial
+        clasificado de ese tercero y lo puntúa relativo al movimiento actual.
+        También infiere CC/Concepto por frecuencia.
+
+        Versión ligera de obtener_sugerencia_clasificacion, usada cuando el usuario
+        selecciona un tercero manualmente en un movimiento con descripción genérica.
+        """
+        from collections import Counter
+
+        movimiento = self.movimiento_repo.obtener_por_id(movimiento_id)
+        if not movimiento:
+            raise ValueError(f"Movimiento {movimiento_id} no encontrado")
+
+        UMBRAL_MINIMO_HISTORIAL = float(os.getenv('CLASIFICACION_UMBRAL_MINIMO_HISTORIAL', '40'))
+        UMBRAL_CONSISTENCIA_MIN = float(os.getenv('CLASIFICACION_UMBRAL_CONSISTENCIA_MINIMO', '30'))
+
+        # Buscar historial clasificado de este tercero
+        candidatos, _ = self.movimiento_repo.buscar_avanzado(
+            tercero_id=tercero_id,
+            solo_clasificados=True,
+            limit=20
+        )
+
+        # Obtener pesos dinámicos de la cuenta
+        pesos_cuenta = self._obtener_pesos_cuenta(movimiento.cuenta_id)
+        peso_desc = pesos_cuenta['peso_descripcion']
+        peso_val = pesos_cuenta['peso_valor']
+        longitud_min_ref = pesos_cuenta.get('longitud_min_referencia', 8)
+
+        # Redistribuir peso de referencia (no aplica aquí, tercero ya definido)
+        peso_ref = pesos_cuenta['peso_referencia']
+        suma_desc_val = peso_desc + peso_val
+        if suma_desc_val > 0 and peso_ref > 0:
+            peso_desc = peso_desc + (peso_ref * peso_desc / suma_desc_val)
+            peso_val = peso_val + (peso_ref * peso_val / suma_desc_val)
+
+        suma_pesos = peso_desc + peso_val
+        if suma_pesos > 0:
+            peso_texto_norm = peso_desc / suma_pesos
+            peso_valor_norm = peso_val / suma_pesos
+        else:
+            peso_texto_norm = 0.7
+            peso_valor_norm = 0.3
+
+        # Margen de valor
+        margen_pct = Decimal(os.getenv('SIMILAR_RECORDS_VALUE_MARGIN_PERCENT', '20')) / Decimal('100')
+        valor_abs = abs(movimiento.valor) if movimiento.valor else Decimal(0)
+        valor_min = valor_abs * (1 - margen_pct)
+        valor_max = valor_abs * (1 + margen_pct)
+
+        # Descripción normalizada del movimiento actual
+        descripcion = movimiento.descripcion or ""
+        desc_norm = self._aplicar_aliases(descripcion, movimiento.cuenta_id)
+
+        # Referencia del movimiento actual
+        ref_actual = (movimiento.referencia or "").strip()
+
+        resultados_scoring = []
+        for cand in candidatos:
+            if cand.id == movimiento_id:
+                continue
+
+            # Match referencia
+            match_ref = 0
+            ref_cand = (cand.referencia or "").strip()
+            if (len(ref_actual) >= longitud_min_ref and
+                len(ref_cand) >= longitud_min_ref and
+                ref_actual == ref_cand):
+                match_ref = 100
+
+            # Similitud texto
+            cand_desc_norm = self._aplicar_aliases(cand.descripcion or "", movimiento.cuenta_id)
+            sim_texto = calcular_similitud_hibrida(desc_norm, cand_desc_norm)
+
+            # Similitud valor
+            score_valor = 0
+            cand_valor_abs = abs(cand.valor) if cand.valor else Decimal(0)
+            if cand.valor == movimiento.valor:
+                score_valor = 100
+            elif (cand.valor is not None and movimiento.valor is not None
+                  and (cand.valor < 0) == (movimiento.valor < 0)
+                  and valor_min <= cand_valor_abs <= valor_max):
+                score_valor = 80
+
+            # Score final
+            if match_ref == 100:
+                score_final = 100.0
+            else:
+                score_final = (sim_texto * peso_texto_norm) + (score_valor * peso_valor_norm)
+
+            resultados_scoring.append({
+                'movimiento': cand,
+                'score_final': score_final,
+            })
+
+        # Ordenar por score desc, fecha desc, valor por cercanía
+        valor_referencia = abs(movimiento.valor or 0)
+        fecha_min = date(1900, 1, 1)
+        resultados_scoring.sort(
+            key=lambda x: (
+                -x['score_final'],
+                -(x['movimiento'].fecha if x['movimiento'].fecha else fecha_min).toordinal(),
+                abs(abs(x['movimiento'].valor or 0) - valor_referencia)
+            )
+        )
+
+        # Top 5 sobre umbral
+        contexto_con_score = [
+            {'movimiento': r['movimiento'], 'score': round(r['score_final'], 1)}
+            for r in resultados_scoring[:10]
+            if r['score_final'] >= UMBRAL_MINIMO_HISTORIAL
+        ][:5]
+
+        # Inferir CC/Concepto por frecuencia
+        sugerencia = {
+            'tercero_id': tercero_id,
+            'centro_costo_id': None,
+            'concepto_id': None,
+            'razon': 'Historial del tercero seleccionado' if contexto_con_score else None,
+            'tipo_match': 'tercero_manual'
+        }
+
+        candidatos_tercero = [
+            r['movimiento'] for r in resultados_scoring
+            if r['movimiento'].tercero_id == tercero_id
+            and r['score_final'] >= UMBRAL_CONSISTENCIA_MIN
+        ]
+
+        if candidatos_tercero:
+            umbral_cc_concepto = float(os.getenv('CLASIFICACION_UMBRAL_CC_CONCEPTO', '0.6'))
+
+            cc_counter = Counter(m.centro_costo_id for m in candidatos_tercero if m.centro_costo_id)
+            concepto_counter = Counter(m.concepto_id for m in candidatos_tercero if m.concepto_id)
+
+            if cc_counter:
+                cc_mas_frecuente, cc_count = cc_counter.most_common(1)[0]
+                if cc_count >= len(candidatos_tercero) * umbral_cc_concepto:
+                    sugerencia['centro_costo_id'] = cc_mas_frecuente
+
+            if concepto_counter:
+                concepto_mas_frecuente, concepto_count = concepto_counter.most_common(1)[0]
+                if concepto_count >= len(candidatos_tercero) * umbral_cc_concepto:
+                    sugerencia['concepto_id'] = concepto_mas_frecuente
+
+        # Calcular confianza
+        confianza = None
+        if contexto_con_score:
+            best_score = max(c['score'] for c in contexto_con_score)
+            if best_score >= 80:
+                confianza = 'alta'
+            elif best_score >= 50:
+                confianza = 'media'
+            else:
+                confianza = 'baja'
+
+        return {
+            'movimiento_id': movimiento.id,
+            'sugerencia': sugerencia,
+            'contexto': contexto_con_score,
+            'referencia_no_existe': False,
+            'referencia': None,
+            'descripcion_generica': False,
             'confianza': confianza
         }
 

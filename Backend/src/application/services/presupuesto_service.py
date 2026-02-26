@@ -720,6 +720,7 @@ class PresupuestoService:
         self,
         presupuesto_id: int,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         direccion: str = 'egreso'
     ) -> dict:
         """Retorna gastos del año actual sin presupuesto asignado, con info de regla existente."""
@@ -729,6 +730,7 @@ class PresupuestoService:
 
         items = self._comparacion_repo.obtener_gastos_sin_presupuesto(
             presupuesto_id, presupuesto.anio, centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos,
             direccion=direccion
         )
         # Clasificar por categoría
@@ -759,6 +761,7 @@ class PresupuestoService:
         centro_costo_id: Optional[int] = None,
         concepto_id: Optional[int] = None,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         excluir_estacionales: bool = False,
         direccion: str = 'egreso'
     ) -> List[dict]:
@@ -774,6 +777,7 @@ class PresupuestoService:
         if nivel == 'centro_costo':
             return self._comparacion_repo.comparar_por_centro_costo(
                 presupuesto_id, anio, mes_inicio, mes_fin, centros_costos_excluidos,
+                centros_costos_incluidos=centros_costos_incluidos,
                 verde_hasta=verde, amarillo_hasta=amarillo,
                 excluir_estacionales=excluir_estacionales,
                 direccion=direccion
@@ -783,6 +787,7 @@ class PresupuestoService:
                 raise ValueError("centro_costo_id es requerido para nivel concepto")
             return self._comparacion_repo.comparar_por_concepto(
                 presupuesto_id, anio, centro_costo_id, mes_inicio, mes_fin, centros_costos_excluidos,
+                centros_costos_incluidos=centros_costos_incluidos,
                 verde_hasta=verde, amarillo_hasta=amarillo,
                 excluir_estacionales=excluir_estacionales,
                 direccion=direccion
@@ -792,6 +797,7 @@ class PresupuestoService:
                 raise ValueError("centro_costo_id es requerido para nivel tercero")
             return self._comparacion_repo.comparar_por_tercero(
                 presupuesto_id, anio, centro_costo_id, concepto_id, mes_inicio, mes_fin, centros_costos_excluidos,
+                centros_costos_incluidos=centros_costos_incluidos,
                 verde_hasta=verde, amarillo_hasta=amarillo,
                 excluir_estacionales=excluir_estacionales,
                 direccion=direccion

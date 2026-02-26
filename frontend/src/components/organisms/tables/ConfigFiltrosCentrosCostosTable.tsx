@@ -66,7 +66,10 @@ export const ConfigFiltrosCentrosCostosTable = ({ configs, centrosCostos, loadin
             onEdit={onEdit}
             onDelete={(row) => onDelete(row.id)}
             getRowKey={(row) => row.id}
-            deleteConfirmMessage={(row) => `¿Eliminar la configuración "${row.etiqueta}"?`}
+            deleteConfirmMessage={(row) => {
+                const centro = centrosCostos.find(c => c.id === row.centro_costo_id)
+                return `¿Eliminar esta configuración?\n\nID: ${row.id}\nCentro de Costo: ${row.centro_costo_id} - ${centro?.nombre || 'Desconocido'}\nEtiqueta: ${row.etiqueta}\nActivo por Defecto: ${row.activo_por_defecto ? 'Sí' : 'No'}`
+            }}
             emptyMessage="No hay configuraciones de filtros disponibles"
             showActions={true}
             className="border-none shadow-none"

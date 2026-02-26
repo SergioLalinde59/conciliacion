@@ -139,6 +139,7 @@ export const Sidebar = () => {
 
     const menuConfiguracion = [
         { name: 'Tipos de Cuenta', path: '/maestros/tipos-cuenta', icon: Scale },
+        { name: 'Perspectivas', path: '/maestros/perspectivas', icon: Eye },
         { name: 'Config. Filtros', path: '/maestros/config-filtros', icon: Filter },
         { name: 'Config. Valores Pendientes', path: '/maestros/config-valores-pendientes', icon: AlertCircle },
         { name: 'Reglas Auto', path: '/maestros/reglas', icon: Zap },

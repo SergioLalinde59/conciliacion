@@ -3,6 +3,7 @@ import { apiService } from '../services/api'
 import { toast } from 'react-hot-toast'
 import { ArrowRight, Check, TrendingDown, TrendingUp, Search, Calendar, X, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Movimiento } from '../types'
+import { FechaDisplay } from '../components/atoms/FechaDisplay'
 
 interface SugerenciaCentroCosto {
     tercero_id: number
@@ -420,7 +421,7 @@ export const SugerenciasReclasificacionPage = () => {
                                                         />
                                                     </td>
                                                     <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                                                        {new Date(mov.fecha).toLocaleDateString()}
+                                                        <FechaDisplay value={mov.fecha} />
                                                     </td>
                                                     <td className="px-4 py-2 text-sm text-gray-500">
                                                         <div className="flex flex-col">

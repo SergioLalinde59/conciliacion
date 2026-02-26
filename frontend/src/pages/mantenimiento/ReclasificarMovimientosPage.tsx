@@ -14,7 +14,7 @@ import type { ReclasificacionStats } from '../../api/mantenimientoService';
 import { apiService } from '../../services/api';
 import type { Movimiento } from '../../types';
 import { getMesActual } from '../../utils/dateUtils';
-import { useConfiguracionExclusion } from '../../hooks/useReportes';
+import { usePerspectiva } from '../../hooks/usePerspectiva';
 import { DataTable, type Column } from '../../components/molecules/DataTable';
 import { TableHeaderCell } from '../../components/atoms/TableHeaderCell';
 import { Button } from '../../components/atoms/Button';
@@ -30,17 +30,8 @@ export const ReclasificarMovimientosPage = () => {
     const [centroCostoId, setCentroCostoId] = useState<string>('');
     const [conceptoId, setConceptoId] = useState<string>('');
 
-    // Dynamic Exclusion Logic
-    const { data: configExclusion = [] } = useConfiguracionExclusion();
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[]>([]);
-
-    // Load exclusion defaults
-    useEffect(() => {
-        if (configExclusion.length > 0 && centrosCostosExcluidos.length === 0) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id);
-            if (defaults.length > 0) setCentrosCostosExcluidos(defaults);
-        }
-    }, [configExclusion]);
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva();
 
     // UI State
     const [loading, setLoading] = useState(false);
@@ -90,7 +81,7 @@ export const ReclasificarMovimientosPage = () => {
                     {
                         tercero_id: terceroId ? Number(terceroId) : undefined,
                         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
-                        centros_costos_excluidos: centrosCostosExcluidos.length > 0 ? centrosCostosExcluidos : undefined
+                        ...filterParams
                     }
                 );
                 setStats(statsData);
@@ -113,7 +104,7 @@ export const ReclasificarMovimientosPage = () => {
                     tercero_id: terceroId ? Number(terceroId) : undefined,
                     centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
                     concepto_id: conceptoId ? Number(conceptoId) : undefined,
-                    centros_costos_excluidos: centrosCostosExcluidos.length > 0 ? centrosCostosExcluidos : undefined,
+                    ...filterParams,
                     pendiente: !soloClasificados,
                     limit: 1000
                 });
@@ -134,7 +125,7 @@ export const ReclasificarMovimientosPage = () => {
 
         return () => clearTimeout(timer);
 
-    }, [fecha, fechaFin, selectedCuentaId, terceroId, centroCostoId, conceptoId, centrosCostosExcluidos, soloClasificados, refreshTrigger]);
+    }, [fecha, fechaFin, selectedCuentaId, terceroId, centroCostoId, conceptoId, filterParams, soloClasificados, refreshTrigger]);
 
     // Apply client-side filtering for Ingresos/Egresos
     // We filter on the client side because the backend endpoint for listing might not support these specific flags directly 
@@ -333,7 +324,6 @@ export const ReclasificarMovimientosPage = () => {
                     <ClassificationDisplay
                         centroCosto={ccId ? { id: ccId, nombre: ccNombre || '' } : null}
                         concepto={conceptId ? { id: conceptId, nombre: conceptNombre || '' } : null}
-                        detallesCount={numDetalles}
                     />
                 );
             }
@@ -441,20 +431,12 @@ export const ReclasificarMovimientosPage = () => {
                         setMostrarIngresos(true);
                         setMostrarEgresos(true);
 
-                        // Reset exclusions to defaults
-                        if (configExclusion.length > 0) {
-                            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id);
-                            setCentrosCostosExcluidos(defaults);
-                        } else {
-                            setCentrosCostosExcluidos([]);
-                        }
-
                         setStats(null);
                         setMovimientos([]);
                     }}
-                    configuracionExclusion={configExclusion}
-                    centrosCostosExcluidos={centrosCostosExcluidos}
-                    onCentrosCostosExcluidosChange={setCentrosCostosExcluidos}
+                    perspectivas={perspectivas}
+                    selectedSlug={selectedSlug}
+                    onPerspectivaChange={setSelectedSlug}
 
                 />
 

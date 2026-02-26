@@ -17,6 +17,7 @@ class MovimientoDetalle:
     # Optional fields
     id: Optional[int] = None
     movimiento_id: Optional[int] = None
+    orden: int = 0
     created_at: Optional[datetime] = None
     
     # Join fields (read-only)

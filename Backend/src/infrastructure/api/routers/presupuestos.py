@@ -360,13 +360,16 @@ def reglas_pendientes(
 def gastos_sin_presupuesto(
     presupuesto_id: int,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     direccion: str = Query("egreso", description="egreso o ingreso"),
     service: PresupuestoService = Depends(get_presupuesto_service)
 ):
     """Gastos/ingresos del año actual sin presupuesto asignado"""
     try:
         return service.obtener_gastos_sin_presupuesto(
-            presupuesto_id, centros_costos_excluidos, direccion=direccion
+            presupuesto_id, centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos,
+            direccion=direccion
         )
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -670,6 +673,7 @@ def comparar_presupuesto_vs_real(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     excluir_estacionales: bool = False,
     direccion: str = Query("egreso", description="egreso o ingreso"),
     service: PresupuestoService = Depends(get_presupuesto_service)
@@ -683,6 +687,7 @@ def comparar_presupuesto_vs_real(
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
             centros_costos_excluidos=centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos,
             excluir_estacionales=excluir_estacionales,
             direccion=direccion
         )
@@ -696,6 +701,7 @@ def comparar_presupuesto_vs_real(
 def comparar_resumen_mensual(
     presupuesto_id: int,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     tercero_id: Optional[int] = None,
@@ -712,6 +718,7 @@ def comparar_resumen_mensual(
             presupuesto_id=presupuesto_id,
             anio=p.anio,
             centros_costos_excluidos=centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos,
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
             tercero_id=tercero_id,

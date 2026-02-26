@@ -26,7 +26,8 @@ export const CentrosCostosTable = ({ data, loading, onEdit, onDelete }: Props) =
             getRowKey={(c) => c.id}
             onEdit={onEdit}
             onDelete={(centroCosto) => onDelete(centroCosto.id)}
-            deleteConfirmMessage="¿Estás seguro de eliminar este centro de costo?"
+            deleteConfirmMessage={(row) =>
+                `¿Eliminar este centro de costo?\n\nID: ${row.id}\nNombre: ${row.nombre}`}
         />
     )
 }

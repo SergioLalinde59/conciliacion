@@ -28,10 +28,10 @@ const SERIES_COLORS: Record<string, string> = {
     Ingresos: '#93c5fd',
     Egresos: '#1e40af',
     'Flujo Neto': '#6366f1',
-    'Flujo Neto Ppto': '#f59e0b',
+    'Ppto Flujo Neto': '#f59e0b',
 }
 
-const SERIES_ORDER = ['Ppto Egresos', 'Ppto Ingresos', 'Ingresos', 'Egresos', 'Flujo Neto', 'Flujo Neto Ppto']
+const SERIES_ORDER = ['Ppto Ingresos', 'Ingresos', 'Ppto Egresos', 'Egresos', 'Ppto Flujo Neto', 'Flujo Neto']
 
 export const DashboardCashFlowChart = ({ data, presupuestoMensual, presupuestoMensualIngresos, isLoading, compact = false }: DashboardCashFlowChartProps) => {
     const formatCurrency = useFormatCurrency()
@@ -65,7 +65,7 @@ export const DashboardCashFlowChart = ({ data, presupuestoMensual, presupuestoMe
                 'Flujo Neto': item.saldo,
                 'Ppto Egresos': pptoEgr,
                 'Ppto Ingresos': pptoIng,
-                'Flujo Neto Ppto': pptoIng !== null && pptoEgr !== null
+                'Ppto Flujo Neto': pptoIng !== null && pptoEgr !== null
                     ? pptoIng - pptoEgr
                     : null,
             }

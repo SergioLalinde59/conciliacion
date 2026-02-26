@@ -3,6 +3,7 @@ import { Pencil, Trash2 } from 'lucide-react'
 import { DataTableSortIcon } from '../atoms/DataTableSortIcon';
 import { useState, useMemo } from 'react'
 import { Button } from '../atoms/Button'
+import { MessageModal } from './MessageModal'
 
 /**
  * Definición de una columna para DataTable
@@ -136,6 +137,9 @@ export function DataTable<T extends Record<string, any>>({
     const [internalSortKey, setInternalSortKey] = useState<string | null>(initialSortKey);
     const [internalSortDirection, setInternalSortDirection] = useState<SortDirection>(initialSortDirection);
 
+    // Estado para confirmación de eliminación
+    const [deleteRow, setDeleteRow] = useState<T | null>(null);
+
     // Determinar qué estado usar
     const isControlled = controlledSortKey !== undefined;
     const currentSortKey = isControlled ? controlledSortKey : internalSortKey;
@@ -184,16 +188,14 @@ export function DataTable<T extends Record<string, any>>({
         }
     };
 
-    // Manejar eliminación con confirmación
+    // Manejar eliminación con confirmación via MessageModal
     const handleDelete = (row: T) => {
-        const message = typeof deleteConfirmMessage === 'function'
-            ? deleteConfirmMessage(row)
-            : deleteConfirmMessage
-
-        if (confirm(message)) {
-            onDelete?.(row)
-        }
+        setDeleteRow(row)
     }
+
+    const deleteMessage = deleteRow
+        ? (typeof deleteConfirmMessage === 'function' ? deleteConfirmMessage(deleteRow) : deleteConfirmMessage)
+        : null
 
     // Renderizar celda
     const renderCell = (row: T, column: Column<T>, index: number) => {
@@ -352,6 +354,15 @@ export function DataTable<T extends Record<string, any>>({
                     })}
                 </tbody>
             </table>
+            <MessageModal
+                message={deleteMessage}
+                type="confirm"
+                title="Confirmar eliminación"
+                confirmLabel="Eliminar"
+                cancelLabel="Cancelar"
+                onConfirm={() => { if (deleteRow) onDelete?.(deleteRow); setDeleteRow(null) }}
+                onClose={() => setDeleteRow(null)}
+            />
         </div>
     );
 }

@@ -4,6 +4,7 @@ import { CurrencyDisplay } from '../../atoms/CurrencyDisplay'
 import { Button } from '../../atoms/Button'
 import { Loader2, TrendingUp, TrendingDown, Link2, FileText, Database, CheckCircle, AlertTriangle, XCircle, HelpCircle } from 'lucide-react'
 import { API_BASE_URL } from '../../../services/httpClient'
+import { formatFecha } from '../../atoms/FechaDisplay'
 
 // ============ TYPES ============
 
@@ -113,13 +114,12 @@ const ESTADO_CONFIG: Record<string, { color: string; icon: React.ElementType; la
 // ============ HELPER FUNCTIONS ============
 
 const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr + 'T00:00:00')
-    return date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    return formatFecha(dateStr, { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 const extractYearMonth = (dateStr: string): { year: number; month: number } => {
-    const date = new Date(dateStr + 'T00:00:00')
-    return { year: date.getFullYear(), month: date.getMonth() + 1 }
+    const [year, month] = dateStr.split('-').map(Number)
+    return { year, month }
 }
 
 /** Para cuentas USD, usa el campo usd si existe; sino cae a valor */

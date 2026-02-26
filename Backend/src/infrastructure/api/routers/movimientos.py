@@ -31,6 +31,7 @@ class MovimientoDetalleDTO(BaseModel):
     valor: float
     centro_costo_id: Optional[int] = None
     concepto_id: Optional[int] = None
+    tercero_id: Optional[int] = None
 
 class MovimientoDTO(BaseModel):
     fecha: date
@@ -113,6 +114,10 @@ def _to_response(mov: Movimiento) -> MovimientoResponse:
             ) for d in mov.detalles
         ]
 
+    # Derivar tercero desde detalles (ya no está en el encabezado de la DB)
+    _tercero_id = mov.detalles[0].tercero_id if mov.detalles else None
+    _tercero_nombre = mov.detalles[0].tercero_nombre if mov.detalles else None
+
     response = MovimientoResponse(
         id=mov.id,
         fecha=mov.fecha,
@@ -125,7 +130,7 @@ def _to_response(mov: Movimiento) -> MovimientoResponse:
         trm_provisional=mov.trm_provisional,
         moneda_id=mov.moneda_id,
         cuenta_id=mov.cuenta_id,
-        tercero_id=mov.tercero_id,
+        tercero_id=_tercero_id,
         centro_costo_id=mov.centro_costo_id,
         concepto_id=mov.concepto_id,
         created_at=mov.created_at,
@@ -133,18 +138,18 @@ def _to_response(mov: Movimiento) -> MovimientoResponse:
         detalles=detalles_response,
         cuenta_nombre=mov.cuenta_nombre,
         moneda_nombre=mov.moneda_nombre,
-        tercero_nombre=mov.tercero_nombre,
+        tercero_nombre=_tercero_nombre,
         centro_costo_nombre=mov.centro_costo_nombre,
         concepto_nombre=mov.concepto_nombre,
         cuenta_display=f"{mov.cuenta_id} - {mov.cuenta_nombre}" if mov.cuenta_id and mov.cuenta_nombre else (str(mov.cuenta_id) if mov.cuenta_id else "Sin Cuenta"),
         moneda_display=f"{mov.moneda_id} - {mov.moneda_nombre}" if mov.moneda_id and mov.moneda_nombre else (str(mov.moneda_id) if mov.moneda_id else "Sin Moneda"),
-        tercero_display=f"{mov.tercero_id} - {mov.tercero_nombre}" if mov.tercero_id and mov.tercero_nombre else None,
+        tercero_display=f"{_tercero_id} - {_tercero_nombre}" if _tercero_id and _tercero_nombre else None,
         centro_costo_display=f"{mov.centro_costo_id} - {mov.centro_costo_nombre}" if mov.centro_costo_id and mov.centro_costo_nombre else None,
         concepto_display=f"{mov.concepto_id} - {mov.concepto_nombre}" if mov.concepto_id and mov.concepto_nombre else None
     )
     
     if mov.id == 2232:
-        logger.info(f"DEBUG_2232: _to_response. mov.tercero_id={mov.tercero_id}, mov.tercero_nombre={mov.tercero_nombre}")
+        logger.info(f"DEBUG_2232: _to_response. _tercero_id={_tercero_id}, _tercero_nombre={_tercero_nombre}")
         logger.info(f"DEBUG_2232: Generated tercero_display={response.tercero_display}")
         logger.info(f"DEBUG_2232: mov.detalles={mov.detalles}")
         
@@ -192,6 +197,7 @@ def listar_movimientos(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     pendiente: Optional[bool] = None,
     tipo_movimiento: Optional[str] = None,
     repo: MovimientoRepository = Depends(get_movimiento_repository)
@@ -202,12 +208,12 @@ def listar_movimientos(
     Si pendiente is False, aplica solo_clasificados=True en repo.
     """
     logger.info(f"Listando todos los movimientos sin paginación")
-    
+
     # Logic transformation for repo
     solo_clasificados_val = False
-    solo_pendientes = None 
+    solo_pendientes = None
     solo_pendientes_val = solo_pendientes
-    
+
     if pendiente is not None:
         if pendiente is True:
             solo_pendientes_val = True
@@ -224,6 +230,7 @@ def listar_movimientos(
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
             centros_costos_excluidos=centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos,
             solo_pendientes=solo_pendientes_val,
             solo_clasificados=solo_clasificados_val,
             tipo_movimiento=tipo_movimiento,
@@ -232,8 +239,9 @@ def listar_movimientos(
         )
         
         # Calcular totales globales
-        # Si hay filtro por centro_costo o concepto, usamos valor_filtrado para los totales
-        hay_filtro_detalle = centro_costo_id is not None or concepto_id is not None
+        # Si hay filtro por centro_costo, concepto o perspectiva, usamos valor_filtrado para los totales
+        hay_filtro_detalle = (centro_costo_id is not None or concepto_id is not None
+                              or centros_costos_excluidos or centros_costos_incluidos)
         
         def obtener_valor_para_totales(m):
             """Retorna valor_filtrado si existe y hay filtro de detalle activo, sino valor total"""
@@ -314,6 +322,7 @@ def reporte_clasificacion(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     tipo_movimiento: Optional[str] = None,
     repo: MovimientoRepository = Depends(get_movimiento_repository)
 ):
@@ -327,6 +336,7 @@ def reporte_clasificacion(
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
             centros_costos_excluidos=centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos,
             tipo_movimiento=tipo_movimiento
         )
     except Exception as e:
@@ -342,6 +352,7 @@ def reporte_ingresos_gastos_mes(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     repo: MovimientoRepository = Depends(get_movimiento_repository)
 ):
     try:
@@ -352,7 +363,8 @@ def reporte_ingresos_gastos_mes(
             tercero_id=tercero_id,
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
-            centros_costos_excluidos=centros_costos_excluidos
+            centros_costos_excluidos=centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos
         )
     except Exception as e:
         logger.error(f"Error generando reporte mensual: {str(e)}", exc_info=True)
@@ -368,6 +380,7 @@ def reporte_desglose_gastos(
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     repo: MovimientoRepository = Depends(get_movimiento_repository)
 ):
     try:
@@ -379,7 +392,8 @@ def reporte_desglose_gastos(
             tercero_id=tercero_id,
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
-            centros_costos_excluidos=centros_costos_excluidos
+            centros_costos_excluidos=centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos
         )
     except Exception as e:
         logger.error(f"Error generando reporte desglose: {str(e)}", exc_info=True)
@@ -494,8 +508,10 @@ def crear_movimiento(
                     valor=Decimal(str(d.valor)),
                     centro_costo_id=d.centro_costo_id,
                     concepto_id=d.concepto_id,
-                    tercero_id=dto.tercero_id # Heredar Tercero del Encabezado
+                    tercero_id=d.tercero_id if d.tercero_id is not None else dto.tercero_id
                 ))
+            # Sincronizar header con el tercero del primer detalle
+            nuevo.tercero_id = detalles_obj[0].tercero_id
             nuevo.detalles = detalles_obj
         else:
             # Modo Simple: Asignar clasificación vía propiedades (setters)
@@ -538,11 +554,8 @@ def actualizar_movimiento(
         float(existente.valor) != dto.valor
     )
 
-    # Detectar cambios en descripción/referencia
-    texto_cambio = (
-        existente.descripcion != dto.descripcion or
-        (existente.referencia or "") != (dto.referencia or "")
-    )
+    # Detectar cambios en descripción (campo del extracto bancario, no editable)
+    descripcion_cambio = existente.descripcion != dto.descripcion
 
     # Si cambiaron valores críticos, validar permisos de editar y modificar
     if valores_criticos_cambiaron:
@@ -558,13 +571,13 @@ def actualizar_movimiento(
                 status_code=403,
                 detail=f"No está permitido modificar valores (fecha, valor) en cuentas de tipo '{tipo_nombre}'. Solo puede cambiar la clasificación."
             )
-    elif texto_cambio:
-        # Solo cambió descripción/referencia (sin fecha/valor)
+    elif descripcion_cambio:
+        # Solo cambió descripción (sin fecha/valor)
         if not cuenta.permite_modificar:
-            # No tiene permiso de modificar texto, forzar valores originales
+            # No tiene permiso de modificar descripción, forzar valor original
             # Esto permite clasificar sin error aunque el frontend envíe descripción diferente
             dto.descripcion = existente.descripcion
-            dto.referencia = existente.referencia or ""
+    # Referencia siempre se permite actualizar (es metadato editable, no dato bancario crítico)
 
     # Validar permiso de clasificar (siempre necesario para actualizar)
     if not cuenta.permite_clasificar:
@@ -605,8 +618,10 @@ def actualizar_movimiento(
                     valor=Decimal(str(d.valor)),
                     centro_costo_id=d.centro_costo_id,
                     concepto_id=d.concepto_id,
-                    tercero_id=dto.tercero_id # Heredar Tercero del Encabezado
+                    tercero_id=d.tercero_id if d.tercero_id is not None else dto.tercero_id
                 ))
+            # Sincronizar header con el tercero del primer detalle
+            actualizado.tercero_id = detalles_obj[0].tercero_id
             actualizado.detalles = detalles_obj
         else:
              # Modo Simple (o migración de split a simple)

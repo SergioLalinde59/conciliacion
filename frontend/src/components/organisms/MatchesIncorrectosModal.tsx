@@ -1,5 +1,6 @@
 import { AlertTriangle, X } from 'lucide-react'
 import { formatCurrency } from '../atoms/CurrencyDisplay'
+import { FechaDisplay } from '../atoms/FechaDisplay'
 
 interface CasoProblematico {
     sistema_id: number
@@ -94,7 +95,7 @@ export const MatchesIncorrectosModal = ({
                                                         {caso.sistema_descripcion}
                                                     </p>
                                                     <p className="text-sm text-gray-600 mt-1">
-                                                        {new Date(caso.sistema_fecha).toLocaleDateString('es-CO')}
+                                                        <FechaDisplay value={caso.sistema_fecha} />
                                                     </p>
                                                 </div>
                                                 <div className="text-right">
@@ -122,7 +123,7 @@ export const MatchesIncorrectosModal = ({
                                                                 </span>
                                                                 <span className="text-xs text-gray-400">•</span>
                                                                 <span className="text-xs text-gray-500">
-                                                                    {new Date(caso.extracto_fechas[i]).toLocaleDateString('es-CO')}
+                                                                    <FechaDisplay value={caso.extracto_fechas[i]} />
                                                                 </span>
                                                             </div>
                                                             <p className="font-medium text-gray-900 truncate">

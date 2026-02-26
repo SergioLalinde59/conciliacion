@@ -101,8 +101,11 @@ export const tercerosService = {
         return result
     },
 
-    listarDescripciones: async (): Promise<any[]> => {
-        const data = await fetch(`${API_BASE_URL}/api/terceros/descripciones`).then(handleResponse)
+    listarDescripciones: async (terceroid?: number): Promise<any[]> => {
+        const url = terceroid
+            ? `${API_BASE_URL}/api/terceros/descripciones?terceroid=${terceroid}`
+            : `${API_BASE_URL}/api/terceros/descripciones`
+        const data = await fetch(url).then(handleResponse)
         return data
     },
 

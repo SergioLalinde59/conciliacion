@@ -512,6 +512,39 @@ export const UploadMovimientosPage: React.FC = () => {
                                     {filtroEstado !== 'todos' && filtroEstado !== '' && <span className="opacity-60"> / {movimientosPreview.length}</span>}
                                 </span>
                             </h3>
+                            {stats && analyzed && (
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setAnalyzed(false)
+                                            setStats(null)
+                                            setMovimientosPreview([])
+                                            setFile(null)
+                                            setLocalFilename(null)
+                                            setCuentaId(null)
+                                            setTipoCuenta('')
+                                            if (fileInputRef.current) {
+                                                fileInputRef.current.value = ''
+                                            }
+                                        }}
+                                        className="px-4 py-1.5 text-slate-500 hover:text-slate-700 font-bold text-[11px] transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handleCargarDefinitivo}
+                                        disabled={!cuentaId || (stats.nuevos + (stats.actualizables || 0)) === 0}
+                                        className={`px-5 py-1.5 rounded-xl font-black text-[11px] uppercase tracking-widest text-white shadow-sm transition-all flex items-center gap-1.5
+                                            ${!cuentaId || (stats.nuevos + (stats.actualizables || 0)) === 0
+                                                ? 'bg-slate-300 cursor-not-allowed shadow-none'
+                                                : 'bg-emerald-500 hover:bg-emerald-600 hover:scale-[1.02] active:scale-[0.98] shadow-green-100'
+                                            }`}
+                                    >
+                                        <UploadCloud size={14} className="stroke-[3px]" />
+                                        {(stats.nuevos + (stats.actualizables || 0)) > 0 ? `Cargar/Actualizar ${stats.nuevos + (stats.actualizables || 0)} Registros` : 'Nada nuevo para cargar'}
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         <div className="px-4 py-2.5 border-b border-slate-100 bg-white">
@@ -545,8 +578,6 @@ export const UploadMovimientosPage: React.FC = () => {
                                 showActions={false}
                                 rounded={false}
                                 className="border-none"
-                                maxHeight="none"
-                                style={{ flex: 1, minHeight: 0 }}
                                 columns={[
                                     {
                                         key: 'estado',
@@ -593,57 +624,23 @@ export const UploadMovimientosPage: React.FC = () => {
                     </div>
                 )}
 
-                {/* 4. Footer Actions */}
-                {stats && analyzed && (
-                    <div className="flex flex-col gap-4 p-6 bg-slate-50/50 rounded-3xl border border-slate-200">
-                        {(stats.actualizables || 0) > 0 && (
-                            <div className="flex items-center gap-3 p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
-                                <input
-                                    type="checkbox"
-                                    id="updateExisting"
-                                    checked={updateExisting}
-                                    onChange={(e) => setUpdateExisting(e.target.checked)}
-                                    className="h-5 w-5 text-blue-600 rounded-lg border-slate-300 focus:ring-blue-500"
-                                />
-                                <label htmlFor="updateExisting" className="text-sm font-semibold text-blue-900 cursor-pointer">
-                                    Actualizar descripción de {stats.actualizables} registros existentes (Misma Fecha y Valor)
-                                    <span className="block text-xs font-medium text-blue-600 mt-0.5">
-                                        Si se desmarca, se crearán como nuevos registros.
-                                    </span>
-                                </label>
-                            </div>
-                        )}
-
-                        <div className="flex justify-end gap-4">
-                            <button
-                                onClick={() => {
-                                    setAnalyzed(false)
-                                    setStats(null)
-                                    setMovimientosPreview([])
-                                    setFile(null)
-                                    setLocalFilename(null)
-                                    setCuentaId(null)
-                                    setTipoCuenta('')
-                                    if (fileInputRef.current) {
-                                        fileInputRef.current.value = ''
-                                    }
-                                }}
-                                className="px-6 py-2.5 text-slate-500 hover:text-slate-700 font-bold text-[13px] transition-colors"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={handleCargarDefinitivo}
-                                disabled={!cuentaId || (stats.nuevos + (stats.actualizables || 0)) === 0}
-                                className={`px-8 py-2.5 rounded-xl font-black text-[13px] uppercase tracking-widest text-white shadow-lg shadow-green-100 transition-all flex items-center gap-2
-                                    ${!cuentaId || (stats.nuevos + (stats.actualizables || 0)) === 0
-                                        ? 'bg-slate-300 cursor-not-allowed shadow-none'
-                                        : 'bg-emerald-500 hover:bg-emerald-600 hover:scale-[1.02] active:scale-[0.98]'
-                                    }`}
-                            >
-                                <UploadCloud size={18} className="stroke-[3px]" />
-                                {(stats.nuevos + (stats.actualizables || 0)) > 0 ? `Cargar/Actualizar ${stats.nuevos + (stats.actualizables || 0)} Registros` : 'Nada nuevo para cargar'}
-                            </button>
+                {/* 4. Opciones adicionales */}
+                {stats && analyzed && (stats.actualizables || 0) > 0 && (
+                    <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="checkbox"
+                                id="updateExisting"
+                                checked={updateExisting}
+                                onChange={(e) => setUpdateExisting(e.target.checked)}
+                                className="h-5 w-5 text-blue-600 rounded-lg border-slate-300 focus:ring-blue-500"
+                            />
+                            <label htmlFor="updateExisting" className="text-sm font-semibold text-blue-900 cursor-pointer">
+                                Actualizar descripción de {stats.actualizables} registros existentes (Misma Fecha y Valor)
+                                <span className="block text-xs font-medium text-blue-600 mt-0.5">
+                                    Si se desmarca, se crearán como nuevos registros.
+                                </span>
+                            </label>
                         </div>
                     </div>
                 )}

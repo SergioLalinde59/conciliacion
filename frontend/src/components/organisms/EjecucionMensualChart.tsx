@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import {
     ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
-    Tooltip, Legend, ResponsiveContainer, ReferenceLine, Cell
+    Tooltip, Legend, ResponsiveContainer, ReferenceLine
 } from 'recharts'
 import { useFormatCurrency } from '../atoms/CurrencyDisplay'
 import { formatCompact } from '../../utils/formatters'
@@ -15,22 +15,27 @@ interface EjecucionMensualChartProps {
 
 const MESES_CORTOS = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-const SEMAFORO_COLORS: Record<string, string> = {
-    verde: '#0d9488',   // teal-600 (distinto del emerald de ingresos)
-    amarillo: '#f59e0b',
-    rojo: '#ef4444',
-}
-
 const SERIES_COLORS: Record<string, string> = {
     'Real Ing': '#10b981',
-    'Real Egr': '#64748b',
+    'Real Egr': '#e11d48',
     'Ppto Ing': '#6ee7b7',
     'Ppto Egr': '#94a3b8',
     'Flujo Neto': '#6366f1',
     'Acum Egr %': '#a78bfa',
+    'Acum Ing %': '#34d399',
 }
 
-const SERIES_ORDER = ['Real Ing', 'Ppto Ing', 'Real Egr', 'Ppto Egr', 'Flujo Neto', 'Acum Egr %']
+const SERIES_ORDER = ['Ppto Ing', 'Real Ing', 'Acum Ing %', 'Ppto Egr', 'Real Egr', 'Acum Egr %', 'Flujo Neto']
+
+const SERIES_DISPLAY: Record<string, string> = {
+    'Real Ing': 'Ingreso',
+    'Real Egr': 'Egreso',
+    'Ppto Ing': 'Ppto Ing',
+    'Ppto Egr': 'Ppto Egr',
+    'Flujo Neto': 'Flujo Neto',
+    'Acum Egr %': 'Acum Egr %',
+    'Acum Ing %': 'Acum Ing %',
+}
 
 interface ChartPoint {
     name: string
@@ -41,6 +46,7 @@ interface ChartPoint {
     'Ppto Egr': number
     'Flujo Neto': number
     'Acum Egr %': number
+    'Acum Ing %': number
     semaforoEgr: 'verde' | 'amarillo' | 'rojo'
 }
 
@@ -57,13 +63,16 @@ export const EjecucionMensualChart = ({ mensualEgreso, mensualIngreso, compact =
         const egrMap = new Map(mensualEgreso.map(r => [r.mes, r]))
         const ingMap = new Map(mensualIngreso.map(r => [r.mes, r]))
         const pptoAnualEgr = mensualEgreso.reduce((s, r) => s + r.presupuestado, 0)
+        const pptoAnualIng = mensualIngreso.reduce((s, r) => s + r.presupuestado, 0)
 
         let acumEgr = 0
+        let acumIng = 0
 
         return Array.from(allMeses).sort((a, b) => a - b).map(m => {
             const egr = egrMap.get(m)
             const ing = ingMap.get(m)
             acumEgr += egr?.ejecutado ?? 0
+            acumIng += ing?.ejecutado ?? 0
             return {
                 name: MESES_CORTOS[m] || `M${m}`,
                 mes: m,
@@ -73,6 +82,7 @@ export const EjecucionMensualChart = ({ mensualEgreso, mensualIngreso, compact =
                 'Ppto Egr': egr?.presupuestado ?? 0,
                 'Flujo Neto': (ing?.ejecutado ?? 0) - (egr?.ejecutado ?? 0),
                 'Acum Egr %': pptoAnualEgr > 0 ? (acumEgr / pptoAnualEgr) * 100 : 0,
+                'Acum Ing %': pptoAnualIng > 0 ? (acumIng / pptoAnualIng) * 100 : 0,
                 semaforoEgr: egr?.semaforo ?? 'verde',
             }
         })
@@ -139,23 +149,20 @@ export const EjecucionMensualChart = ({ mensualEgreso, mensualIngreso, compact =
                                         padding: '10px 14px',
                                         fontSize: 12,
                                     }}>
-                                        <div style={{ fontWeight: 600, marginBottom: 6, color: '#334155' }}>{label}</div>
+                                        <div style={{ fontWeight: 700, marginBottom: 6, color: '#0f172a', fontSize: 13 }}>{label}</div>
                                         <table style={{ borderSpacing: 0 }}>
                                             <tbody>
                                                 {items.map((item: any) => {
                                                     const val = Number(item.value ?? 0)
                                                     const isNeg = val < 0
-                                                    const isAcum = item.dataKey === 'Acum Egr %'
-                                                    const point = chartData.find(d => d.name === label)
-                                                    let color = SERIES_COLORS[item.dataKey] || '#64748b'
-                                                    if (item.dataKey === 'Real Egr' && point) {
-                                                        color = SEMAFORO_COLORS[point.semaforoEgr]
-                                                    }
+                                                    const isAcum = item.dataKey === 'Acum Egr %' || item.dataKey === 'Acum Ing %'
+                                                    const color = SERIES_COLORS[item.dataKey] || '#64748b'
+                                                    const displayName = SERIES_DISPLAY[item.dataKey] || item.dataKey
 
                                                     if (isAcum) {
                                                         return (
                                                             <tr key={item.dataKey}>
-                                                                <td style={{ paddingRight: 10, color }}>{item.dataKey}</td>
+                                                                <td style={{ paddingRight: 10, color }}>{displayName}</td>
                                                                 <td style={{ textAlign: 'right', paddingLeft: 4, color, fontWeight: 600 }}>
                                                                     {val.toFixed(1)}%
                                                                 </td>
@@ -169,7 +176,7 @@ export const EjecucionMensualChart = ({ mensualEgreso, mensualIngreso, compact =
                                                     return (
                                                         <tr key={item.dataKey}>
                                                             <td style={{ paddingRight: 10, color }}>
-                                                                {item.dataKey}
+                                                                {displayName}
                                                             </td>
                                                             <td style={{
                                                                 textAlign: 'right',
@@ -201,25 +208,14 @@ export const EjecucionMensualChart = ({ mensualEgreso, mensualIngreso, compact =
                                 return (
                                     <div className="flex items-center justify-center gap-4 pt-2">
                                         {sorted.map((entry: any) => {
-                                            if (entry.value === 'Real Egr') {
-                                                return (
-                                                    <span key={entry.value} className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                                                        <span className="flex gap-px">
-                                                            <span className="inline-block w-1.5 h-3 rounded-l-sm" style={{ backgroundColor: '#0d9488' }} />
-                                                            <span className="inline-block w-1.5 h-3" style={{ backgroundColor: '#f59e0b' }} />
-                                                            <span className="inline-block w-1.5 h-3 rounded-r-sm" style={{ backgroundColor: '#ef4444' }} />
-                                                        </span>
-                                                        Egreso (semáforo)
-                                                    </span>
-                                                )
-                                            }
+                                            const displayName = SERIES_DISPLAY[entry.value] || entry.value
                                             return (
                                                 <span key={entry.value} className="flex items-center gap-1.5 text-[11px] text-slate-500">
                                                     <span
                                                         className="inline-block w-3 h-3 rounded-sm"
                                                         style={{ backgroundColor: entry.color }}
                                                     />
-                                                    {entry.value}
+                                                    {displayName}
                                                 </span>
                                             )
                                         })}
@@ -257,11 +253,7 @@ export const EjecucionMensualChart = ({ mensualEgreso, mensualIngreso, compact =
 
                         {/* Actual bars */}
                         <Bar yAxisId="left" dataKey="Real Ing" fill="#10b981" radius={[3, 3, 0, 0]} barSize={20} />
-                        <Bar yAxisId="left" dataKey="Real Egr" radius={[3, 3, 0, 0]} barSize={20}>
-                            {chartData.map((entry, idx) => (
-                                <Cell key={idx} fill={SEMAFORO_COLORS[entry.semaforoEgr]} />
-                            ))}
-                        </Bar>
+                        <Bar yAxisId="left" dataKey="Real Egr" fill="#e11d48" radius={[3, 3, 0, 0]} barSize={20} />
 
                         {/* Net flow line */}
                         <Line
@@ -274,7 +266,15 @@ export const EjecucionMensualChart = ({ mensualEgreso, mensualIngreso, compact =
                             activeDot={{ r: 6 }}
                         />
 
-                        {/* Cumulative egress % (right axis) */}
+                        {/* Cumulative % (right axis) */}
+                        <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="Acum Ing %"
+                            stroke="#34d399"
+                            strokeWidth={2}
+                            dot={{ fill: '#34d399', r: 3 }}
+                        />
                         <Line
                             yAxisId="right"
                             type="monotone"

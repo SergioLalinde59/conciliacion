@@ -6,7 +6,7 @@ import { DashboardTopExpenses } from '../components/organisms/dashboard/Dashboar
 import { DashboardBudgetVsReal } from '../components/organisms/dashboard/DashboardBudgetVsReal'
 import { dashboardService } from '../services/dashboard.service'
 import { presupuestoService } from '../services/presupuesto.service'
-import { apiService } from '../services/api'
+import { usePerspectiva } from '../hooks/usePerspectiva'
 import { getAnioYTD } from '../utils/dateUtils'
 import { useSettings } from '../context/SettingsContext'
 import type { FlujoCajaMes, ClasificacionItem } from '../services/dashboard.service'
@@ -17,9 +17,10 @@ export const DashboardPage = () => {
     const [desde, setDesde] = useState(getAnioYTD().inicio)
     const [hasta, setHasta] = useState(getAnioYTD().fin)
 
-    // ---- EXCLUSIONES (préstamos, tita, traslados) ----
-    const [centrosExcluidos, setCentrosExcluidos] = useState<number[]>([])
-    const [exclusionesListas, setExclusionesListas] = useState(false)
+    // ---- PERSPECTIVA (reemplaza exclusiones manuales) ----
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams, ready: perspectivaReady } = usePerspectiva()
+    const centrosExcluidos = filterParams.centros_costos_excluidos
+    const centrosIncluidos = filterParams.centros_costos_incluidos
 
     // ---- DATA ----
     const [flujoMensual, setFlujoMensual] = useState<FlujoCajaMes[]>([])
@@ -36,18 +37,8 @@ export const DashboardPage = () => {
     const [loadingTop, setLoadingTop] = useState(true)
     const [loadingPpto, setLoadingPpto] = useState(true)
 
-    // ---- Cargar exclusiones al iniciar (gate: no cargar data hasta que estén listas) ----
-    useEffect(() => {
-        apiService.movimientos.obtenerConfiguracionFiltrosExclusion()
-            .then(configs => {
-                const defaults = configs
-                    .filter(c => c.activo_por_defecto)
-                    .map(c => c.centro_costo_id)
-                setCentrosExcluidos(defaults)
-            })
-            .catch(console.error)
-            .finally(() => setExclusionesListas(true))
-    }, [])
+    // Gate: no cargar data hasta que perspectiva esté lista
+    const exclusionesListas = perspectivaReady
 
     // ---- Totales para Hero ----
     const totales = useMemo(() => {
@@ -97,6 +88,14 @@ export const DashboardPage = () => {
     const desdeAnterior = useMemo(() => `${parseInt(desde.substring(0, 4), 10) - 1}${desde.substring(4)}`, [desde])
     const hastaAnterior = useMemo(() => `${parseInt(hasta.substring(0, 4), 10) - 1}${hasta.substring(4)}`, [hasta])
 
+    // ---- Sin presupuesto por centro (para popover del Hero) ----
+    const sinPptoDetalle = useMemo(() => {
+        return pptoVsReal
+            .filter(d => (d.ejecutado_sin_ppto ?? 0) >= 1000)
+            .map(d => ({ nombre: d.nombre, monto: d.ejecutado_sin_ppto ?? 0 }))
+            .sort((a, b) => b.monto - a.monto)
+    }, [pptoVsReal])
+
     // ---- Totales año anterior ----
     const totalesAnterior = useMemo(() => {
         return flujoAnterior.reduce(
@@ -113,33 +112,34 @@ export const DashboardPage = () => {
     const cargarFlujo = useCallback(() => {
         if (!exclusionesListas) return
         setLoadingFlujo(true)
-        dashboardService.flujoMensual(desde, hasta, centrosExcluidos)
+        dashboardService.flujoMensual(desde, hasta, centrosExcluidos, undefined, centrosIncluidos)
             .then(setFlujoMensual)
             .catch(err => console.error('Error flujo mensual:', err))
             .finally(() => setLoadingFlujo(false))
-    }, [desde, hasta, centrosExcluidos, exclusionesListas])
+    }, [desde, hasta, centrosExcluidos, centrosIncluidos, exclusionesListas])
 
     const cargarTopEgresos = useCallback(() => {
         if (!exclusionesListas) return
         setLoadingTop(true)
-        dashboardService.topEgresos(desde, hasta, 'centro_costo', centrosExcluidos)
+        dashboardService.topEgresos(desde, hasta, 'centro_costo', centrosExcluidos, centrosIncluidos)
             .then(setTopEgresos)
             .catch(err => console.error('Error top egresos:', err))
             .finally(() => setLoadingTop(false))
-    }, [desde, hasta, centrosExcluidos, exclusionesListas])
+    }, [desde, hasta, centrosExcluidos, centrosIncluidos, exclusionesListas])
 
     const cargarFlujoAnterior = useCallback(() => {
         if (!exclusionesListas) return
-        dashboardService.flujoMensual(desdeAnterior, hastaAnterior, centrosExcluidos)
+        dashboardService.flujoMensual(desdeAnterior, hastaAnterior, centrosExcluidos, undefined, centrosIncluidos)
             .then(setFlujoAnterior)
             .catch(err => console.error('Error flujo anterior:', err))
-    }, [desdeAnterior, hastaAnterior, centrosExcluidos, exclusionesListas])
+    }, [desdeAnterior, hastaAnterior, centrosExcluidos, centrosIncluidos, exclusionesListas])
 
     const cargarPresupuesto = useCallback(async () => {
         if (!exclusionesListas) return
-        const excluidos = centrosExcluidos.length ? centrosExcluidos : undefined
+        const excluidos = centrosExcluidos?.length ? centrosExcluidos : undefined
+        const incluidos = centrosIncluidos?.length ? centrosIncluidos : undefined
         try {
-            const widget: PresupuestoWidget = await presupuestoService.widget({ centros_costos_excluidos: excluidos })
+            const widget: PresupuestoWidget = await presupuestoService.widget({ centros_costos_excluidos: excluidos, centros_costos_incluidos: incluidos })
             if (widget?.tiene_presupuesto && widget.presupuesto_id) {
                 setLoadingPpto(true)
                 const [comparacion, comparacionIngresos, mensual, mensualIngresos, pptoActual] = await Promise.all([
@@ -148,19 +148,23 @@ export const DashboardPage = () => {
                         mes_inicio: mesInicio,
                         mes_fin: mesFin,
                         centros_costos_excluidos: excluidos,
+                        centros_costos_incluidos: incluidos,
                     }),
                     presupuestoService.comparar(widget.presupuesto_id, {
                         nivel: 'centro_costo',
                         mes_inicio: mesInicio,
                         mes_fin: mesFin,
                         centros_costos_excluidos: excluidos,
+                        centros_costos_incluidos: incluidos,
                         direccion: 'ingreso',
                     }),
                     presupuestoService.compararMensual(widget.presupuesto_id, {
                         centros_costos_excluidos: excluidos,
+                        centros_costos_incluidos: incluidos,
                     }),
                     presupuestoService.compararMensual(widget.presupuesto_id, {
                         centros_costos_excluidos: excluidos,
+                        centros_costos_incluidos: incluidos,
                         direccion: 'ingreso',
                     }),
                     presupuestoService.obtener(widget.presupuesto_id),
@@ -182,7 +186,7 @@ export const DashboardPage = () => {
             console.error('Error presupuesto:', err)
             setLoadingPpto(false)
         }
-    }, [centrosExcluidos, exclusionesListas, mesInicio, mesFin])
+    }, [centrosExcluidos, centrosIncluidos, exclusionesListas, mesInicio, mesFin])
 
     // ---- EFECTOS: recargar al cambiar fechas o exclusiones ----
     useEffect(() => { cargarFlujo() }, [cargarFlujo])
@@ -192,7 +196,7 @@ export const DashboardPage = () => {
 
     return (
         <div className="max-w-7xl mx-auto space-y-6">
-            {/* HERO: KPIs + Date Pills */}
+            {/* HERO: KPIs + Date Pills + Perspectiva */}
             <DashboardHero
                 realAnterior={totalesAnterior}
                 anioAnterior={parseInt(desde.substring(0, 4), 10) - 1}
@@ -203,16 +207,20 @@ export const DashboardPage = () => {
                 egresos={totales.egresos}
                 flujoNeto={totales.saldo}
                 gastosSinPpto={gastosSinPpto}
+                sinPptoDetalle={sinPptoDetalle}
                 desde={desde}
                 hasta={hasta}
                 onDesdeChange={setDesde}
                 onHastaChange={setHasta}
                 loading={loadingFlujo}
                 compact={cifrasEnMillones}
+                perspectivas={perspectivas}
+                selectedSlug={selectedSlug}
+                onPerspectivaChange={setSelectedSlug}
             />
 
             {/* PRESUPUESTO: 3 Meses Móvil */}
-            <DashboardBudget3Months centrosExcluidos={centrosExcluidos} compact={cifrasEnMillones} />
+            <DashboardBudget3Months centrosExcluidos={centrosExcluidos} centrosIncluidos={centrosIncluidos} compact={cifrasEnMillones} />
 
             {/* FLUJO DE CAJA MENSUAL: Full width chart */}
             <DashboardCashFlowChart

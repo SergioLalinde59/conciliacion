@@ -161,6 +161,7 @@ export interface ContextoClasificacionResponse {
     contexto: ContextoItem[]
     referencia_no_existe: boolean
     referencia?: string | null
+    descripcion_generica?: boolean
     confianza?: 'alta' | 'media' | 'baja' | null
 }
 
@@ -201,6 +202,22 @@ export interface CuentaExtractor {
     orden: number
     activo: boolean
     created_at?: string
+}
+
+export interface Perspectiva {
+    id: number
+    nombre: string
+    slug: string
+    tipo: 'incluir' | 'excluir'
+    centro_costo_ids: number[]
+    siempre_excluir_ids: number[]
+    es_defecto: boolean
+    orden: number
+}
+
+export interface PerspectiveFilterParams {
+    centros_costos_excluidos?: number[]
+    centros_costos_incluidos?: number[]
 }
 
 // Force module compilation

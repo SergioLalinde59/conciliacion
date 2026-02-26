@@ -13,6 +13,7 @@ import { MatchStatusBadge } from '../atoms/MatchStatusBadge'
 import { DataTable, type Column, type HeaderGroup } from '../molecules/DataTable'
 import type { MovimientoMatch } from '../../types/Matching'
 import { MatchEstado } from '../../types/Matching'
+import { formatFecha } from '../atoms/FechaDisplay'
 import { useFormatCurrency } from '../atoms/CurrencyDisplay'
 
 interface MatchingTableProps {
@@ -56,17 +57,8 @@ const formatTRM = (value: number | null | undefined) => {
 
 const formatDate = (date: Date | string) => {
     if (!date) return '-'
-    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        const [year, month, day] = date.split('-')
-        return `${day}/${month}/${year}`
-    }
-    const d = typeof date === 'string' ? new Date(date) : date
-    return d.toLocaleDateString('es-CO', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        timeZone: 'UTC'
-    })
+    const dateStr = date instanceof Date ? date.toISOString().split('T')[0] : String(date)
+    return formatFecha(dateStr)
 }
 
 const getValueColor = (value: number): string => {

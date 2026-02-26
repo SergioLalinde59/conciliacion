@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { X, Search, FileSpreadsheet, ArrowLeft, TrendingUp, Eye } from 'lucide-react'
 
@@ -8,7 +8,8 @@ import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
 import { apiService } from '../services/api'
 import { useSessionStorage } from '../hooks/useSessionStorage'
 import { formatDateISO, getAnioYTD, getPreviousPeriod } from '../utils/dateUtils'
-import { useReporteIngresosGastosMes, useConfiguracionExclusion } from '../hooks/useReportes'
+import { useReporteIngresosGastosMes } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
 import { DataTable } from '../components/molecules/DataTable'
 import type { Movimiento } from '../types'
 import { TableHeaderCell } from '../components/atoms/TableHeaderCell'
@@ -52,21 +53,9 @@ export const ReporteIngresosGastosMesPage = () => {
     const [terceroId, setTerceroId] = useSessionStorage('rep_mes_filtro_terceroId', '')
     const [centroCostoId, setCentroCostoId] = useSessionStorage('rep_mes_filtro_centroCostoId', '')
     const [conceptoId, setConceptoId] = useSessionStorage('rep_mes_filtro_conceptoId', '')
-    const [mostrarIngresos, setMostrarIngresos] = useSessionStorage('rep_mes_filtro_ingresos', false)
-    const [mostrarEgresos, setMostrarEgresos] = useSessionStorage('rep_mes_filtro_egresos', true)
 
-    // Dynamic Exclusion
-    const { data: configuracionExclusion = [] } = useConfiguracionExclusion()
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useSessionStorage<number[] | null>('rep_mes_filtro_centrosCostosExcluidos', null)
-    const actualCentrosCostosExcluidos = centrosCostosExcluidos || []
-
-    // Load Exclusion Config Defaults
-    useEffect(() => {
-        if (configuracionExclusion.length > 0 && centrosCostosExcluidos === null) {
-            const defaults = configuracionExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configuracionExclusion, centrosCostosExcluidos])
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
 
     const paramsReporte = useMemo(() => ({
         fecha_inicio: desde,
@@ -75,10 +64,8 @@ export const ReporteIngresosGastosMesPage = () => {
         tercero_id: terceroId ? Number(terceroId) : undefined,
         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
         concepto_id: conceptoId ? Number(conceptoId) : undefined,
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-        ver_ingresos: mostrarIngresos,
-        ver_egresos: mostrarEgresos
-    }), [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, actualCentrosCostosExcluidos, mostrarIngresos, mostrarEgresos])
+        ...filterParams,
+    }), [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, filterParams])
 
     const { data: datosRaw, isLoading: loading } = useReporteIngresosGastosMes(paramsReporte)
     const datos = useMemo(() => {
@@ -96,10 +83,8 @@ export const ReporteIngresosGastosMesPage = () => {
     const paramsAnterior = useMemo(() => ({
         fecha_inicio: prevPeriod.inicio, fecha_fin: prevPeriod.fin,
         cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-        ver_ingresos: mostrarIngresos,
-        ver_egresos: mostrarEgresos
-    }), [prevPeriod, cuentaId, actualCentrosCostosExcluidos, mostrarIngresos, mostrarEgresos])
+        ...filterParams,
+    }), [prevPeriod, cuentaId, filterParams])
     const { data: datosAnteriorRaw } = useReporteIngresosGastosMes(paramsAnterior)
 
     const totalesAnterior = useMemo(() => {
@@ -141,12 +126,6 @@ export const ReporteIngresosGastosMesPage = () => {
         setTerceroId('')
         setCentroCostoId('')
         setConceptoId('')
-        if (configuracionExclusion.length > 0) {
-            const defaults = configuracionExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        } else {
-            setCentrosCostosExcluidos([])
-        }
     }
 
     const handleMesClick = async (itemMes: ItemReporteMes) => {
@@ -159,9 +138,7 @@ export const ReporteIngresosGastosMesPage = () => {
             const data = await apiService.movimientos.reporteDesgloseGastos({
                 nivel: 'tercero', fecha_inicio: range.inicio, fecha_fin: range.fin,
                 cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-                centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-                ver_ingresos: mostrarIngresos,
-                ver_egresos: mostrarEgresos
+                ...filterParams
             } as any)
             setTerceroModal(prev => ({ ...prev, data: (data as ItemDesglose[]) || [] }))
         } catch (e) { console.error(e) }
@@ -179,9 +156,7 @@ export const ReporteIngresosGastosMesPage = () => {
                 nivel: 'centro_costo', fecha_inicio: range.inicio, fecha_fin: range.fin,
                 tercero_id: item.id,
                 cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-                centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-                ver_ingresos: mostrarIngresos,
-                ver_egresos: mostrarEgresos
+                ...filterParams
             } as any)
             setCentroCostoModal(prev => ({ ...prev, data: (data as ItemDesglose[]) || [] }))
         } catch (e) { console.error(e) }
@@ -199,7 +174,7 @@ export const ReporteIngresosGastosMesPage = () => {
                 desde: range.inicio, hasta: range.fin,
                 tercero_id: context.terceroId, centro_costo_id: item.id,
                 cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-                centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined
+                ...filterParams
             } as any)
             setDetallesModal(prev => ({ ...prev, data: res.items, loading: false }))
         } catch (e) { console.error(e); setDetallesModal(prev => ({ ...prev, loading: false })) }
@@ -226,15 +201,10 @@ export const ReporteIngresosGastosMesPage = () => {
                 terceroId={terceroId} setTerceroId={setTerceroId}
                 centroCostoId={centroCostoId} setCentroCostoId={setCentroCostoId}
                 conceptoId={conceptoId} setConceptoId={setConceptoId}
-                configuracionExclusion={configuracionExclusion}
-                centrosCostosExcluidos={actualCentrosCostosExcluidos}
-                setCentrosCostosExcluidos={setCentrosCostosExcluidos}
-                mostrarIngresos={mostrarIngresos}
-                setMostrarIngresos={setMostrarIngresos}
-                mostrarEgresos={mostrarEgresos}
-                setMostrarEgresos={setMostrarEgresos}
+                perspectivas={perspectivas}
+                selectedSlug={selectedSlug}
+                onPerspectivaChange={setSelectedSlug}
                 onLimpiar={handleLimpiar}
-                showIngresosEgresos={true}
             />
 
             <div className="flex-1 overflow-auto p-4 space-y-4">
@@ -312,10 +282,14 @@ export const ReporteIngresosGastosMesPage = () => {
                                 data={datos}
                                 loading={loading}
                                 getRowKey={(row, idx) => row.mes || idx}
+                                defaultSortKey="mes"
+                                defaultSortDirection="asc"
                                 columns={[
                                     {
                                         header: <TableHeaderCell>Mes</TableHeaderCell>,
                                         key: 'mes',
+                                        sortable: true,
+                                        sortValue: (row: ItemReporteMes) => row.mes,
                                         accessor: (row) => (
                                             <div className="flex items-center gap-3 group cursor-pointer" onClick={() => handleMesClick(row as any)}>
                                                 <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-all">

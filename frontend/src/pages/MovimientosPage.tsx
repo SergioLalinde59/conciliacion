@@ -6,10 +6,12 @@ import type { Movimiento } from '../types'
 import { apiService } from '../services/api'
 import { useSessionStorage } from '../hooks/useSessionStorage'
 import { getMesActual, getPreviousPeriod } from '../utils/dateUtils'
+import { flattenMovimientos, type MovimientoFlat } from '../utils/movimientoUtils'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
 import { MovimientosTable } from '../components/organisms/MovimientosTable'
 import { MovimientoModal } from '../components/organisms/modals/MovimientoModal'
-import { useReporteClasificacion, useConfiguracionExclusion } from '../hooks/useReportes'
+import { useReporteClasificacion } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
 import { StatCard } from '../components/molecules/StatCard'
 import toast from 'react-hot-toast'
 
@@ -24,25 +26,10 @@ export const MovimientosPage = () => {
     const [terceroId, setTerceroId] = useSessionStorage('filtro_terceroId', '')
     const [centroCostoId, setCentroCostoId] = useSessionStorage('filtro_centroCostoId', '')
     const [conceptoId, setConceptoId] = useSessionStorage('filtro_conceptoId', '')
-    const [mostrarIngresos, setMostrarIngresos] = useSessionStorage('filtro_mostrarIngresos', true)
-    const [mostrarEgresos, setMostrarEgresos] = useSessionStorage('filtro_mostrarEgresos', true)
     const [busqueda, setBusqueda] = useState('')
 
-    // Dynamic Exclusion Logic
-    const { data: configExclusion = [] } = useConfiguracionExclusion()
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useSessionStorage<number[] | null>('filtro_centrosCostosExcluidos', null)
-
-    const actualCentrosCostosExcluidos = useMemo(() => {
-        return (centrosCostosExcluidos || []) as number[]
-    }, [centrosCostosExcluidos])
-
-    // Load exclusion defaults
-    useEffect(() => {
-        if (configExclusion.length > 0 && centrosCostosExcluidos === null) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configExclusion, centrosCostosExcluidos])
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
 
     const [movimientos, setMovimientos] = useState<Movimiento[]>([])
     const [loading, setLoading] = useState(true)
@@ -54,7 +41,7 @@ export const MovimientosPage = () => {
     const { data: datosAnterior } = useReporteClasificacion({
         tipo: 'totales', desde: prevPeriod.inicio, hasta: prevPeriod.fin,
         cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined
+        ...filterParams
     })
 
     const totalesAnterior = useMemo(() => {
@@ -73,10 +60,6 @@ export const MovimientosPage = () => {
         const requestId = Date.now()
         lastRequestRef.current = requestId
 
-        let tipoMovimiento: string | undefined = undefined
-        if (mostrarIngresos && !mostrarEgresos) tipoMovimiento = 'ingresos'
-        else if (!mostrarIngresos && mostrarEgresos) tipoMovimiento = 'egresos'
-
         // 1. Fetch filtered movements
         apiService.movimientos.listar({
             desde: finalDesde, hasta: finalHasta,
@@ -84,8 +67,7 @@ export const MovimientosPage = () => {
             tercero_id: terceroId ? Number(terceroId) : undefined,
             centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
             concepto_id: conceptoId ? Number(conceptoId) : undefined,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-            tipo_movimiento: tipoMovimiento
+            ...filterParams
         } as any).then(response => {
             if (lastRequestRef.current !== requestId) return
             setMovimientos(response.items)
@@ -107,7 +89,7 @@ export const MovimientosPage = () => {
             setTotalPeriodo(response.total)
         }).catch(err => console.error("Error cargando total periodo:", err))
 
-    }, [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, mostrarIngresos, mostrarEgresos, actualCentrosCostosExcluidos])
+    }, [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, filterParams])
 
 
     useEffect(() => {
@@ -122,14 +104,6 @@ export const MovimientosPage = () => {
         setTerceroId('')
         setCentroCostoId('')
         setConceptoId('')
-        if (configExclusion.length > 0) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        } else {
-            setCentrosCostosExcluidos([])
-        }
-        setMostrarIngresos(true)
-        setMostrarEgresos(true)
     }
 
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -137,9 +111,17 @@ export const MovimientosPage = () => {
     const [isViewModalOpen, setIsViewModalOpen] = useState(false)
     const [movimientoToView, setMovimientoToView] = useState<Movimiento | null>(null)
 
-    const handleDeleteClick = (mov: Movimiento) => {
-        setMovimientoToDelete(mov)
-        setIsDeleteModalOpen(true)
+    // Lookup: dado un MovimientoFlat, encontrar el Movimiento original para modals
+    const findOriginalMovimiento = useCallback((flat: MovimientoFlat): Movimiento | undefined => {
+        return movimientos.find(m => m.id === flat.movimiento_id)
+    }, [movimientos])
+
+    const handleDeleteClick = (flat: MovimientoFlat) => {
+        const mov = findOriginalMovimiento(flat)
+        if (mov) {
+            setMovimientoToDelete(mov)
+            setIsDeleteModalOpen(true)
+        }
     }
 
     const handleConfirmDelete = async () => {
@@ -155,9 +137,12 @@ export const MovimientosPage = () => {
         }
     }
 
-    const handleViewClick = (mov: Movimiento) => {
-        setMovimientoToView(mov)
-        setIsViewModalOpen(true)
+    const handleViewClick = (flat: MovimientoFlat) => {
+        const mov = findOriginalMovimiento(flat)
+        if (mov) {
+            setMovimientoToView(mov)
+            setIsViewModalOpen(true)
+        }
     }
 
     const handleSaveEdit = async (payload: any) => {
@@ -174,35 +159,38 @@ export const MovimientosPage = () => {
         }
     }
 
+    // Aplanar movimientos: 1 fila = 1 detalle
+    const filasDetalle = useMemo(() => flattenMovimientos(movimientos), [movimientos])
+
     // Detect USD: if valor sums to 0 but usd has values, use usd field
     const esUSD = useMemo(() => {
-        if (movimientos.length === 0) return false
-        const sumaValor = movimientos.reduce((acc, m) => acc + Math.abs(m.valor), 0)
-        const sumaUsd = movimientos.reduce((acc, m) => acc + Math.abs(m.usd || 0), 0)
+        if (filasDetalle.length === 0) return false
+        const sumaValor = filasDetalle.reduce((acc, m) => acc + Math.abs(m.valor), 0)
+        const sumaUsd = filasDetalle.reduce((acc, m) => acc + Math.abs(m.usd || 0), 0)
         return sumaValor === 0 && sumaUsd > 0
-    }, [movimientos])
+    }, [filasDetalle])
 
     const totalsDisplay = useMemo(() => {
         if (totalesGlobales && !esUSD) return totalesGlobales
-        const getVal = (m: Movimiento) => esUSD ? (m.usd || 0) : m.valor
-        const sums = movimientos.reduce((acc, m) => {
+        const getVal = (m: MovimientoFlat) => esUSD ? (m.usd || 0) : m.valor
+        const sums = filasDetalle.reduce((acc, m) => {
             const v = getVal(m)
             if (v > 0) acc.ingresos += v
             else acc.egresos += Math.abs(v)
             return acc
         }, { ingresos: 0, egresos: 0 })
         return { ...sums, saldo: sums.ingresos - sums.egresos }
-    }, [movimientos, totalesGlobales, esUSD])
+    }, [filasDetalle, totalesGlobales, esUSD])
 
     const filteredMovimientos = useMemo(() => {
-        if (!busqueda) return movimientos
+        if (!busqueda) return filasDetalle
         const lowBus = busqueda.toLowerCase()
-        return movimientos.filter(m =>
+        return filasDetalle.filter(m =>
             m.descripcion?.toLowerCase().includes(lowBus) ||
             m.referencia?.toLowerCase().includes(lowBus) ||
             m.tercero_nombre?.toLowerCase().includes(lowBus)
         )
-    }, [movimientos, busqueda])
+    }, [filasDetalle, busqueda])
 
     const calculateTrend = (current: number, previous?: number) => {
         if (previous === undefined || previous === null || previous === 0) return null
@@ -234,13 +222,10 @@ export const MovimientosPage = () => {
                 terceroId={terceroId} setTerceroId={setTerceroId}
                 centroCostoId={centroCostoId} setCentroCostoId={setCentroCostoId}
                 conceptoId={conceptoId} setConceptoId={setConceptoId}
-                mostrarIngresos={mostrarIngresos} setMostrarIngresos={setMostrarIngresos}
-                mostrarEgresos={mostrarEgresos} setMostrarEgresos={setMostrarEgresos}
-                configuracionExclusion={configExclusion}
-                centrosCostosExcluidos={actualCentrosCostosExcluidos}
-                setCentrosCostosExcluidos={setCentrosCostosExcluidos}
+                perspectivas={perspectivas}
+                selectedSlug={selectedSlug}
+                onPerspectivaChange={setSelectedSlug}
                 onLimpiar={handleLimpiar}
-                showIngresosEgresos={true}
             />
 
             <div className="flex-1 overflow-auto p-4 space-y-4">
@@ -320,7 +305,7 @@ export const MovimientosPage = () => {
                             movimientos={filteredMovimientos}
                             loading={loading}
                             onView={handleViewClick}
-                            onEdit={(mov: Movimiento) => navigate(`/movimientos/editar/${mov.id}`)}
+                            onEdit={(flat: MovimientoFlat) => navigate(`/movimientos/editar/${flat.movimiento_id}`)}
                             onDelete={handleDeleteClick}
                         />
                     </div>

@@ -111,6 +111,40 @@ def obtener_sugerencia(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/contexto-tercero/{movimiento_id}")
+def obtener_contexto_tercero(
+    movimiento_id: int,
+    tercero_id: int,
+    service: ClasificacionService = Depends(get_clasificacion_service)
+):
+    """
+    Obtiene el historial clasificado de un tercero relativo a un movimiento.
+    Usado cuando el usuario selecciona manualmente un tercero en una descripción genérica.
+    """
+    try:
+        resultado = service.obtener_contexto_por_tercero(movimiento_id, tercero_id)
+
+        contexto_dto = [
+            ContextoItemResponse(
+                movimiento=_to_response(item['movimiento']),
+                score=item['score']
+            )
+            for item in resultado['contexto']
+        ]
+
+        return ContextoClasificacionResponse(
+            movimiento_id=resultado['movimiento_id'],
+            sugerencia=SugerenciaSchema(**resultado['sugerencia']),
+            contexto=contexto_dto,
+            referencia_no_existe=resultado.get('referencia_no_existe', False),
+            referencia=resultado.get('referencia'),
+            confianza=resultado.get('confianza')
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/auto-clasificar")
 def auto_clasificar_todos(service: ClasificacionService = Depends(get_clasificacion_service)):
     """

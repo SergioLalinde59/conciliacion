@@ -341,7 +341,8 @@ export const ReglasPage: React.FC = () => {
                     getRowKey={(r) => r.id || Math.random()}
                     onEdit={handleEditar}
                     onDelete={handleEliminar}
-                    deleteConfirmMessage="¿Seguro que deseas eliminar esta regla?"
+                    deleteConfirmMessage={(r) =>
+                        `¿Eliminar esta regla de clasificación?\n\nPatrón: "${r.patron}"\nDescripción: ${r.patron_descripcion || '-'}\nCuenta: ${r.cuenta_id ? getNombre(cuentas, r.cuenta_id) : 'Global'}\nTercero: ${getNombre(terceros, r.tercero_id)}\nCentro Costo: ${getNombre(centrosCostos, r.centro_costo_id)}\nConcepto: ${getConceptoNombre(r.concepto_id)}`}
                     emptyMessage="No hay reglas definidas"
                 />
             </div>

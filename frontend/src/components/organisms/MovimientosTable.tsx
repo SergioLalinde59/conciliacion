@@ -8,15 +8,15 @@ import { textoColumn, fechaColumn, monedaColumn, idColumn } from '../atoms/colum
 import { TableHeaderCell } from '../atoms/TableHeaderCell'
 import { useState, useMemo, useEffect, useRef } from 'react'
 
-import type { Movimiento } from '../../types'
+import type { MovimientoFlat } from '../../utils/movimientoUtils'
 
 // Props para la tabla de movimientos
 interface MovimientosTableProps {
-    movimientos: Movimiento[];
+    movimientos: MovimientoFlat[];
     loading?: boolean;
-    onEdit?: (mov: Movimiento) => void;
-    onView?: (mov: Movimiento) => void;
-    onDelete?: (mov: Movimiento) => void;
+    onEdit?: (mov: MovimientoFlat) => void;
+    onView?: (mov: MovimientoFlat) => void;
+    onDelete?: (mov: MovimientoFlat) => void;
 }
 
 export const MovimientosTable = ({ movimientos, loading, onView }: MovimientosTableProps) => {
@@ -43,8 +43,8 @@ export const MovimientosTable = ({ movimientos, loading, onView }: MovimientosTa
         }
     };
 
-    // Columns definition (same as before)
-    const columns: Column<Movimiento>[] = useMemo(() => [
+    // Columns definition
+    const columns: Column<MovimientoFlat>[] = useMemo(() => [
         {
             key: 'actions',
             header: <TableHeaderCell>Acción</TableHeaderCell>,
@@ -68,10 +68,10 @@ export const MovimientosTable = ({ movimientos, loading, onView }: MovimientosTa
                 </div>
             )
         },
-        idColumn<Movimiento>('id', <TableHeaderCell>ID</TableHeaderCell>, row => `#${row.id}`, {
+        idColumn<MovimientoFlat>('id', <TableHeaderCell>Id</TableHeaderCell>, row => `#${row.movimiento_id}`, {
             width: 'w-10',
         }),
-        fechaColumn<Movimiento>('fecha', <TableHeaderCell>Fecha</TableHeaderCell>, row => row.fecha, {
+        fechaColumn<MovimientoFlat>('fecha', <TableHeaderCell>Fecha</TableHeaderCell>, row => row.fecha, {
             width: 'w-18',
         }),
         {
@@ -119,23 +119,22 @@ export const MovimientosTable = ({ movimientos, loading, onView }: MovimientosTa
                 <ClassificationDisplay
                     centroCosto={row.centro_costo_id ? { id: row.centro_costo_id, nombre: row.centro_costo_nombre || '' } : null}
                     concepto={row.concepto_id ? { id: row.concepto_id, nombre: row.concepto_nombre || '' } : null}
-                    detallesCount={row.detalles?.length}
                 />
             )
         },
-        monedaColumn<Movimiento>('valor', <TableHeaderCell>Pesos</TableHeaderCell>, row => row.valor_filtrado ?? row.valor, 'COP', {
+        monedaColumn<MovimientoFlat>('valor', <TableHeaderCell>Pesos</TableHeaderCell>, row => row.valor, 'COP', {
             width: 'w-24',
         }),
-        monedaColumn<Movimiento>('usd', <TableHeaderCell>USD</TableHeaderCell>, row => row.usd ?? 0, 'USD', {
+        monedaColumn<MovimientoFlat>('usd', <TableHeaderCell>USD</TableHeaderCell>, row => row.usd ?? 0, 'USD', {
             width: 'w-20',
             decimals: 2,
         }),
-        monedaColumn<Movimiento>('trm', <TableHeaderCell>Trm</TableHeaderCell>, row => row.trm ?? 0, 'TRM', {
+        monedaColumn<MovimientoFlat>('trm', <TableHeaderCell>Trm</TableHeaderCell>, row => row.trm ?? 0, 'TRM', {
             width: 'w-16',
             decimals: 2,
         }),
-        textoColumn<Movimiento>('moneda', <TableHeaderCell>Moneda</TableHeaderCell>, row => row.moneda_display, {
-            sortKey: 'moneda_nombre',
+        textoColumn<MovimientoFlat>('moneda', <TableHeaderCell>Moneda</TableHeaderCell>, row => row.moneda_display, {
+            sortKey: 'moneda_display',
             width: 'w-20',
         }),
     ], [onView])
@@ -161,7 +160,7 @@ export const MovimientosTable = ({ movimientos, loading, onView }: MovimientosTa
                 onScroll={handleScroll}
                 data={movimientos}
                 columns={columns}
-                getRowKey={(row) => row.id}
+                getRowKey={(row) => `${row.movimiento_id}-${row.id}`}
                 loading={loading}
                 showActions={false}
                 rounded={false}

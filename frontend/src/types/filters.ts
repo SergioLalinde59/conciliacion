@@ -32,9 +32,10 @@ export interface MovimientoFilterParams extends PaginationParams {
     ver_ingresos?: boolean
     ver_egresos?: boolean
 
-    // Filtros de exclusión
+    // Filtros de exclusión/inclusión
     excluir_traslados?: boolean
     centros_costos_excluidos?: number[]
+    centros_costos_incluidos?: number[]
 
     // Búsqueda
     busqueda?: string
@@ -55,6 +56,7 @@ export interface ReporteFilterParams {
     concepto_id?: number
     excluir_traslados?: boolean
     centros_costos_excluidos?: number[]
+    centros_costos_incluidos?: number[]
     ver_ingresos?: boolean
     ver_egresos?: boolean
 }

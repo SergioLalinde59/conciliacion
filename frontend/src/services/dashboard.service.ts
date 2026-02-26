@@ -35,19 +35,21 @@ export const dashboardService = {
         return fetch(`${API_BASE_URL}/api/dashboard/estadisticas?${params.toString()}`).then(handleResponse)
     },
 
-    flujoMensual: (desde?: string, hasta?: string, centrosExcluidos?: number[], centroCostoId?: number): Promise<FlujoCajaMes[]> => {
+    flujoMensual: (desde?: string, hasta?: string, centrosExcluidos?: number[], centroCostoId?: number, centrosIncluidos?: number[]): Promise<FlujoCajaMes[]> => {
         const params = buildQueryParams({
             desde, hasta,
             centros_costos_excluidos: centrosExcluidos?.length ? centrosExcluidos : undefined,
+            centros_costos_incluidos: centrosIncluidos?.length ? centrosIncluidos : undefined,
             centro_costo_id: centroCostoId || undefined,
         } as Record<string, unknown>)
         return fetch(`${API_BASE_URL}/api/movimientos/reporte/ingresos-gastos-mes?${params}`).then(handleResponse)
     },
 
-    topEgresos: (desde?: string, hasta?: string, tipo: string = 'centro_costo', centrosExcluidos?: number[]): Promise<ClasificacionItem[]> => {
+    topEgresos: (desde?: string, hasta?: string, tipo: string = 'centro_costo', centrosExcluidos?: number[], centrosIncluidos?: number[]): Promise<ClasificacionItem[]> => {
         const params = buildQueryParams({
             desde, hasta, tipo,
             centros_costos_excluidos: centrosExcluidos?.length ? centrosExcluidos : undefined,
+            centros_costos_incluidos: centrosIncluidos?.length ? centrosIncluidos : undefined,
         } as Record<string, unknown>)
         return fetch(`${API_BASE_URL}/api/movimientos/reporte/clasificacion?${params}`).then(handleResponse)
     },

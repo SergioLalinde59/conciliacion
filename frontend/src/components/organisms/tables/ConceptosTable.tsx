@@ -67,7 +67,10 @@ export const ConceptosTable = ({ conceptos, centrosCostos, loading, onEdit, onDe
             getRowKey={(c) => c.id}
             onEdit={onEdit}
             onDelete={(concepto) => onDelete(concepto.id)}
-            deleteConfirmMessage="¿Estás seguro de eliminar este concepto?"
+            deleteConfirmMessage={(c) => {
+                const centro = centrosCostos.find(cc => cc.id === c.centro_costo_id)
+                return `¿Eliminar este concepto?\n\nID: ${c.id}\nNombre: ${c.nombre}\nCentro de Costo: ${centro?.nombre || '-'}`
+            }}
         />
     )
 }

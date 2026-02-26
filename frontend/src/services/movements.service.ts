@@ -170,5 +170,8 @@ export const clasificacionService = {
         total: number
         movimientos: Array<Movimiento & { similitud: number }>
     }> =>
-        fetch(`${API_BASE_URL}/api/clasificacion/preview-similares/${movimientoId}`).then(handleResponse)
+        fetch(`${API_BASE_URL}/api/clasificacion/preview-similares/${movimientoId}`).then(handleResponse),
+
+    obtenerContextoTercero: (movimientoId: number, terceroId: number): Promise<unknown> =>
+        fetch(`${API_BASE_URL}/api/clasificacion/contexto-tercero/${movimientoId}?tercero_id=${terceroId}`).then(handleResponse),
 }

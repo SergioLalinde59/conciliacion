@@ -6,6 +6,7 @@ import { DataTable } from '../components/molecules/DataTable'
 import type { Column } from '../components/molecules/DataTable'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 import { MessageModal } from '../components/molecules/MessageModal'
+import { formatFecha } from '../components/atoms/FechaDisplay'
 
 export const ReglasNormalizacionPage: React.FC = () => {
     const [aliases, setAliases] = useState<MatchingAlias[]>([])
@@ -79,7 +80,6 @@ export const ReglasNormalizacionPage: React.FC = () => {
     }
 
     const handleEliminar = async (alias: MatchingAlias) => {
-        if (!confirm('¿Está seguro de eliminar esta regla?')) return
         try {
             await apiService.matching.eliminarAlias(alias.id)
             setAliases(aliases.filter(a => a.id !== alias.id))
@@ -112,7 +112,7 @@ export const ReglasNormalizacionPage: React.FC = () => {
             key: 'created_at',
             header: 'Creado',
             sortable: true,
-            accessor: (row) => row.created_at ? new Date(row.created_at).toLocaleDateString() : '-'
+            accessor: (row) => row.created_at ? formatFecha(row.created_at) : '-'
         }
     ]
 
@@ -212,7 +212,8 @@ export const ReglasNormalizacionPage: React.FC = () => {
                     onEdit={handleEditar}
                     onDelete={handleEliminar}
                     emptyMessage={selectedCuentaId ? "No hay reglas definidas para esta cuenta" : "Seleccione una cuenta"}
-                    deleteConfirmMessage="¿Eliminar esta regla de normalización?"
+                    deleteConfirmMessage={(row) =>
+                        `¿Eliminar esta regla de normalización?\n\nPatrón: "${row.patron}"\nReemplazo: ${row.reemplazo}\nCreado: ${row.created_at ? formatFecha(row.created_at) : '-'}`}
                 />
             </div>
             <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />

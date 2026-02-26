@@ -1,6 +1,7 @@
 
 import { Calendar, FileText, DollarSign, User, Building2, Tag } from 'lucide-react'
 import { CurrencyDisplay } from '../atoms/CurrencyDisplay'
+import { FechaDisplay } from '../atoms/FechaDisplay'
 import type { MovimientoSistema } from '../../types/Matching'
 
 interface MovimientoSistemaCardProps {
@@ -29,7 +30,7 @@ export const MovimientoSistemaCard = ({
             <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                     <Calendar size={14} />
-                    <span>{new Date(movimiento.fecha).toLocaleDateString('es-CO')}</span>
+                    <FechaDisplay value={movimiento.fecha} />
                 </div>
                 <div className={`px-2 py-0.5 rounded text-xs font-medium ${isNegative
                     ? 'bg-red-50 text-red-700 border border-red-100'

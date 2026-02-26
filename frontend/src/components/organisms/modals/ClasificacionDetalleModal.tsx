@@ -14,6 +14,7 @@ import { apiService } from '../../../services/api'
 import { DataTable, type Column } from '../../molecules/DataTable'
 import { DrilldownTable } from '../../molecules/DrilldownTable'
 import { monedaColumn, textoColumn } from '../../atoms/columnHelpers'
+import { FechaDisplay, formatFecha } from '../../atoms/FechaDisplay'
 
 interface Props {
     isOpen: boolean
@@ -673,7 +674,7 @@ export const ClasificacionDetalleModal = ({
                                     {hoverMes.data.map((m: any, i: number) => (
                                         <tr key={m.id || i} className="border-t border-slate-50 hover:bg-slate-50">
                                             <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
-                                                {new Date(m.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}
+                                                <FechaDisplay value={m.fecha} options={{ day: '2-digit', month: 'short' }} />
                                             </td>
                                             <td className="px-3 py-1.5 text-slate-600 truncate max-w-[120px]">{m.tercero_nombre || '-'}</td>
                                             <td className="px-3 py-1.5 text-slate-600 truncate max-w-[160px]">{m.descripcion || '-'}</td>
@@ -713,7 +714,7 @@ export const ClasificacionDetalleModal = ({
                                 columns={[
                                     {
                                         key: 'fecha', header: 'Fecha', sortable: true,
-                                        accessor: (r: any) => new Date(r.fecha).toLocaleDateString('es-CO'),
+                                        accessor: (r: any) => formatFecha(r.fecha),
                                         sortValue: (r: any) => r.fecha,
                                     },
                                     {

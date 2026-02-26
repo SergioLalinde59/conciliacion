@@ -13,6 +13,7 @@ class PresupuestoComparacionRepository(ABC):
         mes_inicio: int = 1,
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
         excluir_estacionales: bool = False,
@@ -30,6 +31,7 @@ class PresupuestoComparacionRepository(ABC):
         mes_inicio: int = 1,
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
         excluir_estacionales: bool = False,
@@ -48,6 +50,7 @@ class PresupuestoComparacionRepository(ABC):
         mes_inicio: int = 1,
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
         excluir_estacionales: bool = False,
@@ -62,6 +65,7 @@ class PresupuestoComparacionRepository(ABC):
         presupuesto_id: int,
         anio: int,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         centro_costo_id: Optional[int] = None,
         concepto_id: Optional[int] = None,
         tercero_id: Optional[int] = None,
@@ -79,6 +83,7 @@ class PresupuestoComparacionRepository(ABC):
         presupuesto_id: int,
         anio: int,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         direccion: str = 'egreso'
     ) -> List[dict]:
         """Movimientos del año actual sin filas en presupuesto_detalle, con info de regla existente"""

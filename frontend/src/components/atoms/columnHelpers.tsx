@@ -2,6 +2,7 @@ import React from 'react';
 import type { Column } from '../molecules/DataTable';
 import { CurrencyDisplay } from './CurrencyDisplay';
 import type { CurrencyType } from './CurrencyDisplay';
+import { FechaDisplay } from './FechaDisplay';
 
 // --- Estilos centralizados para columnas DataTable ---
 const FONT_CIFRA = 'font-mono text-sm font-bold';
@@ -130,8 +131,9 @@ export function fechaColumn<T>(
     cellClassName: FONT_FECHA,
     ...options,
     accessor: (row: T) => {
-      const date = new Date(getValue(row));
-      return <span>{date.toLocaleDateString('es-CO')}</span>;
+      const val = getValue(row);
+      const dateStr = val instanceof Date ? val.toISOString().split('T')[0] : String(val);
+      return <FechaDisplay value={dateStr} />;
     },
   };
 }

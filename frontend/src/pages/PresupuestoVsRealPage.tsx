@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { presupuestoService } from '../services/presupuesto.service'
 import { usePresupuestos, usePresupuestoComparacion, usePresupuestoVersiones } from '../hooks/usePresupuesto'
-import { useConfiguracionExclusion } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
+import PerspectiveSelector from '../components/molecules/PerspectiveSelector'
 import { SemaforoBadge } from '../components/atoms/SemaforoBadge'
 import { useBudgetFormat } from '../components/atoms/CurrencyDisplay'
 import { DarkStatCard } from '../components/molecules/DarkStatCard'
@@ -17,6 +18,7 @@ import { Target, TrendingDown, TrendingUp, BarChart3, AlertTriangle, ChevronDown
 import { Button } from '../components/atoms/Button'
 import * as XLSX from 'xlsx'
 import type { ComparacionPresupuesto, ResumenMensualPresupuesto } from '../types/Presupuesto'
+import { FechaDisplay } from '../components/atoms/FechaDisplay'
 
 const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
@@ -24,7 +26,9 @@ export const PresupuestoVsRealPage = () => {
     const navigate = useNavigate()
     const fmt = useBudgetFormat()
     const { data: presupuestos = [] } = usePresupuestos()
-    const { data: configExclusion = [], isFetched: exclusionConfigLoaded } = useConfiguracionExclusion()
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
+
     // Estado presupuesto
     const [presupuestoId, setPresupuestoId] = useState<number>(0)
 
@@ -37,11 +41,12 @@ export const PresupuestoVsRealPage = () => {
     const [mesDesde, setMesDesde] = useState(1)
     const [mesHasta, setMesHasta] = useState(currentMonth)
     const [selectedRange, setSelectedRange] = useState('YTD')
-    const [terceroId, setTerceroId] = useState('')
+    // TODO: conectar filtros a UI
+    // const [terceroId, setTerceroId] = useState('')
     const [centroCostoId, setCentroCostoId] = useState('')
-    const [conceptoId, setConceptoId] = useState('')
-    const [mostrarIngresos, setMostrarIngresos] = useState(true)
-    const [mostrarEgresos, setMostrarEgresos] = useState(true)
+    const [conceptoId] = useState('')
+    // const [mostrarIngresos, setMostrarIngresos] = useState(true)
+    // const [mostrarEgresos, setMostrarEgresos] = useState(true)
 
     // Search & Sort (Paso 4)
     const [busqueda, setBusqueda] = useState('')
@@ -56,10 +61,7 @@ export const PresupuestoVsRealPage = () => {
         }
     }
 
-    // CC Exclusion
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[] | null>(null)
     const [excluirEstacionales, setExcluirEstacionales] = useState(false)
-    const actualCentrosCostosExcluidos = useMemo(() => centrosCostosExcluidos ?? [], [centrosCostosExcluidos])
 
     // Drill-down
     const [drillLevel, setDrillLevel] = useState<'centro_costo' | 'concepto' | 'tercero'>('centro_costo')
@@ -113,14 +115,6 @@ export const PresupuestoVsRealPage = () => {
         }
     }, [selectedPresupuesto, currentYear, currentMonth])
 
-    // Cargar exclusiones por defecto
-    useEffect(() => {
-        if (exclusionConfigLoaded && centrosCostosExcluidos === null) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configExclusion, centrosCostosExcluidos, exclusionConfigLoaded])
-
     const mesInicio = mesDesde
     const mesFin = mesHasta
 
@@ -135,7 +129,7 @@ export const PresupuestoVsRealPage = () => {
         mes_fin: mesFin,
         centro_costo_id: ccIdFilter,
         concepto_id: conceptoIdFilter,
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+        ...filterParams,
         excluir_estacionales: excluirEstacionales || undefined,
         direccion
     })
@@ -158,26 +152,26 @@ export const PresupuestoVsRealPage = () => {
         ? ((totales.ejecutado / totales.presupuestado) * 100).toFixed(1)
         : '0'
 
-    // Limpiar filtros
-    const handleLimpiar = () => {
-        const anio = selectedPresupuesto?.anio || currentYear
-        const isCurrentYear = anio === currentYear
-        setMesDesde(1)
-        setMesHasta(isCurrentYear ? currentMonth : 12)
-        setSelectedRange(isCurrentYear ? 'YTD' : 'Año Completo')
-        setTerceroId('')
-        setCentroCostoId('')
-        setConceptoId('')
-        setMostrarIngresos(true)
-        setMostrarEgresos(true)
-        setExcluirEstacionales(false)
-        setBusqueda('')
-        if (configExclusion.length > 0) {
-            setCentrosCostosExcluidos(configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id))
-        } else {
-            setCentrosCostosExcluidos([])
-        }
-    }
+    // TODO: Limpiar filtros — conectar a botón en UI
+    // const handleLimpiar = () => {
+    //     const anio = selectedPresupuesto?.anio || currentYear
+    //     const isCurrentYear = anio === currentYear
+    //     setMesDesde(1)
+    //     setMesHasta(isCurrentYear ? currentMonth : 12)
+    //     setSelectedRange(isCurrentYear ? 'YTD' : 'Año Completo')
+    //     setTerceroId('')
+    //     setCentroCostoId('')
+    //     setConceptoId('')
+    //     setMostrarIngresos(true)
+    //     setMostrarEgresos(true)
+    //     setExcluirEstacionales(false)
+    //     setBusqueda('')
+    //     if (configExclusion.length > 0) {
+    //         setCentrosCostosExcluidos(configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id))
+    //     } else {
+    //         setCentrosCostosExcluidos([])
+    //     }
+    // }
 
     // Drill-down handlers
     const handleCcClick = async (item: ComparacionPresupuesto) => {
@@ -195,7 +189,7 @@ export const PresupuestoVsRealPage = () => {
                 mes_inicio: mesInicio,
                 mes_fin: mesFin,
                 centro_costo_id: item.id,
-                centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+                ...filterParams,
                 excluir_estacionales: excluirEstacionales || undefined,
                 direccion
             })
@@ -216,7 +210,7 @@ export const PresupuestoVsRealPage = () => {
                 mes_fin: mesFin,
                 centro_costo_id: drillCcId,
                 concepto_id: item.id ?? undefined,
-                centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
+                ...filterParams,
                 excluir_estacionales: excluirEstacionales || undefined,
                 direccion
             })
@@ -331,7 +325,7 @@ export const PresupuestoVsRealPage = () => {
                                                         )}
                                                     </span>
                                                     <span className="text-gray-400 text-[10px]">
-                                                        {v.created_at ? new Date(v.created_at).toLocaleDateString('es-CO') : ''}
+                                                        {v.created_at ? <FechaDisplay value={v.created_at} /> : ''}
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center gap-3 mt-0.5 text-gray-500">
@@ -466,6 +460,7 @@ export const PresupuestoVsRealPage = () => {
             {/* Egresos / Ingresos toggle + CC filter */}
             <div className="px-4 pt-4">
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 px-4 py-3 flex items-center gap-4">
+                    <PerspectiveSelector perspectivas={perspectivas} selectedSlug={selectedSlug} onChange={setSelectedSlug} />
                     <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
                         {(['egreso', 'ingreso'] as const).map(dir => (
                             <button

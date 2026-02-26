@@ -265,7 +265,8 @@ export const CuentaExtractoresPage: React.FC = () => {
                     getRowKey={(row) => row.id!}
                     onEdit={handleEditar}
                     onDelete={handleEliminar}
-                    deleteConfirmMessage="¿Eliminar este extractor?"
+                    deleteConfirmMessage={(row) =>
+                        `¿Eliminar este extractor?\n\nCuenta: ${getCuentaNombre(row.cuenta_id)}\nTipo: ${row.tipo}\nMódulo: ${row.modulo}\nOrden: ${row.orden}\nEstado: ${row.activo ? 'Activo' : 'Inactivo'}`}
                 />
             </div>
             <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />

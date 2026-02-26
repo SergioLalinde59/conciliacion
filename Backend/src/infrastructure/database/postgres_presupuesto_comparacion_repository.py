@@ -43,6 +43,13 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         params.extend(excluidos)
         return f" AND {prefix}.centro_costo_id NOT IN ({placeholders})"
 
+    def _build_inclusion_clause(self, prefix: str, incluidos: Optional[List[int]], params: list) -> str:
+        if not incluidos:
+            return ""
+        placeholders = ','.join(['%s'] * len(incluidos))
+        params.extend(incluidos)
+        return f" AND {prefix}.centro_costo_id IN ({placeholders})"
+
     def comparar_por_centro_costo(
         self,
         presupuesto_id: int,
@@ -50,6 +57,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         mes_inicio: int = 1,
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
         excluir_estacionales: bool = False,
@@ -66,10 +74,12 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         # ppto_conceptos
         params_ppto_conceptos = [presupuesto_id, direccion, mes_inicio, mes_fin]
         exclusion_ppto_conceptos = self._build_exclusion_clause("pd", centros_costos_excluidos, params_ppto_conceptos)
+        inclusion_ppto_conceptos = self._build_inclusion_clause("pd", centros_costos_incluidos, params_ppto_conceptos)
 
         # presupuesto_agg — ahora siempre usa filtro estándar (estacional ya es /12 por mes)
         params_pres = [presupuesto_id, direccion, mes_inicio, mes_fin]
         exclusion_pres = self._build_exclusion_clause("pd", centros_costos_excluidos, params_pres)
+        inclusion_pres = self._build_inclusion_clause("pd", centros_costos_incluidos, params_pres)
 
         if excluir_estacionales:
             ppto_conceptos_mes_filter = "AND pd.mes BETWEEN %s AND %s AND pd.tipo != 'Estacional'"
@@ -106,6 +116,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
             params_real = [months_in_period, months_in_period, months_in_period, anio, mes_inicio, mes_fin, mes_fin]
 
         exclusion_real = self._build_exclusion_clause("md", centros_costos_excluidos, params_real)
+        inclusion_real = self._build_inclusion_clause("md", centros_costos_incluidos, params_real)
 
         query = f"""
             WITH estacional_combos AS (
@@ -124,6 +135,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                   AND pd.direccion = %s
                   {ppto_conceptos_mes_filter}
                 {exclusion_ppto_conceptos}
+                {inclusion_ppto_conceptos}
             ),
             presupuesto_agg AS (
                 SELECT pd.centro_costo_id, cc.centro_costo as nombre,
@@ -135,6 +147,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                       AND pd.direccion = %s
                       {pres_filter}
                 {exclusion_pres}
+                {inclusion_pres}
                 GROUP BY pd.centro_costo_id, cc.centro_costo
             ),
             real_agg AS (
@@ -152,6 +165,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                   AND md.centro_costo_id IS NOT NULL
                   {real_month_filter}
                 {exclusion_real}
+                {inclusion_real}
                 GROUP BY md.centro_costo_id, cc.centro_costo
             )
             SELECT
@@ -198,6 +212,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         mes_inicio: int = 1,
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
         excluir_estacionales: bool = False,
@@ -317,6 +332,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         mes_inicio: int = 1,
         mes_fin: int = 12,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         verde_hasta: float = 5.0,
         amarillo_hasta: float = 15.0,
         excluir_estacionales: bool = False,
@@ -384,19 +400,19 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                       {pres_concepto}
             ),
             real_agg AS (
-                SELECT m.terceroid as tercero_id,
+                SELECT md.TerceroID as tercero_id,
                        COALESCE(t.tercero, 'Sin Tercero') as nombre,
                        {real_select}
                 FROM movimientos_encabezado m
                 JOIN movimientos_detalle md ON m.Id = md.movimiento_id
-                LEFT JOIN terceros t ON m.terceroid = t.terceroid
+                LEFT JOIN terceros t ON md.TerceroID = t.terceroid
                 {real_join_estacional}
                 WHERE EXTRACT(YEAR FROM m.Fecha) = %s
                   AND {valor_filter}
                   {real_month_filter}
                   AND md.centro_costo_id = %s
                   {real_concepto}
-                GROUP BY m.terceroid, t.tercero
+                GROUP BY md.TerceroID, t.tercero
             ),
             real_total AS (
                 SELECT COALESCE(SUM(ejecutado), 0) as total FROM real_agg
@@ -458,6 +474,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         presupuesto_id: int,
         anio: int,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         centro_costo_id: Optional[int] = None,
         concepto_id: Optional[int] = None,
         tercero_id: Optional[int] = None,
@@ -475,6 +492,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
 
         params_pres = [presupuesto_id, direccion]
         exclusion_pres = self._build_exclusion_clause("pd", centros_costos_excluidos, params_pres)
+        inclusion_pres = self._build_inclusion_clause("pd", centros_costos_incluidos, params_pres)
 
         pres_filters = ""
         if excluir_estacionales:
@@ -491,6 +509,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
 
         params_real = [anio]
         exclusion_real = self._build_exclusion_clause("md", centros_costos_excluidos, params_real)
+        inclusion_real = self._build_inclusion_clause("md", centros_costos_incluidos, params_real)
 
         real_filters = ""
         if centro_costo_id:
@@ -500,12 +519,13 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
             real_filters += " AND md.ConceptoID = %s"
             params_real.append(concepto_id)
         if tercero_id:
-            real_filters += " AND m.terceroid = %s"
+            real_filters += " AND md.TerceroID = %s"
             params_real.append(tercero_id)
 
         # Anterior (year - 1)
         params_anterior = [anio - 1]
         exclusion_anterior = self._build_exclusion_clause("md", centros_costos_excluidos, params_anterior)
+        inclusion_anterior = self._build_inclusion_clause("md", centros_costos_incluidos, params_anterior)
 
         anterior_filters = ""
         if centro_costo_id:
@@ -515,7 +535,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
             anterior_filters += " AND md.ConceptoID = %s"
             params_anterior.append(concepto_id)
         if tercero_id:
-            anterior_filters += " AND m.terceroid = %s"
+            anterior_filters += " AND md.TerceroID = %s"
             params_anterior.append(tercero_id)
 
         estacional_exclusion_real = ""
@@ -549,6 +569,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                       AND pd.version = (SELECT version_actual FROM presupuestos WHERE id = pd.presupuesto_id)
                       AND pd.direccion = %s
                 {exclusion_pres}
+                {inclusion_pres}
                 {pres_filters}
                 GROUP BY pd.mes
             ),
@@ -561,6 +582,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                   AND {valor_filter}
                   AND md.centro_costo_id IS NOT NULL
                 {exclusion_real}
+                {inclusion_real}
                 {real_filters}
                 {estacional_exclusion_real}
                 GROUP BY EXTRACT(MONTH FROM m.Fecha)
@@ -574,6 +596,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                   AND {valor_filter}
                   AND md.centro_costo_id IS NOT NULL
                 {exclusion_anterior}
+                {inclusion_anterior}
                 {anterior_filters}
                 {estacional_exclusion_anterior}
                 GROUP BY EXTRACT(MONTH FROM m.Fecha)
@@ -620,6 +643,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         presupuesto_id: int,
         anio: int,
         centros_costos_excluidos: Optional[List[int]] = None,
+        centros_costos_incluidos: Optional[List[int]] = None,
         direccion: str = 'egreso'
     ) -> List[dict]:
         """Movimientos del año actual sin filas en presupuesto_detalle, con info de regla existente."""
@@ -628,6 +652,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
 
         params = [anio, presupuesto_id, presupuesto_id, direccion, direccion]
         exclusion = self._build_exclusion_clause("md", centros_costos_excluidos, params)
+        inclusion = self._build_inclusion_clause("md", centros_costos_incluidos, params)
 
         query = f"""
             SELECT
@@ -659,6 +684,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
                     AND COALESCE(pd.concepto_id, 0) = COALESCE(md.ConceptoID, 0)
               )
               {exclusion}
+              {inclusion}
             GROUP BY md.centro_costo_id, md.ConceptoID, cc.centro_costo, con.concepto,
                      rp.id, rp.tipo_gasto
             ORDER BY SUM(ABS(md.Valor)) DESC

@@ -65,7 +65,7 @@ export const TercerosPage = () => {
             })
     }
 
-    const handleSave = async (nombre: string) => {
+    const handleSave = async (nombre: string, alias?: string, referencia?: string) => {
         const method = itemEditando ? 'PUT' : 'POST'
         const url = itemEditando
             ? `${API_BASE_URL}/api/terceros/${itemEditando.id}`
@@ -80,14 +80,38 @@ export const TercerosPage = () => {
 
             if (res.ok) {
                 const nuevoTercero = await res.json()
-                toast.success(itemEditando ? 'Tercero actualizado' : 'Tercero creado')
                 setModalOpen(false)
                 cargar()
 
-                // Si es creación (no edición), mostrar prompt para crear alias
+                // Si es creación (no edición)
                 if (!itemEditando && nuevoTercero) {
-                    setTerceroRecienCreado(nuevoTercero)
-                    setShowAliasPrompt(true)
+                    // Si hay alias o referencia, crear automáticamente y mostrar confirmación
+                    if (alias || referencia) {
+                        try {
+                            await fetch(`${API_BASE_URL}/api/terceros/descripciones`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    terceroid: nuevoTercero.id,
+                                    descripcion: alias || undefined,
+                                    referencia: referencia || undefined
+                                })
+                            })
+                        } catch (err) {
+                            console.warn("Tercero creado pero error al crear alias:", err)
+                        }
+                        const lines = [`Nombre: ${nombre}`]
+                        if (alias) lines.push(`Alias: ${alias}`)
+                        if (referencia) lines.push(`Referencia: ${referencia}`)
+                        setMsgModal({ message: lines.join('\n'), type: 'success' })
+                    } else {
+                        // Sin alias ni referencia: mostrar prompt para crear alias
+                        toast.success('Tercero creado')
+                        setTerceroRecienCreado(nuevoTercero)
+                        setShowAliasPrompt(true)
+                    }
+                } else {
+                    toast.success('Tercero actualizado')
                 }
             } else {
                 toast.error("Error al guardar el tercero")
@@ -185,7 +209,7 @@ export const TercerosPage = () => {
                     </div>
                 </div>
             )}
-            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} onClose={() => setMsgModal(null)} />
+            <MessageModal message={msgModal?.message ?? null} type={msgModal?.type} title={msgModal?.type === 'success' ? 'Tercero creado' : undefined} onClose={() => setMsgModal(null)} />
         </div>
     )
 }

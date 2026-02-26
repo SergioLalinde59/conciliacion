@@ -39,7 +39,8 @@ export const TercerosTable = ({ terceros, loading, onEdit, onDelete }: Props) =>
             getRowKey={(t) => t.id}
             onEdit={onEdit}
             onDelete={(tercero) => onDelete(tercero.id)}
-            deleteConfirmMessage="¿Eliminar este tercero?"
+            deleteConfirmMessage={(row) =>
+                `¿Eliminar este tercero?\n\nID: ${row.id}\nNombre: ${row.nombre}`}
         />
     )
 }

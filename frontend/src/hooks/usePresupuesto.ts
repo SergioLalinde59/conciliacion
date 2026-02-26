@@ -37,6 +37,7 @@ export const usePresupuestoComparacion = (id: number, params: {
     nivel?: string; mes_inicio?: number; mes_fin?: number;
     centro_costo_id?: number; concepto_id?: number;
     centros_costos_excluidos?: number[];
+    centros_costos_incluidos?: number[];
     excluir_estacionales?: boolean;
     direccion?: string
 }) =>
@@ -49,6 +50,7 @@ export const usePresupuestoComparacion = (id: number, params: {
 
 export const usePresupuestoComparacionMensual = (id: number, params?: {
     centros_costos_excluidos?: number[]
+    centros_costos_incluidos?: number[]
     centro_costo_id?: number; concepto_id?: number; tercero_id?: number;
     excluir_estacionales?: boolean
     direccion?: string
@@ -62,6 +64,7 @@ export const usePresupuestoComparacionMensual = (id: number, params?: {
 
 export const usePresupuestoWidget = (params?: {
     centros_costos_excluidos?: number[]
+    centros_costos_incluidos?: number[]
     centro_costo_id?: number; concepto_id?: number; tercero_id?: number
     direccion?: string
 }) =>
@@ -71,10 +74,10 @@ export const usePresupuestoWidget = (params?: {
         staleTime: 10 * 60 * 1000,
     })
 
-export const useClasificacionPreview = (anio: number, centrosCostosExcluidos?: number[], direccion?: string) =>
+export const useClasificacionPreview = (anio: number, centrosCostosExcluidos?: number[], direccion?: string, centrosCostosIncluidos?: number[]) =>
     useQuery({
         queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, centrosCostosExcluidos, direccion),
-        queryFn: () => presupuestoService.clasificacionPreview(anio, centrosCostosExcluidos, direccion),
+        queryFn: () => presupuestoService.clasificacionPreview(anio, centrosCostosExcluidos, direccion, centrosCostosIncluidos),
         staleTime: 5 * 60 * 1000,
         enabled: !!anio,
     })

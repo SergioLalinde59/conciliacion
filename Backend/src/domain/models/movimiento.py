@@ -18,6 +18,9 @@ class Movimiento:
     
     # Campos opcionales / Nullables
     id: Optional[int] = None
+    # NOTA: tercero_id ya no se almacena en movimientos_encabezado en la DB.
+    # Se mantiene en el modelo para compatibilidad transitoria (crear/editar DTOs).
+    # La fuente de verdad es detalles[0].tercero_id.
     tercero_id: Optional[int] = None
     referencia: str = ""
     usd: Optional[Decimal] = None
@@ -68,21 +71,15 @@ class Movimiento:
 
     @property
     def necesita_clasificacion(self) -> bool:
-        """Regla de negocio: está pendiente si no tiene detalles o están incompletos"""
-        # [MOD] Ahora el tercero también se valida en el encabezado
-        if self.tercero_id is None:
-            return True
-
+        """Regla de negocio: está pendiente si no tiene detalles o están incompletos.
+        Un detalle está incompleto si le falta tercero, centro_costo o concepto."""
         if not self.detalles:
             return True
-            
-        # Verificar que la suma de detalles cuadre con el total (opcional, pero buena práctica)
-        # Por simplicidad ahora: si tiene detalles, verificamos si CUALQUIERA de ellos está incompleto.
-        # Un detalle está incompleto si le falta centro_costo o concepto.
+
         for d in self.detalles:
-            if d.centro_costo_id is None or d.concepto_id is None:
+            if d.tercero_id is None or d.centro_costo_id is None or d.concepto_id is None:
                 return True
-                
+
         return False
     
     # --- Propiedades de Compatibilidad (Legacy) ---
@@ -99,13 +96,10 @@ class Movimiento:
                 valor=self.valor,
                 centro_costo_id=value,
                 concepto_id=None,
-                tercero_id=self.tercero_id
+                tercero_id=None
             ))
         else:
             self.detalles[0].centro_costo_id = value
-            # Ensure Tercero is synced if it was set on Header
-            if self.tercero_id:
-                self.detalles[0].tercero_id = self.tercero_id
         
     @property
     def concepto_id(self) -> Optional[int]:
@@ -120,13 +114,10 @@ class Movimiento:
                 valor=self.valor,
                 centro_costo_id=None,
                 concepto_id=value,
-                tercero_id=self.tercero_id
+                tercero_id=None
             ))
         else:
             self.detalles[0].concepto_id = value
-            # Ensure Tercero is synced if it was set on Header
-            if self.tercero_id:
-                self.detalles[0].tercero_id = self.tercero_id
         
     @property
     def tercero_nombre(self) -> Optional[str]:

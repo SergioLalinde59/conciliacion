@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { apiService } from '../services/api'
-import { useReporteDesgloseGastos, useConfiguracionExclusion } from '../hooks/useReportes'
+import { useReporteDesgloseGastos } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
 import { useSessionStorage } from '../hooks/useSessionStorage'
 import { getMesActual, getPreviousPeriod } from '../utils/dateUtils'
 import { FiltrosReporte } from '../components/organisms/FiltrosReporte'
@@ -24,6 +26,11 @@ interface ItemDesglose {
     saldo: number
 }
 
+interface ItemDesgloseConPareto extends ItemDesglose {
+    paretoAcum: number
+    paretoPct: number
+}
+
 interface DrilldownLevel {
     level: 'tercero' | 'centro_costo' | 'concepto'
     title: string
@@ -45,21 +52,12 @@ export const ReporteEgresosCentroCostoPage = () => {
     const [terceroId, setTerceroId] = useSessionStorage('rep_egresos_cc_terceroId', '')
     const [centroCostoId, setCentroCostoId] = useSessionStorage('rep_egresos_cc_centroCostoId', '')
     const [conceptoId, setConceptoId] = useSessionStorage('rep_egresos_cc_conceptoId', '')
-    const [mostrarIngresos, setMostrarIngresos] = useSessionStorage('rep_egresos_cc_ingresos', false)
-    const [mostrarEgresos, setMostrarEgresos] = useSessionStorage('rep_egresos_cc_egresos', true)
     const [busqueda, setBusqueda] = useState('')
+    const mousePosRef = useRef({ x: 0, y: 0 })
+    const [chartTooltip, setChartTooltip] = useState<{ data: ItemDesgloseConPareto; x: number; y: number } | null>(null)
 
-    // Dynamic Exclusion
-    const { data: configExclusion = [] } = useConfiguracionExclusion()
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useSessionStorage<number[] | null>('rep_egresos_cc_excluidos', null)
-    const actualCentrosCostosExcluidos = centrosCostosExcluidos || []
-
-    useEffect(() => {
-        if (configExclusion.length > 0 && centrosCostosExcluidos === null) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configExclusion, centrosCostosExcluidos, setCentrosCostosExcluidos])
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
 
     // Modals
     const [terceroModal, setTerceroModal] = useState<DrilldownLevel>({
@@ -81,10 +79,8 @@ export const ReporteEgresosCentroCostoPage = () => {
         tercero_id: terceroId ? Number(terceroId) : undefined,
         centro_costo_id: centroCostoId ? Number(centroCostoId) : undefined,
         concepto_id: conceptoId ? Number(conceptoId) : undefined,
-        centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined,
-        ver_ingresos: mostrarIngresos,
-        ver_egresos: mostrarEgresos
-    }), [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, actualCentrosCostosExcluidos, mostrarIngresos, mostrarEgresos])
+        ...filterParams
+    }), [desde, hasta, cuentaId, terceroId, centroCostoId, conceptoId, filterParams])
 
     const { data: gruposDataRaw, isLoading: loadingMain } = useReporteDesgloseGastos(paramsReporte)
     const gruposData = (gruposDataRaw as ItemDesglose[]) || []
@@ -110,11 +106,11 @@ export const ReporteEgresosCentroCostoPage = () => {
             fecha_inicio: desde,
             fecha_fin: hasta,
             cuenta_id: cuentaId ? Number(cuentaId) : undefined,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined
+            ...filterParams
         } as any).then(data => {
             if (Array.isArray(data)) setTotalRegistros(data.length)
         }).catch(console.error)
-    }, [desde, hasta, cuentaId, actualCentrosCostosExcluidos])
+    }, [desde, hasta, cuentaId, filterParams])
 
     // Handlers
     const handleCentroCostoClick = async (item: ItemDesglose) => {
@@ -145,8 +141,7 @@ export const ReporteEgresosCentroCostoPage = () => {
         apiService.movimientos.listar({
             centro_costo_id: conceptoModal.grandParentId!, tercero_id: conceptoModal.parentId!, concepto_id: item.id,
             desde, hasta, limit: 1000,
-            ver_ingresos: mostrarIngresos, ver_egresos: mostrarEgresos,
-            centros_costos_excluidos: actualCentrosCostosExcluidos.length > 0 ? actualCentrosCostosExcluidos : undefined
+            ...filterParams
         } as any).then(response => {
             setDetallesModal(prev => ({ ...prev, data: (response as any).items || [], loading: false }))
         })
@@ -155,14 +150,23 @@ export const ReporteEgresosCentroCostoPage = () => {
     const handleLimpiar = () => {
         const mesActual = getMesActual()
         setDesde(mesActual.inicio); setHasta(mesActual.fin); setCuentaId(''); setTerceroId(''); setCentroCostoId(''); setConceptoId('')
-        if (configExclusion.length > 0) setCentrosCostosExcluidos(configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id))
-        else setCentrosCostosExcluidos([])
     }
 
-    const filteredGrupos = useMemo(() => {
+    const filteredGrupos = useMemo((): ItemDesgloseConPareto[] => {
         const sorted = [...gruposData].sort((a, b) => b.egresos - a.egresos)
-        if (!busqueda) return sorted
-        return sorted.filter(t => t.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+        const filtered = busqueda
+            ? sorted.filter(t => t.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+            : sorted
+        const totalEgresos = filtered.reduce((sum, item) => sum + item.egresos, 0)
+        let acum = 0
+        return filtered.map(item => {
+            acum += item.egresos
+            return {
+                ...item,
+                paretoAcum: acum,
+                paretoPct: totalEgresos > 0 ? Math.round(acum / totalEgresos * 1000) / 10 : 0
+            }
+        })
     }, [gruposData, busqueda])
 
     const top15 = useMemo(() => filteredGrupos.slice(0, 15), [filteredGrupos])
@@ -173,7 +177,7 @@ export const ReporteEgresosCentroCostoPage = () => {
     }), [gruposData])
 
     const exportarExcel = () => {
-        const ws = XLSX.utils.json_to_sheet(filteredGrupos.map(t => ({ Nombre: t.nombre, Ingresos: t.ingresos, Egresos: t.egresos, Saldo: t.saldo })))
+        const ws = XLSX.utils.json_to_sheet(filteredGrupos.map(t => ({ Nombre: t.nombre, Ingresos: t.ingresos, Egresos: t.egresos, Saldo: t.saldo, 'Pareto Acumulado': t.paretoAcum, 'Pareto %': t.paretoPct })))
         const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "CentrosCosto")
         XLSX.writeFile(wb, `Reporte_CentrosCosto_${desde}.xlsx`)
     }
@@ -196,15 +200,10 @@ export const ReporteEgresosCentroCostoPage = () => {
                 terceroId={terceroId} setTerceroId={setTerceroId}
                 centroCostoId={centroCostoId} setCentroCostoId={setCentroCostoId}
                 conceptoId={conceptoId} setConceptoId={setConceptoId}
-                configuracionExclusion={configExclusion}
-                centrosCostosExcluidos={actualCentrosCostosExcluidos}
-                setCentrosCostosExcluidos={setCentrosCostosExcluidos}
-                mostrarIngresos={mostrarIngresos}
-                setMostrarIngresos={setMostrarIngresos}
-                mostrarEgresos={mostrarEgresos}
-                setMostrarEgresos={setMostrarEgresos}
+                perspectivas={perspectivas}
+                selectedSlug={selectedSlug}
+                onPerspectivaChange={setSelectedSlug}
                 onLimpiar={handleLimpiar}
-                showIngresosEgresos={true}
                 showClasificacionFilters={true}
             />
 
@@ -261,7 +260,14 @@ export const ReporteEgresosCentroCostoPage = () => {
                             <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><FileSpreadsheet className="w-5 h-5" /></div>
                             <h3 className="font-bold text-slate-800 tracking-tight">Centro de Costos (Top 15)</h3>
                         </div>
-                        <div className="flex-1 min-h-0">
+                        <div
+                            className="flex-1 min-h-0"
+                            onMouseMoveCapture={(e) => {
+                                mousePosRef.current = { x: e.clientX + 15, y: e.clientY }
+                                setChartTooltip(prev => prev ? { ...prev, x: e.clientX + 15, y: e.clientY } : prev)
+                            }}
+                            onMouseLeave={() => setChartTooltip(null)}
+                        >
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart
                                     data={top15}
@@ -271,29 +277,22 @@ export const ReporteEgresosCentroCostoPage = () => {
                                 >
                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                                     <XAxis type="number" hide />
-                                    <YAxis dataKey="nombre" type="category" width={120} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} style={{ cursor: 'pointer' }} />
-                                    <Tooltip
-                                        cursor={{ fill: '#f8fafc' }}
-                                        content={({ active, payload }) => {
-                                            if (active && payload?.[0]) {
-                                                const d = payload[0].payload
-                                                return (
-                                                    <div className="bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs">
-                                                        <p className="font-bold mb-1 uppercase tracking-wider">{d.nombre}</p>
-                                                        <p className="flex justify-between gap-4"><span className="opacity-60 font-medium">Egresos:</span><span className="font-mono text-rose-400 font-bold"><CurrencyDisplay value={d.egresos} colorize={false} decimals={0} /></span></p>
-                                                        <p className="mt-2 text-[10px] text-slate-400 animate-pulse italic text-center border-t border-slate-700 pt-2">Doble clic para explorar</p>
-                                                    </div>
-                                                )
-                                            }
-                                            return null
-                                        }}
-                                    />
+                                    <YAxis dataKey="nombre" type="category" width={120} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} style={{ cursor: 'pointer' }} tickFormatter={(nombre) => { const item = top15.find(t => t.nombre === nombre); return item?.id ? `${item.id} - ${nombre}` : nombre }} />
+                                    <Tooltip cursor={{ fill: '#f8fafc' }} content={() => <></>} />
                                     <Bar
                                         dataKey="egresos"
                                         fill="#6366f1"
                                         radius={[0, 4, 4, 0]}
                                         barSize={20}
                                         onDoubleClick={(d) => (d as any)?.payload && handleCentroCostoClick((d as any).payload)}
+                                        onMouseEnter={(d: any) => {
+                                            setChartTooltip({
+                                                data: d?.payload || d,
+                                                x: mousePosRef.current.x,
+                                                y: mousePosRef.current.y
+                                            })
+                                        }}
+                                        onMouseLeave={() => setChartTooltip(null)}
                                         style={{ cursor: 'pointer' }}
                                     >
                                         {top15.map((_, index) => <Cell key={`c-${index}`} fill={index === 0 ? '#4f46e5' : '#6366f1'} opacity={1 - index * 0.05} />)}
@@ -329,30 +328,77 @@ export const ReporteEgresosCentroCostoPage = () => {
                                         accessor: (row) => (
                                             <div className="flex items-center gap-2 group cursor-pointer" onClick={() => handleCentroCostoClick(row)}>
                                                 <div className="w-6 h-6 rounded bg-indigo-50 flex items-center justify-center text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white transition-all"><Eye className="w-3 h-3" /></div>
-                                                <span className="font-bold text-slate-700 group-hover:text-indigo-600 truncate max-w-[180px] text-[11px] uppercase tracking-tighter">{row.nombre}</span>
+                                                <span className="font-bold text-slate-700 group-hover:text-indigo-600 truncate max-w-[180px] text-[11px] uppercase tracking-tighter">{row.id ? `${row.id} - ${row.nombre}` : row.nombre}</span>
                                             </div>
                                         )
                                     },
-                                    monedaColumn<ItemDesglose>(
+                                    monedaColumn<ItemDesgloseConPareto>(
                                         'ingresos',
                                         <TableHeaderCell>Ingresos</TableHeaderCell>,
                                         (row) => row.ingresos,
                                         'COP',
                                         { cellClassName: 'text-emerald-600 font-bold text-[11px]', decimals: 0 }
                                     ),
-                                    monedaColumn<ItemDesglose>(
+                                    monedaColumn<ItemDesgloseConPareto>(
                                         'egresos',
                                         <TableHeaderCell>Egresos</TableHeaderCell>,
                                         (row) => row.egresos,
                                         'COP',
                                         { cellClassName: 'text-rose-600 font-bold text-[11px]', colorize: false, decimals: 0 }
-                                    )
+                                    ),
+                                    monedaColumn<ItemDesgloseConPareto>(
+                                        'saldo',
+                                        <TableHeaderCell>Neto</TableHeaderCell>,
+                                        (row) => row.ingresos - row.egresos,
+                                        'COP',
+                                        { cellClassName: 'font-bold text-[11px]', decimals: 0 }
+                                    ),
+                                    {
+                                        key: 'paretoAcum',
+                                        header: <TableHeaderCell>Pareto $</TableHeaderCell>,
+                                        sortable: true,
+                                        sortValue: (r: ItemDesgloseConPareto) => r.paretoAcum,
+                                        align: 'right' as const,
+                                        cellClassName: 'font-mono text-[11px]',
+                                        accessor: (r: ItemDesgloseConPareto) => {
+                                            const color = r.paretoPct <= 80 ? 'text-indigo-600' : 'text-slate-400'
+                                            return <span className={color}><CurrencyDisplay value={r.paretoAcum} colorize={false} decimals={0} /></span>
+                                        },
+                                    },
+                                    {
+                                        key: 'paretoPct',
+                                        header: <TableHeaderCell>%</TableHeaderCell>,
+                                        sortable: true,
+                                        sortValue: (r: ItemDesgloseConPareto) => r.paretoPct,
+                                        align: 'right' as const,
+                                        cellClassName: 'font-mono text-[11px]',
+                                        accessor: (r: ItemDesgloseConPareto) => {
+                                            const color = r.paretoPct <= 80 ? 'text-indigo-600' : 'text-slate-400'
+                                            return <span className={color}>{r.paretoPct.toFixed(1)}%</span>
+                                        },
+                                    }
                                 ]}
                             />
                         </div>
                     </div>
                 </div>
             </div>
+
+            {chartTooltip && createPortal(
+                <div
+                    className="bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs pointer-events-none"
+                    style={{ position: 'fixed', left: chartTooltip.x, top: chartTooltip.y, transform: 'translateY(-50%)', zIndex: 9999 }}
+                >
+                    <p className="font-bold mb-1 uppercase tracking-wider">{chartTooltip.data.id ? `${chartTooltip.data.id} - ${chartTooltip.data.nombre}` : chartTooltip.data.nombre}</p>
+                    <p className="flex justify-between gap-4"><span className="opacity-60 font-medium">Ingresos:</span><span className="font-mono text-emerald-400 font-bold"><CurrencyDisplay value={chartTooltip.data.ingresos} colorize={false} decimals={0} /></span></p>
+                    <p className="flex justify-between gap-4"><span className="opacity-60 font-medium">Egresos:</span><span className="font-mono text-rose-400 font-bold"><CurrencyDisplay value={chartTooltip.data.egresos} colorize={false} decimals={0} /></span></p>
+                    <p className="flex justify-between gap-4"><span className="opacity-60 font-medium">Neto:</span><span className={`font-mono font-bold ${(chartTooltip.data.ingresos - chartTooltip.data.egresos) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}><CurrencyDisplay value={chartTooltip.data.ingresos - chartTooltip.data.egresos} colorize={false} decimals={0} /></span></p>
+                    <p className="flex justify-between gap-4"><span className="opacity-60 font-medium">Acumulado:</span><span className="font-mono text-indigo-400 font-bold"><CurrencyDisplay value={chartTooltip.data.paretoAcum} colorize={false} decimals={0} /></span></p>
+                    <p className="flex justify-between gap-4"><span className="opacity-60 font-medium">Pareto:</span><span className="font-mono text-indigo-400 font-bold">{chartTooltip.data.paretoPct.toFixed(1)}%</span></p>
+                    <p className="mt-2 text-[10px] text-slate-400 animate-pulse italic text-center border-t border-slate-700 pt-2">Doble clic para explorar</p>
+                </div>,
+                document.body
+            )}
 
             <DrilldownModal level={terceroModal} onClose={() => setTerceroModal(p => ({ ...p, isOpen: false }))} onNext={handleTerceroClick} />
             <DrilldownModal level={conceptoModal} onClose={() => setConceptoModal(p => ({ ...p, isOpen: false }))} onNext={handleConceptoClick} />

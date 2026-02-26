@@ -44,6 +44,7 @@ import { ClasificacionGastosPreviewPage } from './pages/ClasificacionGastosPrevi
 import { EjecucionMensualPage } from './pages/EjecucionMensualPage'
 import { ComparativoCifrasPage } from './pages/ComparativoCifrasPage'
 import { ComparacionVersionesPage } from './pages/ComparacionVersionesPage'
+import { PerspectivasPage } from './pages/PerspectivasPage'
 
 
 function App() {
@@ -60,6 +61,7 @@ function App() {
                     <Route path="/maestros/centros-costos" element={<CentrosCostosPage />} />
                     <Route path="/maestros/conceptos" element={<ConceptosPage />} />
                     <Route path="/maestros/config-filtros" element={<ConfigFiltrosCentrosCostosPage />} />
+                    <Route path="/maestros/perspectivas" element={<PerspectivasPage />} />
                     <Route path="/maestros/config-valores-pendientes" element={<ConfigValoresPendientesPage />} />
                     <Route path="/maestros/reglas" element={<ReglasPage />} />
                     <Route path="/maestros/alias" element={<ReglasNormalizacionPage />} />

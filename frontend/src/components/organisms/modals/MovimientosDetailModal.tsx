@@ -125,7 +125,6 @@ export const MovimientosDetailModal: React.FC<Props> = ({
                         <ClassificationDisplay
                             centroCosto={movimiento.centro_costo_id ? { id: movimiento.centro_costo_id, nombre: movimiento.centro_costo_nombre || '' } : null}
                             concepto={movimiento.concepto_id ? { id: movimiento.concepto_id, nombre: movimiento.concepto_nombre || '' } : null}
-                            detallesCount={movimiento.detalles?.length}
                         />
                     </div>
                 </div>

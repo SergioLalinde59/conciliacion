@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { usePresupuestos, usePresupuestoComparacionMensual, PRESUPUESTO_KEYS } from '../hooks/usePresupuesto'
-import { useConfiguracionExclusion } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
+import PerspectiveSelector from '../components/molecules/PerspectiveSelector'
 import { dashboardService } from '../services/dashboard.service'
 import { presupuestoService } from '../services/presupuesto.service'
 import type { FlujoCajaMes } from '../services/dashboard.service'
@@ -12,11 +13,11 @@ const MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'
 
 export const ComparativoCifrasPage = () => {
     const { data: presupuestos = [] } = usePresupuestos()
-    const { data: configExclusion = [], isFetched: exclusionConfigLoaded } = useConfiguracionExclusion()
 
     const [presupuestoId, setPresupuestoId] = useState<number>(0)
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[] | null>(null)
-    const actualExcluidos = useMemo(() => centrosCostosExcluidos ?? [], [centrosCostosExcluidos])
+
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams, ready: perspectivaReady } = usePerspectiva()
 
     const selectedPresupuesto = presupuestos.find(p => p.id === presupuestoId)
     const anio = selectedPresupuesto?.anio || new Date().getFullYear()
@@ -30,37 +31,28 @@ export const ComparativoCifrasPage = () => {
         }
     }, [presupuestos, presupuestoId])
 
-    // Cargar exclusiones por defecto
-    useEffect(() => {
-        if (exclusionConfigLoaded && centrosCostosExcluidos === null) {
-            setCentrosCostosExcluidos(
-                configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            )
-        }
-    }, [configExclusion, centrosCostosExcluidos, exclusionConfigLoaded])
-
     // ---- FUENTE 1: Dashboard (flujoMensual) ----
     const [flujo, setFlujo] = useState<FlujoCajaMes[]>([])
     const [loadingFlujo, setLoadingFlujo] = useState(true)
 
     const cargarFlujo = useCallback(() => {
-        if (centrosCostosExcluidos === null) return
+        if (!perspectivaReady) return
         setLoadingFlujo(true)
         const desde = `${anio}-01-01`
         const ultimoDia = new Date(anio, currentMonth, 0).getDate()
         const hasta = `${anio}-${String(currentMonth).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
-        dashboardService.flujoMensual(desde, hasta, actualExcluidos.length > 0 ? actualExcluidos : undefined)
+        dashboardService.flujoMensual(desde, hasta, filterParams.centros_costos_excluidos)
             .then(setFlujo)
             .catch(console.error)
             .finally(() => setLoadingFlujo(false))
-    }, [anio, currentMonth, actualExcluidos, centrosCostosExcluidos])
+    }, [anio, currentMonth, filterParams, perspectivaReady])
 
     useEffect(() => { cargarFlujo() }, [cargarFlujo])
 
     // ---- FUENTE 2: Ppto vs Real (compararMensual) ----
     const mensualParams = useMemo(() => ({
-        centros_costos_excluidos: actualExcluidos.length > 0 ? actualExcluidos : undefined,
-    }), [actualExcluidos])
+        ...filterParams,
+    }), [filterParams])
 
     const { data: pptoMensual = [], isLoading: loadingPpto } = usePresupuestoComparacionMensual(presupuestoId, mensualParams)
 
@@ -70,7 +62,7 @@ export const ComparativoCifrasPage = () => {
         queryKey: PRESUPUESTO_KEYS.simulacion(presupuestoId, 0),
         queryFn: () => presupuestoService.simularReglas(presupuestoId, {
             anio_fuente: anioFuente,
-            centros_costos_excluidos: actualExcluidos.length > 0 ? actualExcluidos : undefined,
+            ...filterParams,
         }),
         staleTime: 5 * 60 * 1000,
         enabled: !!presupuestoId,
@@ -129,12 +121,7 @@ export const ComparativoCifrasPage = () => {
     const thBase = 'px-4 py-2.5 text-[10px] font-bold uppercase tracking-wide'
     const tdBase = 'px-4 py-2 text-right font-mono text-xs'
 
-    const exclusionNames = useMemo(() => {
-        return actualExcluidos.map(id => {
-            const cfg = configExclusion.find(c => c.centro_costo_id === id)
-            return cfg?.etiqueta || `CC #${id}`
-        })
-    }, [actualExcluidos, configExclusion])
+    const exclusionIds = filterParams.centros_costos_excluidos ?? []
 
     // Badge helper
     const Badge = ({ value, na }: { value?: string; na?: boolean }) => na
@@ -155,17 +142,24 @@ export const ComparativoCifrasPage = () => {
                         <p className="text-slate-500 text-sm mt-0.5">Cruce entre Dashboard, Presupuesto vs Real y Reglas de Presupuesto</p>
                     </div>
                 </div>
-                <select
-                    value={presupuestoId}
-                    onChange={e => setPresupuestoId(parseInt(e.target.value))}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                >
-                    {presupuestos.map(p => (
-                        <option key={p.id} value={p.id}>
-                            {p.nombre} ({p.anio}) - {p.estado}
-                        </option>
-                    ))}
-                </select>
+                <div className="flex items-center gap-3">
+                    <PerspectiveSelector
+                        perspectivas={perspectivas}
+                        selectedSlug={selectedSlug}
+                        onChange={setSelectedSlug}
+                    />
+                    <select
+                        value={presupuestoId}
+                        onChange={e => setPresupuestoId(parseInt(e.target.value))}
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                    >
+                        {presupuestos.map(p => (
+                            <option key={p.id} value={p.id}>
+                                {p.nombre} ({p.anio}) - {p.estado}
+                            </option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             {/* Contenido */}
@@ -645,12 +639,12 @@ export const ComparativoCifrasPage = () => {
                                     </tbody>
                                 </table>
 
-                                {actualExcluidos.length > 0 && (
+                                {exclusionIds.length > 0 && (
                                     <div className="mt-4 pt-3 border-t border-slate-100">
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">CC Excluidos activos:</p>
                                         <div className="flex flex-wrap gap-1">
-                                            {exclusionNames.map((name, i) => (
-                                                <span key={i} className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px]">{name}</span>
+                                            {exclusionIds.map((id, i) => (
+                                                <span key={i} className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px]">CC #{id}</span>
                                             ))}
                                         </div>
                                     </div>

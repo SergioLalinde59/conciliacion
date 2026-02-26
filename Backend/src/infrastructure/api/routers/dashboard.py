@@ -56,6 +56,7 @@ def obtener_estadisticas(
 @router.get("/presupuesto-widget")
 def obtener_widget_presupuesto(
     centros_costos_excluidos: Optional[List[int]] = Query(None),
+    centros_costos_incluidos: Optional[List[int]] = Query(None),
     centro_costo_id: Optional[int] = None,
     concepto_id: Optional[int] = None,
     tercero_id: Optional[int] = None,
@@ -114,6 +115,7 @@ def obtener_widget_presupuesto(
             presupuesto_id=presupuesto.id,
             anio=anio_actual,
             centros_costos_excluidos=centros_costos_excluidos,
+            centros_costos_incluidos=centros_costos_incluidos,
             centro_costo_id=centro_costo_id,
             concepto_id=concepto_id,
             tercero_id=tercero_id,

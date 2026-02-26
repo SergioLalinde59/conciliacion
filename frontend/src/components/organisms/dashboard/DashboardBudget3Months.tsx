@@ -1,161 +1,190 @@
 import { usePresupuestoWidget } from '../../../hooks/usePresupuesto'
 import { useNavigate } from 'react-router-dom'
-import { SemaforoBadge } from '../../atoms/SemaforoBadge'
+import { SemaphoreProgressBar } from '../../atoms/SemaphoreProgressBar'
+import type { SemaphoreStatus } from '../../atoms/SemaphoreProgressBar'
 import { CurrencyDisplay } from '../../atoms/CurrencyDisplay'
-import { Target, Calendar, ArrowRight, TrendingDown, TrendingUp } from 'lucide-react'
+import { Target, Calendar, ArrowRight, TrendingDown, TrendingUp, Scale } from 'lucide-react'
 import type { PresupuestoWidgetMes } from '../../../types/Presupuesto'
 
-const barColors = {
-    verde: { bar: 'bg-emerald-500', bg: 'bg-emerald-100', accent: 'border-emerald-200' },
-    amarillo: { bar: 'bg-amber-500', bg: 'bg-amber-100', accent: 'border-amber-200' },
-    rojo: { bar: 'bg-rose-500', bg: 'bg-rose-100', accent: 'border-rose-200' },
-}
-
-const ingresosBarColors = {
-    verde: { bar: 'bg-emerald-400', bg: 'bg-emerald-50' },
-    amarillo: { bar: 'bg-amber-400', bg: 'bg-amber-50' },
-    rojo: { bar: 'bg-rose-400', bg: 'bg-rose-50' },
+const accentBorder: Record<SemaphoreStatus, string> = {
+    verde: 'border-emerald-200',
+    amarillo: 'border-amber-200',
+    rojo: 'border-rose-200',
 }
 
 interface MonthIngresoData {
     presupuestado: number
     ejecutado: number
     porcentaje: number
-    semaforo: 'verde' | 'amarillo' | 'rojo'
+    semaforo: SemaphoreStatus
 }
 
-interface MonthCardProps {
+/** Calculate neto semaphore: inverted logic (more is better) */
+const calcNetoSemaforo = (netoReal: number, netoPpto: number): SemaphoreStatus => {
+    if (netoReal >= netoPpto) return 'verde'
+    if (netoPpto !== 0 && netoReal >= netoPpto * 0.9) return 'amarillo'
+    return 'rojo'
+}
+
+const calcNetoPct = (netoReal: number, netoPpto: number): number => {
+    if (netoPpto > 0) return (netoReal / netoPpto) * 100
+    if (netoPpto === 0) return netoReal >= 0 ? 100 : 0
+    // netoPpto < 0 (expected deficit): less negative is better
+    return netoPpto !== 0 ? (netoReal / netoPpto) * 100 : 0
+}
+
+interface MetricRowProps {
+    label: string
+    icon: React.ReactNode
+    fillPct: number
+    status: SemaphoreStatus
+    ejecutado: number
+    presupuestado: number
+    compact?: boolean
+    showPlusSign?: boolean
+}
+
+const pctColor: Record<SemaphoreStatus, string> = {
+    verde: 'text-emerald-600',
+    amarillo: 'text-amber-600',
+    rojo: 'text-rose-500',
+}
+
+const MetricRow = ({ label, icon, fillPct, status, ejecutado, presupuestado, compact, showPlusSign }: MetricRowProps) => (
+    <div className="space-y-1">
+        {/* Label + Values on same line */}
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+                {icon}
+                <span className="text-xs font-semibold text-slate-500 min-w-[4rem]">{label}</span>
+                <div className="text-xs font-mono text-slate-600 flex items-center gap-0.5 ml-2">
+                    <CurrencyDisplay value={ejecutado} colorize={false} decimals={0} compact={compact} showPlusSign={showPlusSign} />
+                    <span className="text-slate-300">|</span>
+                    <CurrencyDisplay value={presupuestado} colorize={false} decimals={0} compact={compact} showPlusSign={showPlusSign} />
+                    <span className="text-slate-300">|</span>
+                    <span className={`text-xs font-bold ${pctColor[status]}`}>
+                        {Math.round(fillPct)}%
+                    </span>
+                </div>
+            </div>
+        </div>
+        {/* Bar below */}
+        <SemaphoreProgressBar
+            fillPct={Math.min(fillPct, 100)}
+            status={status}
+            heightClass="h-2"
+            showMarker={true}
+            showBadge={true}
+        />
+    </div>
+)
+
+interface MonthSectionProps {
     mesNombre: string
     presupuestado: number
     ejecutado: number
     porcentaje: number
-    semaforo: 'verde' | 'amarillo' | 'rojo'
+    semaforo: SemaphoreStatus
     isCurrent?: boolean
     diasRestantes?: number
     compact?: boolean
     ingresos?: MonthIngresoData
 }
 
-const MonthCard = ({
+const MonthSection = ({
     mesNombre, presupuestado, ejecutado, porcentaje, semaforo,
     isCurrent, diasRestantes, compact = false, ingresos
-}: MonthCardProps) => {
-    const colors = barColors[semaforo] || barColors.verde
-
-    // Net calculations
+}: MonthSectionProps) => {
     const hasIngresos = ingresos && ingresos.presupuestado > 0
+
+    // Neto calculations
     const netoReal = hasIngresos ? ingresos.ejecutado - ejecutado : 0
     const netoPpto = hasIngresos ? ingresos.presupuestado - presupuestado : 0
-    const diferenciaNeta = netoReal - netoPpto
-    const netoMejor = diferenciaNeta >= 0
+    const netoSemaforo = hasIngresos ? calcNetoSemaforo(netoReal, netoPpto) : 'verde' as SemaphoreStatus
+    const netoPct = hasIngresos ? calcNetoPct(netoReal, netoPpto) : 0
 
     return (
         <div className={`
-            bg-white rounded-xl border p-3.5 transition-all
-            ${isCurrent ? `border-2 ${colors.accent} shadow-md` : 'border-gray-100 shadow-sm'}
+            rounded-xl border p-4 transition-all
+            ${isCurrent ? `border-2 ${accentBorder[semaforo]} bg-white shadow-md` : 'border-gray-100 bg-gray-50/50 shadow-sm'}
         `}>
             {/* Header */}
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                     {isCurrent && <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />}
-                    <h4 className={`font-bold ${isCurrent ? 'text-slate-900 text-sm' : 'text-slate-600 text-xs'}`}>
+                    <h4 className={`font-bold ${isCurrent ? 'text-slate-900 text-sm' : 'text-slate-600 text-sm'}`}>
                         {mesNombre}
                     </h4>
                 </div>
-                <SemaforoBadge valor={semaforo} size="sm" />
+                {isCurrent && diasRestantes !== undefined && (
+                    <div className="flex items-center gap-1 text-xs text-gray-400">
+                        <Calendar size={12} />
+                        <span className="font-semibold">{diasRestantes} días restantes</span>
+                    </div>
+                )}
             </div>
 
-            {/* ── EGRESOS section ── */}
-            <div className="mb-2.5">
-                <div className="flex items-center gap-1 mb-1">
-                    <TrendingDown size={11} className="text-rose-400" />
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase">Egresos</span>
-                </div>
-                <div className={`w-full ${isCurrent ? 'h-2.5' : 'h-2'} rounded-full ${colors.bg}`}>
-                    <div
-                        className={`h-full rounded-full ${colors.bar} transition-all duration-700`}
-                        style={{ width: `${Math.min(porcentaje, 100)}%` }}
+            {/* Metric Rows */}
+            <div className="space-y-2.5">
+                {/* Ingresos */}
+                {hasIngresos && (
+                    <MetricRow
+                        label="Ingresos"
+                        icon={<TrendingUp size={13} className="text-emerald-500" />}
+                        fillPct={ingresos.porcentaje}
+                        status={ingresos.semaforo}
+                        ejecutado={ingresos.ejecutado}
+                        presupuestado={ingresos.presupuestado}
+                        compact={compact}
                     />
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                    <span className="text-[10px] font-mono text-slate-400">
-                        <CurrencyDisplay value={ejecutado} colorize={false} decimals={0} compact={compact} />
-                        <span className="text-slate-300"> / </span>
-                        <CurrencyDisplay value={presupuestado} colorize={false} decimals={0} compact={compact} />
-                    </span>
-                    <span className="text-[10px] font-bold font-mono text-slate-500">{porcentaje.toFixed(0)}%</span>
-                </div>
-            </div>
+                )}
 
-            {/* ── INGRESOS section (if available) ── */}
-            {hasIngresos && (
-                <div className="mb-2.5">
-                    <div className="flex items-center gap-1 mb-1">
-                        <TrendingUp size={11} className="text-emerald-500" />
-                        <span className="text-[10px] font-semibold text-slate-400 uppercase">Ingresos</span>
-                    </div>
-                    <div className={`w-full ${isCurrent ? 'h-2.5' : 'h-2'} rounded-full ${ingresosBarColors[ingresos.semaforo]?.bg || ingresosBarColors.verde.bg}`}>
-                        <div
-                            className={`h-full rounded-full ${ingresosBarColors[ingresos.semaforo]?.bar || ingresosBarColors.verde.bar} transition-all duration-700`}
-                            style={{ width: `${Math.min(ingresos.porcentaje, 100)}%` }}
+                {/* Egresos */}
+                <MetricRow
+                    label="Egresos"
+                    icon={<TrendingDown size={13} className="text-rose-400" />}
+                    fillPct={porcentaje}
+                    status={semaforo}
+                    ejecutado={ejecutado}
+                    presupuestado={presupuestado}
+                    compact={compact}
+                />
+
+                {/* Neto */}
+                {hasIngresos && (
+                    <>
+                        <div className="border-t border-gray-200/60 my-1" />
+                        <MetricRow
+                            label="Neto"
+                            icon={<Scale size={13} className="text-blue-500" />}
+                            fillPct={netoPct}
+                            status={netoSemaforo}
+                            ejecutado={netoReal}
+                            presupuestado={netoPpto}
+                            compact={compact}
+                            showPlusSign
                         />
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                        <span className="text-[10px] font-mono text-slate-400">
-                            <CurrencyDisplay value={ingresos.ejecutado} colorize={false} decimals={0} compact={compact} />
-                            <span className="text-slate-300"> / </span>
-                            <CurrencyDisplay value={ingresos.presupuestado} colorize={false} decimals={0} compact={compact} />
-                        </span>
-                        <span className="text-[10px] font-bold font-mono text-emerald-600">{ingresos.porcentaje.toFixed(0)}%</span>
-                    </div>
-                </div>
-            )}
-
-            {/* ── NETO summary (if both available) ── */}
-            {hasIngresos && (
-                <div className="border-t border-gray-100 pt-2 mt-1">
-                    <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400">Neto</span>
-                        <span className={`text-[11px] font-bold font-mono ${netoReal >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                            <CurrencyDisplay value={netoReal} colorize={false} decimals={0} compact={compact} showPlusSign={netoReal > 0} />
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between mt-0.5">
-                        <span className="text-[10px] text-slate-300">Ppto</span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-mono text-slate-400">
-                                <CurrencyDisplay value={netoPpto} colorize={false} decimals={0} compact={compact} showPlusSign={netoPpto > 0} />
-                            </span>
-                            <span className={`text-[9px] font-bold ${netoMejor ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                {netoMejor ? '▲' : '▼'}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Days remaining (only current) */}
-            {isCurrent && diasRestantes !== undefined && (
-                <div className="flex items-center justify-center gap-1 mt-2 pt-2 border-t border-gray-100 text-[10px] text-gray-400">
-                    <Calendar size={11} />
-                    <span className="font-semibold">{diasRestantes} días restantes</span>
-                </div>
-            )}
+                    </>
+                )}
+            </div>
         </div>
     )
 }
 
 interface DashboardBudget3MonthsProps {
     centrosExcluidos?: number[]
+    centrosIncluidos?: number[]
     compact?: boolean
 }
 
-export const DashboardBudget3Months = ({ centrosExcluidos, compact = false }: DashboardBudget3MonthsProps) => {
+export const DashboardBudget3Months = ({ centrosExcluidos, centrosIncluidos, compact = false }: DashboardBudget3MonthsProps) => {
     const { data: widgetEgresos, isLoading: loadingEgresos } = usePresupuestoWidget({
         centros_costos_excluidos: centrosExcluidos?.length ? centrosExcluidos : undefined,
+        centros_costos_incluidos: centrosIncluidos?.length ? centrosIncluidos : undefined,
     })
     const { data: widgetIngresos, isLoading: loadingIngresos } = usePresupuestoWidget({
         centros_costos_excluidos: centrosExcluidos?.length ? centrosExcluidos : undefined,
+        centros_costos_incluidos: centrosIncluidos?.length ? centrosIncluidos : undefined,
         direccion: 'ingreso',
     })
     const navigate = useNavigate()
@@ -166,9 +195,9 @@ export const DashboardBudget3Months = ({ centrosExcluidos, compact = false }: Da
         return (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 animate-pulse">
                 <div className="h-5 bg-gray-200 rounded w-48 mb-6" />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {[1, 2, 3].map(i => (
-                        <div key={i} className="h-48 bg-gray-100 rounded-xl" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[1, 2].map(i => (
+                        <div key={i} className="h-40 bg-gray-100 rounded-xl" />
                     ))}
                 </div>
             </div>
@@ -256,10 +285,10 @@ export const DashboardBudget3Months = ({ centrosExcluidos, compact = false }: Da
                 </span>
             </div>
 
-            {/* Month Cards */}
-            <div className={`grid grid-cols-1 ${monthCount >= 3 ? 'md:grid-cols-3' : monthCount === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1 max-w-sm'} gap-4`}>
+            {/* Month Sections - horizontal grid */}
+            <div className={`grid grid-cols-1 ${monthCount >= 3 ? 'md:grid-cols-3' : monthCount === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1 max-w-lg'} gap-4`}>
                 {allMonths.map((m) => (
-                    <MonthCard
+                    <MonthSection
                         key={m.mes_nombre}
                         mesNombre={m.mes_nombre}
                         presupuestado={m.presupuestado}

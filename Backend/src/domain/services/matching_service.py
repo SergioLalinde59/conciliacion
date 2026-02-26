@@ -7,6 +7,7 @@ from src.domain.models.movimiento_extracto import MovimientoExtracto
 from src.domain.models.movimiento import Movimiento
 from src.domain.models.movimiento_match import MovimientoMatch, MatchEstado
 from src.domain.models.configuracion_matching import ConfiguracionMatching
+from src.domain.utils.text_similarity import normalizar_acentos
 
 
 class MatchingService:
@@ -236,9 +237,9 @@ class MatchingService:
         if not desc1 or not desc2:
             return Decimal('0.00')
         
-        # Normalizar textos base
-        desc1_norm = desc1.upper().strip()  # EXTRACTO
-        desc2_norm = desc2.upper().strip()  # SISTEMA
+        # Normalizar textos base (incluyendo acentos para comparación robusta)
+        desc1_norm = normalizar_acentos(desc1.upper().strip())  # EXTRACTO
+        desc2_norm = normalizar_acentos(desc2.upper().strip())  # SISTEMA
         
         # Aplicar reglas SOLO al Extracto para proyectar lo que "Debería decir el Sistema"
         desc_esperada_sistema = desc1_norm
@@ -246,10 +247,11 @@ class MatchingService:
         if aliases:
             for alias in aliases:
                 # El patrón del alias (ej. "ADICION") se busca en el Extracto
-                if alias.patron in desc1_norm:
+                patron_norm = normalizar_acentos(alias.patron)
+                if patron_norm in desc1_norm:
                     # Se reemplaza por el texto del Sistema (ej. "TRASLADO DESDE CUENTA")
                     # Usamos replace para permitir coincidencias parciales si el patrón es solo una parte
-                    desc_esperada_sistema = desc1_norm.replace(alias.patron, alias.reemplazo)
+                    desc_esperada_sistema = desc1_norm.replace(patron_norm, normalizar_acentos(alias.reemplazo))
         
         # Usar SequenceMatcher para comparar lo que ESPERAMOS vs lo que TENEMOS
         similitud = SequenceMatcher(None, desc_esperada_sistema, desc2_norm).ratio()

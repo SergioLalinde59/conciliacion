@@ -1,15 +1,15 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Eye, Plus, CheckCircle, AlertTriangle, Filter, Save } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Eye, Plus, CheckCircle, AlertTriangle, Save } from 'lucide-react'
 import { useClasificacionPreview, usePresupuestos, PRESUPUESTO_KEYS } from '../hooks/usePresupuesto'
 import { useReglaPresupuestoMutations } from '../hooks/useReglasPresupuesto'
 import { useTiposGasto } from '../hooks/useTiposGasto'
 import { useIndicadores } from '../hooks/useIndicadores'
-import { useConfiguracionExclusion } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
+import PerspectiveSelector from '../components/molecules/PerspectiveSelector'
 import { useQueryClient } from '@tanstack/react-query'
 import type { ClasificacionPreviewItem } from '../types/Presupuesto'
 import { DataTable, type Column } from '../components/molecules/DataTable'
 import { selectionColumn, textoColumn, cifraColumn, monedaColumn } from '../components/atoms/columnHelpers'
-import { FilterToggles } from '../components/molecules/FilterToggles'
 import { EntitySelector } from '../components/molecules/entities/EntitySelector'
 import { ClasificacionDetalleModal } from '../components/organisms/modals/ClasificacionDetalleModal'
 
@@ -62,19 +62,10 @@ export const ClasificacionGastosPreviewPage = () => {
     const [bulkMode, setBulkMode] = useState(false)
     const [detalleRow, setDetalleRow] = useState<ClasificacionPreviewItem | null>(null)
 
-    // Filtros avanzados - exclusión de CCs
-    const { data: configExclusion = [] } = useConfiguracionExclusion()
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[] | null>(null)
-    const actualExcluidos = centrosCostosExcluidos || []
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
 
-    useEffect(() => {
-        if (configExclusion.length > 0 && centrosCostosExcluidos === null) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configExclusion, centrosCostosExcluidos])
-
-    const { data: items = [], isLoading } = useClasificacionPreview(anio, actualExcluidos)
+    const { data: items = [], isLoading } = useClasificacionPreview(anio, filterParams.centros_costos_excluidos, undefined, filterParams.centros_costos_incluidos)
     const { data: presupuestos = [] } = usePresupuestos()
     const umbralMinimoAnual = (presupuestos.find(p => p.estado === 'activo') ?? presupuestos[0])?.umbral_minimo_anual ?? 0
     const { crear, crearLote: crearLoteMutation } = useReglaPresupuestoMutations()
@@ -211,7 +202,7 @@ export const ClasificacionGastosPreviewPage = () => {
             await crear.mutateAsync({ ...form, monto_fijo_mensual: null })
         }
         setShowModal(false)
-        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, actualExcluidos) })
+        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, filterParams.centros_costos_excluidos) })
     }
 
     // Crear regla rápida con los valores de auto-clasificación actuales
@@ -225,7 +216,7 @@ export const ClasificacionGastosPreviewPage = () => {
             monto_fijo_mensual: row.monto_fijo_mensual,
             notas: 'Auto-clasificado',
         })
-        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, actualExcluidos) })
+        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, filterParams.centros_costos_excluidos) })
     }
 
     // Guardar seleccionadas como reglas (batch con auto-clasificación)
@@ -241,7 +232,7 @@ export const ClasificacionGastosPreviewPage = () => {
             notas: 'Auto-clasificado (lote)',
         })))
         setSelected(new Set())
-        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, actualExcluidos) })
+        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, filterParams.centros_costos_excluidos) })
     }
 
     // Guardar TODA la auto-clasificación visible como reglas (batch)
@@ -256,7 +247,7 @@ export const ClasificacionGastosPreviewPage = () => {
             monto_fijo_mensual: item.monto_fijo_mensual,
             notas: 'Auto-clasificado',
         })))
-        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, actualExcluidos) })
+        qc.invalidateQueries({ queryKey: PRESUPUESTO_KEYS.clasificacionPreview(anio, filterParams.centros_costos_excluidos) })
     }
 
     const [savingAll, setSavingAll] = useState(false)
@@ -495,20 +486,14 @@ export const ClasificacionGastosPreviewPage = () => {
                         </button>
                     )}
                 </div>
-                {(configExclusion.length > 0 || resumen.autoClasificado > 0) && (
+                {(perspectivas.length > 0 || resumen.autoClasificado > 0) && (
                     <div className="flex items-center gap-6 mt-3 pt-3 border-t border-slate-100">
-                        {configExclusion.length > 0 && (
-                            <>
-                                <div className="flex items-center gap-2 text-slate-400">
-                                    <Filter size={14} className="opacity-50" />
-                                    <span className="text-[9px] font-black uppercase tracking-[0.2em]">Filtros Avanzados</span>
-                                </div>
-                                <FilterToggles
-                                    configuracionExclusion={configExclusion}
-                                    centrosCostosExcluidos={actualExcluidos}
-                                    onCentrosCostosExcluidosChange={setCentrosCostosExcluidos}
-                                />
-                            </>
+                        {perspectivas.length > 0 && (
+                            <PerspectiveSelector
+                                perspectivas={perspectivas}
+                                selectedSlug={selectedSlug}
+                                onChange={setSelectedSlug}
+                            />
                         )}
                         {resumen.autoClasificado > 0 && (
                             <button onClick={async () => {

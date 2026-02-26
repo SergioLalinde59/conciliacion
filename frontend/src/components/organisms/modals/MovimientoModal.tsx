@@ -365,7 +365,7 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                 const payload = {
                     fecha: formData.fecha,
                     descripcion: formData.descripcion,
-                    referencia: formData.referencia || null,
+                    referencia: formData.referencia || "",
                     detalle: formData.detalle || null,
                     valor: totalMovimiento,
                     usd: formData.usd ? parseFloat(formData.usd) : null,
@@ -417,6 +417,9 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                             <div className="flex"><span className="w-20 text-gray-500">Tercero:</span><span className="font-medium">{terceroNombre}</span></div>
                             <div className="flex"><span className="w-20 text-gray-500">CC:</span><span className="font-medium">{ccNombre}</span></div>
                             <div className="flex"><span className="w-20 text-gray-500">Concepto:</span><span className="font-medium">{conceptoNombre}</span></div>
+                            {formData.referencia && (
+                                <div className="flex"><span className="w-20 text-gray-500">Ref:</span><span className="font-medium truncate">{formData.referencia}</span></div>
+                            )}
                             {formData.descripcion && (
                                 <div className="flex"><span className="w-20 text-gray-500">Desc:</span><span className="font-medium truncate">{formData.descripcion}</span></div>
                             )}
@@ -566,7 +569,7 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                             disabled={isReadOnly}
                         />
 
-                        {/* Fila 3: Descripción y Referencia (informativos, solo lectura) */}
+                        {/* Fila 3: Descripción y Referencia */}
                         {movimiento && (
                             <div className="grid grid-cols-2 gap-4">
                                 <Input
@@ -577,9 +580,10 @@ export const MovimientoModal = ({ isOpen, onClose, movimiento, onSave, mode = 'c
                                 />
                                 <Input
                                     label="Referencia"
-                                    value={formData.referencia || '-'}
-                                    disabled
-                                    className="bg-gray-50"
+                                    value={formData.referencia}
+                                    onChange={e => !isReadOnly && setFormData({ ...formData, referencia: e.target.value })}
+                                    placeholder="Referencia del movimiento"
+                                    disabled={isReadOnly}
                                 />
                             </div>
                         )}

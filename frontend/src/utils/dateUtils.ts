@@ -29,6 +29,9 @@ export const parseDateISO = (dateStr: string): Date => {
     return new Date(year, month - 1, day)
 }
 
+// Re-export desde el átomo FechaDisplay para mantener compatibilidad
+export { formatFecha } from '../components/atoms/FechaDisplay'
+
 /**
  * Verifica si una fecha es futura respecto a hoy (local).
  */

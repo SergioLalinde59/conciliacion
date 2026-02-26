@@ -34,7 +34,8 @@ from src.infrastructure.api.routers import (
     tipos_gasto,
     indicadores_economicos,
     reglas_presupuesto,
-    trm
+    trm,
+    perspectivas
 )
 
 
@@ -123,6 +124,7 @@ app.include_router(tipos_gasto.router)
 app.include_router(indicadores_economicos.router)
 app.include_router(reglas_presupuesto.router)
 app.include_router(trm.router)
+app.include_router(perspectivas.router)
 
 logger.info("Todos los routers registrados")
 

@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast'
 import { AlertTriangle, Trash2, Database, Loader2, X, Eye } from 'lucide-react'
 import { API_BASE_URL } from '../services/httpClient'
 import { PreviewDataModal } from '../components/organisms/modals/PreviewDataModal'
+import { formatDateISO } from '../utils/dateUtils'
 
 interface PreviewCuenta {
     cuenta_id: number
@@ -110,8 +111,8 @@ export const ResetDemoPage: React.FC = () => {
         const hace6Dias = new Date()
         hace6Dias.setDate(hoy.getDate() - 6)
 
-        const desde = hace6Dias.toISOString().split('T')[0]
-        const hasta = hoy.toISOString().split('T')[0]
+        const desde = formatDateISO(hace6Dias)
+        const hasta = formatDateISO(hoy)
 
         setFechaDesde(desde)
         setFechaHasta(hasta)

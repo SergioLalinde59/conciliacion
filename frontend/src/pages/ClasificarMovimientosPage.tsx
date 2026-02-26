@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import type { Movimiento, SugerenciaClasificacion, ContextoClasificacionResponse, Cuenta } from '../types'
 import { apiService } from '../services/api'
 import { EntitySelector } from '../components/molecules/entities/EntitySelector'
@@ -6,7 +6,7 @@ import { TerceroModal } from '../components/organisms/modals/TerceroModal'
 import { MovimientoModal } from '../components/organisms/modals/MovimientoModal'
 
 import { CurrencyDisplay } from '../components/atoms/CurrencyDisplay'
-import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split, Trash2, RotateCcw, Link, UserPlus } from 'lucide-react'
+import { Save, Layers, Clock, CheckCircle, ArrowRight, Search, Copy, RefreshCw, Split, Trash2, RotateCcw, Link, UserPlus, AlertTriangle } from 'lucide-react'
 import { DataTable } from '../components/molecules/DataTable'
 import { TableHeaderCell } from '../components/atoms/TableHeaderCell'
 import { fechaColumn, textoColumn, monedaColumn } from '../components/atoms/columnHelpers'
@@ -15,6 +15,7 @@ import { Button } from '../components/atoms/Button'
 import { SelectorCuenta } from '../components/molecules/SelectorCuenta'
 import { MessageModal } from '../components/molecules/MessageModal'
 import { extraerNombreTercero } from '../utils/textUtils'
+import { FechaDisplay } from '../components/atoms/FechaDisplay'
 
 export const ClasificarMovimientosPage: React.FC = () => {
     // --- State ---
@@ -64,6 +65,19 @@ export const ClasificarMovimientosPage: React.FC = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false)
     const [deleting, setDeleting] = useState(false)
     const [msgModal, setMsgModal] = useState<{message: string; type: 'error' | 'warning' | 'success'} | null>(null)
+
+    // Refresh historial al cambiar tercero manualmente
+    const terceroChangeIsManualRef = useRef(false)
+    const [loadingContextoTercero, setLoadingContextoTercero] = useState(false)
+
+    // Focus management
+    const terceroContainerRef = useRef<HTMLDivElement>(null)
+    const ccContainerRef = useRef<HTMLDivElement>(null)
+    const conceptoContainerRef = useRef<HTMLDivElement>(null)
+    const guardarBtnRef = useRef<HTMLButtonElement>(null)
+    const aplicarBtnRef = useRef<HTMLButtonElement>(null)
+    const historialContainerRef = useRef<HTMLDivElement>(null)
+    const [focusPending, setFocusPending] = useState(false)
 
     // --- Effects ---
 
@@ -123,6 +137,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                 } else {
                     setSimilaresPendientes(0)
                 }
+                setFocusPending(true)
             } catch (error) {
                 console.error("Error cargando sugerencia:", error)
             } finally {
@@ -134,6 +149,21 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
     // --- Helpers ---
 
+    // Focus helper: mueve foco al siguiente campo vacío o botón de acción
+    const focusSiguienteCampo = (ccId: number | null, concId: number | null) => {
+        requestAnimationFrame(() => {
+            if (!ccId) {
+                ccContainerRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+            } else if (!concId) {
+                conceptoContainerRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+            } else if (similaresPendientes > 1 && aplicarBtnRef.current) {
+                aplicarBtnRef.current.focus()
+            } else {
+                guardarBtnRef.current?.focus()
+            }
+        })
+    }
+
     const limpiarFormulario = () => {
         setTerceroId(null)
         setCentroCostoId(null)
@@ -144,6 +174,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
     }
 
     const aplicarSugerencia = (sug: SugerenciaClasificacion) => {
+        terceroChangeIsManualRef.current = false // No es cambio manual, es sugerencia
         // Always update form state, clearing previous values if suggestion is null
         setTerceroId(sug.tercero_id ?? null)
         setCentroCostoId(sug.centro_costo_id ?? null)
@@ -162,6 +193,92 @@ export const ClasificarMovimientosPage: React.FC = () => {
         setDescripcion(mov.descripcion || '')
         setReferencia(mov.referencia || '')
     }
+
+    // 3. Refrescar historial cuando el tercero cambia manualmente
+    const refreshContextoTercero = async (terceroIdSeleccionado: number) => {
+        if (!movimientoActual) return
+
+        setLoadingContextoTercero(true)
+        try {
+            const [data, descripciones] = await Promise.all([
+                apiService.clasificacion.obtenerContextoTercero(
+                    movimientoActual.id,
+                    terceroIdSeleccionado
+                ) as Promise<ContextoClasificacionResponse>,
+                apiService.terceros.listarDescripciones(terceroIdSeleccionado)
+            ])
+
+            // Actualizar contexto del historial
+            setSugerenciaData(prev => prev ? {
+                ...prev,
+                contexto: data.contexto,
+                confianza: data.confianza,
+                descripcion_generica: false,
+            } : data)
+
+            // Auto-llenar CC/Concepto solo si están vacíos
+            if (!centroCostoId && data.sugerencia.centro_costo_id) {
+                setCentroCostoId(data.sugerencia.centro_costo_id)
+            }
+            if (!conceptoId && data.sugerencia.concepto_id) {
+                setConceptoId(data.sugerencia.concepto_id)
+            }
+
+            // Auto-llenar referencia del tercero si el campo está vacío
+            if (!referencia) {
+                const refTercero = descripciones.find((d: any) => d.referencia)?.referencia
+                if (refTercero) {
+                    setReferencia(refTercero)
+                }
+            }
+
+            // Mover foco al siguiente campo vacío o botón de acción
+            const effectiveCCId = centroCostoId || (data.sugerencia.centro_costo_id ?? null)
+            const effectiveConceptoId = conceptoId || (data.sugerencia.concepto_id ?? null)
+            focusSiguienteCampo(effectiveCCId, effectiveConceptoId)
+        } catch (error) {
+            console.error("Error refrescando contexto tercero:", error)
+        } finally {
+            setLoadingContextoTercero(false)
+        }
+    }
+
+    useEffect(() => {
+        if (!terceroId || !movimientoActual) return
+        if (!terceroChangeIsManualRef.current) return
+        terceroChangeIsManualRef.current = false
+        refreshContextoTercero(terceroId)
+    }, [terceroId])
+
+    // Focus management: fijar foco según estado de la clasificación
+    useEffect(() => {
+        if (!focusPending || !movimientoActual) return
+        setFocusPending(false)
+
+        requestAnimationFrame(() => {
+            if (!terceroId) {
+                // Tercero vacío → foco en selector tercero
+                terceroContainerRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+            } else if (terceroId && centroCostoId && conceptoId) {
+                // Todos completos → foco en Guardar o Aplicar
+                if (similaresPendientes > 1 && aplicarBtnRef.current) {
+                    aplicarBtnRef.current.focus()
+                } else {
+                    guardarBtnRef.current?.focus()
+                }
+            } else if (!centroCostoId) {
+                // CC vacío → foco en selector CC
+                ccContainerRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+            } else if (!conceptoId) {
+                // Concepto vacío → foco en selector Concepto
+                conceptoContainerRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+            } else if (sugerenciaData?.contexto?.length) {
+                // Datos incompletos + hay historial → foco en primer registro
+                const firstCopyBtn = historialContainerRef.current?.querySelector<HTMLButtonElement>('button')
+                firstCopyBtn?.focus()
+            }
+        })
+    }, [focusPending])
 
     // Filtrar pendientes por cuenta seleccionada
     const pendientesFiltrados = useMemo(() => {
@@ -311,18 +428,18 @@ export const ClasificarMovimientosPage: React.FC = () => {
         }
     }
 
-    const handleGuardarTercero = async (nombre: string, alias?: string) => {
+    const handleGuardarTercero = async (nombre: string, alias?: string, referencia?: string) => {
         try {
             const nuevoTercero = await apiService.terceros.crear({
                 tercero: nombre
             })
             // Crear primer alias (descripción + referencia del extracto) si se proporcionó
-            if (alias) {
+            if (alias || referencia) {
                 try {
                     await apiService.terceros.crearDescripcion({
                         terceroid: nuevoTercero.id,
-                        descripcion: alias,
-                        referencia: movimientoActual?.referencia || undefined
+                        descripcion: alias || undefined,
+                        referencia: referencia || undefined
                     })
                 } catch (err) {
                     console.warn("Tercero creado pero error al crear alias:", err)
@@ -330,7 +447,8 @@ export const ClasificarMovimientosPage: React.FC = () => {
             }
             // Update list
             setTerceros(prev => [...prev, nuevoTercero])
-            // Select it
+            // Select it - tratar como selección manual para refrescar historial
+            terceroChangeIsManualRef.current = true
             setTerceroId(nuevoTercero.id)
             setShowTerceroModal(false)
         } catch (error) {
@@ -445,7 +563,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                     <h1 className="text-2xl font-bold text-gray-900 mb-1">Editor de Clasificación</h1>
-                                    <p className="text-gray-500 text-sm">ID: {movimientoActual.id} | {movimientoActual.fecha ? new Date(movimientoActual.fecha).toLocaleDateString('es-CO') : '-'}</p>
+                                    <p className="text-gray-500 text-sm">ID: {movimientoActual.id} | {movimientoActual.fecha ? <FechaDisplay value={movimientoActual.fecha} /> : '-'}</p>
                                 </div>
                                 <div className="text-right">
                                     <CurrencyDisplay
@@ -499,6 +617,16 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                 )
                             })()}
 
+                            {/* Alert: Descripción genérica — múltiples terceros comparten esta descripción */}
+                            {sugerenciaData?.descripcion_generica && (
+                                <div className="bg-purple-50 px-4 py-2 rounded border border-purple-200 text-purple-800 text-sm flex items-center gap-2 mb-3">
+                                    <AlertTriangle className="h-4 w-4 text-purple-500 shrink-0" />
+                                    <span>
+                                        Descripción compartida por múltiples terceros. Seleccione manualmente o consulte el historial.
+                                    </span>
+                                </div>
+                            )}
+
                             {/* Alert: Referencia nueva — con o sin tercero sugerido */}
                             {sugerenciaData?.referencia_no_existe && (() => {
                                 const terceroSugeridoNombre = terceros.find(t => t.id === sugerenciaData.sugerencia.tercero_id)?.nombre
@@ -528,7 +656,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                                     className="bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600 transition text-sm font-medium whitespace-nowrap flex items-center gap-1.5"
                                                 >
                                                     <UserPlus className="h-3.5 w-3.5" />
-                                                    Crear {nombreExtraido}
+                                                    Crear {nombreExtraido || 'Nuevo Tercero'}
                                                 </button>
                                             </div>
                                         </div>
@@ -549,7 +677,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                             className="bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600 transition text-sm font-medium whitespace-nowrap flex items-center gap-1.5"
                                         >
                                             <UserPlus className="h-3.5 w-3.5" />
-                                            Crear {nombreExtraido}
+                                            Crear {nombreExtraido || 'Nuevo Tercero'}
                                         </button>
                                     </div>
                                 )
@@ -558,7 +686,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                             {/* Form Area */}
                             <div className="space-y-1.5">
                                 {/* Tercero (Header Identity) */}
-                                <div>
+                                <div ref={terceroContainerRef}>
                                     <label className="block text-sm font-bold text-blue-800 mb-1 flex items-center gap-1">
                                         Tercero (Identidad del Movimiento)
                                         <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full uppercase tracking-wider font-bold">Encabezado</span>
@@ -566,7 +694,13 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                     <EntitySelector
                                         options={terceros}
                                         value={terceroId ? terceroId.toString() : ""}
-                                        onChange={(val) => setTerceroId(val ? parseInt(val) : null)}
+                                        onChange={(val) => {
+                                            const newTerceroId = val ? parseInt(val) : null
+                                            setTerceroId(newTerceroId)
+                                            if (newTerceroId) {
+                                                terceroChangeIsManualRef.current = true
+                                            }
+                                        }}
                                         placeholder="Buscar tercero..."
                                     />
                                     <div className="mt-1 flex items-center gap-3">
@@ -590,7 +724,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
                                 {/* Grupo y Concepto en la misma línea */}
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div>
+                                    <div ref={ccContainerRef}>
                                         <EntitySelector
                                             label="Centro de Costo"
                                             options={centrosCostos}
@@ -598,17 +732,35 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                             onChange={(val) => {
                                                 setCentroCostoId(val ? parseInt(val) : null)
                                                 setConceptoId(null)
+                                                // CC seleccionado → foco a Concepto
+                                                if (val) {
+                                                    requestAnimationFrame(() => {
+                                                        conceptoContainerRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+                                                    })
+                                                }
                                             }}
                                             placeholder="Seleccionar centro de costo..."
                                         />
                                     </div>
 
-                                    <div>
+                                    <div ref={conceptoContainerRef}>
                                         <EntitySelector
                                             label="Concepto"
                                             options={conceptos.filter(c => !centroCostoId || c.centro_costo_id === centroCostoId)}
                                             value={conceptoId ? conceptoId.toString() : ""}
-                                            onChange={(val) => setConceptoId(val ? parseInt(val) : null)}
+                                            onChange={(val) => {
+                                                setConceptoId(val ? parseInt(val) : null)
+                                                // Concepto seleccionado → foco a Guardar o Aplicar
+                                                if (val) {
+                                                    requestAnimationFrame(() => {
+                                                        if (similaresPendientes > 1 && aplicarBtnRef.current) {
+                                                            aplicarBtnRef.current.focus()
+                                                        } else {
+                                                            guardarBtnRef.current?.focus()
+                                                        }
+                                                    })
+                                                }
+                                            }}
                                             placeholder="Seleccionar concepto..."
                                         />
                                     </div>
@@ -653,8 +805,9 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                 {/* Botones en una sola línea */}
                                 <div className="flex items-center gap-3 pt-2">
                                     <button
+                                        ref={guardarBtnRef}
                                         onClick={guardarClasificacion}
-                                        className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition shadow-md font-medium"
+                                        className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition shadow-md font-medium focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 focus:outline-none"
                                     >
                                         <Save className="h-5 w-5" />
                                         Guardar Clasificación
@@ -662,9 +815,10 @@ export const ClasificarMovimientosPage: React.FC = () => {
 
                                     {sugerenciaData?.sugerencia.razon && (
                                         <button
+                                            ref={aplicarBtnRef}
                                             onClick={abrirModalLote}
                                             disabled={loadingBatch || similaresPendientes < 2}
-                                            className="flex-1 flex items-center justify-center gap-2 bg-white text-purple-700 border border-purple-200 py-3 px-4 rounded-lg hover:bg-purple-50 transition font-medium disabled:opacity-50"
+                                            className="flex-1 flex items-center justify-center gap-2 bg-white text-purple-700 border border-purple-200 py-3 px-4 rounded-lg hover:bg-purple-50 transition font-medium disabled:opacity-50 focus:ring-2 focus:ring-purple-300 focus:ring-offset-2 focus:outline-none"
                                             title={similaresPendientes < 2 ? 'Se requieren al menos 2 movimientos similares' : `Aplicar clasificación a ${similaresPendientes} movimientos similares`}
                                         >
                                             <Layers className="h-5 w-5" />
@@ -707,6 +861,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                 <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                                     <Clock className="h-5 w-5 text-gray-400" />
                                     Historial Relacionado ({sugerenciaData.contexto.length})
+                                    {loadingContextoTercero && <RefreshCw className="h-4 w-4 text-blue-500 animate-spin" />}
                                 </h3>
 
                                 {sugerenciaData.contexto.length === 0 ? (
@@ -719,7 +874,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="border rounded-xl overflow-hidden shadow-sm">
+                                    <div ref={historialContainerRef} className="border rounded-xl overflow-hidden shadow-sm">
                                         <DataTable
                                             data={sugerenciaData.contexto}
                                             columns={[
@@ -869,7 +1024,7 @@ export const ClasificarMovimientosPage: React.FC = () => {
                                     <strong>ID:</strong> {movimientoActual.id}
                                 </p>
                                 <p className="text-sm text-gray-600 mb-1">
-                                    <strong>Fecha:</strong> {new Date(movimientoActual.fecha).toLocaleDateString('es-CO')}
+                                    <strong>Fecha:</strong> <FechaDisplay value={movimientoActual.fecha} />
                                 </p>
                                 <p className="text-sm text-gray-600 mb-1">
                                     <strong>Descripción:</strong> {movimientoActual.descripcion}

@@ -68,7 +68,8 @@ export const ConfigValoresPendientesTable = ({ configs, loading, onEdit, onDelet
             onEdit={onEdit}
             onDelete={(row) => onDelete(row.id)}
             getRowKey={(row) => row.id}
-            deleteConfirmMessage={(row) => `¿Eliminar la configuración para ${row.tipo} ID ${row.valor_id}?`}
+            deleteConfirmMessage={(row) =>
+                `¿Eliminar esta configuración?\n\nID: ${row.id}\nTipo: ${row.tipo}\nID Valor: ${row.valor_id}\nDescripción: ${row.descripcion}\nEstado: ${row.activo ? 'Activo' : 'Inactivo'}`}
             emptyMessage="No hay configuraciones de valores pendientes"
             showActions={true}
             className="border-none shadow-none"

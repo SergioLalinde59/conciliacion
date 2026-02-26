@@ -3,7 +3,8 @@ import { Zap, Eye, Pencil, PlusCircle, X, TrendingUp, TrendingDown, Trash2, Load
 import { useReglasPresupuesto, useReglaPresupuestoMutations } from '../hooks/useReglasPresupuesto'
 import { useTiposGasto } from '../hooks/useTiposGasto'
 import { useIndicadores } from '../hooks/useIndicadores'
-import { useConfiguracionExclusion } from '../hooks/useReportes'
+import { usePerspectiva } from '../hooks/usePerspectiva'
+import PerspectiveSelector from '../components/molecules/PerspectiveSelector'
 import { usePresupuestos, useClasificacionPreview, PRESUPUESTO_KEYS } from '../hooks/usePresupuesto'
 import { presupuestoService } from '../services/presupuesto.service'
 import { reglasPresupuestoService } from '../services/reglasPresupuesto.service'
@@ -109,25 +110,17 @@ export const ReglasPresupuestoPage = () => {
 
     const pptoActions = usePresupuestoActions(handleRefreshAll)
 
-    // Filtros avanzados
-    const { data: configExclusion = [] } = useConfiguracionExclusion()
-    const [centrosCostosExcluidos, setCentrosCostosExcluidos] = useState<number[] | null>(null)
-    const actualExcluidos = centrosCostosExcluidos || []
-
-    useEffect(() => {
-        if (configExclusion.length > 0 && centrosCostosExcluidos === null) {
-            const defaults = configExclusion.filter(d => d.activo_por_defecto).map(d => d.centro_costo_id)
-            setCentrosCostosExcluidos(defaults)
-        }
-    }, [configExclusion, centrosCostosExcluidos])
+    // Perspectiva
+    const { perspectivas, selectedSlug, setSelectedSlug, filterParams } = usePerspectiva()
 
     // Gasto real total del año fuente (misma fuente que el Dashboard)
     const { data: flujoFuente } = useQuery({
-        queryKey: ['flujo-anual-fuente', anioFuente, actualExcluidos, filterCcId, direccion],
+        queryKey: ['flujo-anual-fuente', anioFuente, filterParams, filterCcId, direccion],
         queryFn: () => dashboardService.flujoMensual(
             `${anioFuente}-01-01`, `${anioFuente}-12-31`,
-            actualExcluidos,
-            filterCcId || undefined
+            filterParams.centros_costos_excluidos,
+            filterCcId || undefined,
+            filterParams.centros_costos_incluidos
         ),
         enabled: anioFuente > 0,
     })
@@ -137,7 +130,7 @@ export const ReglasPresupuestoPage = () => {
     )
 
     // Datos de clasificacion-preview (fuente principal izquierda)
-    const { data: previewItems = [], isLoading: loadingPreview } = useClasificacionPreview(anioFuente, actualExcluidos, direccion)
+    const { data: previewItems = [], isLoading: loadingPreview } = useClasificacionPreview(anioFuente, filterParams.centros_costos_excluidos, direccion, filterParams.centros_costos_incluidos)
 
     // Indicadores del año destino para calcular presupuesto anual
     const { data: indicadoresTarget = [] } = useIndicadores(anioDestino)
@@ -149,10 +142,10 @@ export const ReglasPresupuestoPage = () => {
 
     // Simulación de impacto (datos de presupuesto actual por CC)
     const { data: simulacionData } = useQuery({
-        queryKey: [...PRESUPUESTO_KEYS.simulacion(presupuestoActivo?.id ?? 0, 0), direccion],
+        queryKey: [...PRESUPUESTO_KEYS.simulacion(presupuestoActivo?.id ?? 0, 0), direccion, filterParams],
         queryFn: () => presupuestoService.simularReglas(presupuestoActivo!.id, {
             anio_fuente: anioFuente,
-            centros_costos_excluidos: actualExcluidos,
+            ...filterParams,
             direccion,
         }),
         staleTime: 0,
@@ -161,8 +154,8 @@ export const ReglasPresupuestoPage = () => {
 
     // Gastos sin presupuesto (año actual)
     const { data: gastosSinPpto } = useQuery({
-        queryKey: ['gastos-sin-presupuesto', presupuestoActivo?.id, actualExcluidos, direccion],
-        queryFn: () => presupuestoService.gastosSinPresupuesto(presupuestoActivo!.id, actualExcluidos, direccion),
+        queryKey: ['gastos-sin-presupuesto', presupuestoActivo?.id, filterParams, direccion],
+        queryFn: () => presupuestoService.gastosSinPresupuesto(presupuestoActivo!.id, filterParams.centros_costos_excluidos, direccion),
         staleTime: 0,
         enabled: !!presupuestoActivo,
     })
@@ -218,6 +211,8 @@ export const ReglasPresupuestoPage = () => {
                 diferencia,
                 diferencia_pct,
                 gapCount,
+                paretoAcum: 0,
+                paretoPct: 0,
             })
         })
         const sorted = groups.sort((a, b) => b.totalAnual - a.totalAnual)
@@ -889,6 +884,13 @@ export const ReglasPresupuestoPage = () => {
 
             {/* Filtros */}
             <div className="flex items-center gap-4 px-4 pt-4 pb-2 flex-shrink-0">
+                {perspectivas.length > 0 && (
+                    <PerspectiveSelector
+                        perspectivas={perspectivas}
+                        selectedSlug={selectedSlug}
+                        onChange={setSelectedSlug}
+                    />
+                )}
                 <div className="flex gap-1 bg-white border border-slate-200 p-1 rounded-lg shadow-sm">
                     {(['egreso', 'ingreso'] as const).map(dir => (
                         <button

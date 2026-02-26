@@ -85,7 +85,8 @@ export const CuentasTable = ({ cuentas, loading, onEdit, onDelete }: Props) => {
             getRowKey={(c) => c.id}
             onEdit={onEdit}
             onDelete={(cuenta) => onDelete(cuenta.id)}
-            deleteConfirmMessage="¿Estás seguro de eliminar esta cuenta?"
+            deleteConfirmMessage={(row) =>
+                `¿Eliminar esta cuenta?\n\nID: ${row.id}\nNombre: ${row.nombre}\nNro. Cuenta: ${row.numero_cuenta || '-'}\nTipo: ${row.tipo_cuenta_nombre || 'Sin asignar'}`}
         />
     )
 }
