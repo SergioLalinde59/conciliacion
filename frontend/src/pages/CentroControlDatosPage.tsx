@@ -44,6 +44,7 @@ const TABLES_CONFIG = {
             { id: 'matching_alias', label: 'Reglas Normalización', description: 'Alias para limpiar descripciones de extractos.' },
             { id: 'cuenta_extractores', label: 'Config. Extractores', description: 'Mapeo de formatos de archivo por cuenta.' },
             { id: 'configuracion_matching', label: 'Parámetros Matching', description: 'Pesos y tolerancias del algoritmo.' },
+            { id: 'perspectivas', label: 'Perspectivas', description: 'Vistas personalizadas por filtro de cuentas.' },
         ]
     },
     backups: { // El ID en la URL sigue siendo 'backups' por consistencia con el Sidebar, pero mostramos 'Datos'

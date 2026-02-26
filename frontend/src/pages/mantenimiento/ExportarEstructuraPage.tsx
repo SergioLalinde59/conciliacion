@@ -21,6 +21,7 @@ const TABLAS_CON_DATOS = [
     { id: 'tipos_gasto', label: 'Tipos de Gasto' },
     { id: 'indicadores_economicos', label: 'Indicadores Económicos' },
     { id: 'reglas_presupuesto', label: 'Reglas de Presupuesto' },
+    { id: 'perspectivas', label: 'Perspectivas' },
 ]
 
 const TABLAS_SIN_DATOS = [

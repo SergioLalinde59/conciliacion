@@ -39,6 +39,7 @@ ALLOWED_TABLES = [
     "matching_alias",
     "cuenta_extractores",
     "configuracion_matching",
+    "perspectivas",
 
     # Presupuestos
     "presupuestos",
