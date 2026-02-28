@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import { usePresupuestoWidget } from '../../../hooks/usePresupuesto'
 import { useNavigate } from 'react-router-dom'
 import { SemaphoreProgressBar } from '../../atoms/SemaphoreProgressBar'
 import type { SemaphoreStatus } from '../../atoms/SemaphoreProgressBar'
-import { CurrencyDisplay } from '../../atoms/CurrencyDisplay'
+import { useBudgetFormat } from '../../atoms/CurrencyDisplay'
 import { Target, Calendar, ArrowRight, TrendingDown, TrendingUp, Scale } from 'lucide-react'
 import type { PresupuestoWidgetMes } from '../../../types/Presupuesto'
 
@@ -50,34 +51,68 @@ const pctColor: Record<SemaphoreStatus, string> = {
     rojo: 'text-rose-500',
 }
 
-const MetricRow = ({ label, icon, fillPct, status, ejecutado, presupuestado, compact, showPlusSign }: MetricRowProps) => (
-    <div className="space-y-1">
-        {/* Label + Values on same line */}
-        <div className="flex items-center justify-between">
+const MetricRow = ({ label, icon, fillPct, status, ejecutado, presupuestado, showPlusSign }: MetricRowProps) => {
+    const fmt = useBudgetFormat()
+    const [hovered, setHovered] = useState(false)
+    const diff = ejecutado - presupuestado
+
+    return (
+        <div
+            className="space-y-1 relative"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+        >
+            {/* Label only */}
             <div className="flex items-center gap-1.5">
                 {icon}
-                <span className="text-xs font-semibold text-slate-500 min-w-[4rem]">{label}</span>
-                <div className="text-xs font-mono text-slate-600 flex items-center gap-0.5 ml-2">
-                    <CurrencyDisplay value={ejecutado} colorize={false} decimals={0} compact={compact} showPlusSign={showPlusSign} />
-                    <span className="text-slate-300">|</span>
-                    <CurrencyDisplay value={presupuestado} colorize={false} decimals={0} compact={compact} showPlusSign={showPlusSign} />
-                    <span className="text-slate-300">|</span>
-                    <span className={`text-xs font-bold ${pctColor[status]}`}>
-                        {Math.round(fillPct)}%
-                    </span>
-                </div>
+                <span className="text-sm font-semibold text-slate-600">{label}</span>
             </div>
+            {/* Bar */}
+            <SemaphoreProgressBar
+                fillPct={Math.min(fillPct, 100)}
+                status={status}
+                heightClass="h-2.5"
+                showMarker={true}
+                showBadge={true}
+            />
+            {/* Tooltip */}
+            {hovered && (
+                <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3 whitespace-nowrap pointer-events-none">
+                    <div className="font-semibold text-slate-800 text-sm mb-2">{label}</div>
+                    <table className="text-[13px]">
+                        <tbody>
+                            <tr>
+                                <td className="pr-4 text-slate-500">Ejecutado</td>
+                                <td className="text-right font-mono font-bold text-slate-700">
+                                    {showPlusSign && ejecutado > 0 ? '+' : ''}{fmt(ejecutado)}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td className="pr-4 text-slate-500">Presupuesto</td>
+                                <td className="text-right font-mono text-slate-700">
+                                    {showPlusSign && presupuestado > 0 ? '+' : ''}{fmt(presupuestado)}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td className="pr-4 text-slate-500">Diferencia</td>
+                                <td className={`text-right font-mono font-bold ${pctColor[status]}`}>
+                                    {diff > 0 ? '+' : ''}{fmt(diff)}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td className="pr-4 text-slate-500">% ejecutado</td>
+                                <td className={`text-right font-mono font-bold ${pctColor[status]}`}>
+                                    {Math.round(fillPct)}%
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-white" />
+                </div>
+            )}
         </div>
-        {/* Bar below */}
-        <SemaphoreProgressBar
-            fillPct={Math.min(fillPct, 100)}
-            status={status}
-            heightClass="h-2"
-            showMarker={true}
-            showBadge={true}
-        />
-    </div>
-)
+    )
+}
 
 interface MonthSectionProps {
     mesNombre: string

@@ -6,7 +6,6 @@ import type {
     ReporteFilterParams,
     ReclasificarLoteParams,
     ClasificarMovimientoParams,
-    ConfigFiltroExclusion
 } from '../types/filters'
 
 /**
@@ -127,9 +126,6 @@ export const movimientosService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(datos)
         }).then(handleResponse),
-
-    obtenerConfiguracionFiltrosExclusion: (): Promise<ConfigFiltroExclusion[]> =>
-        fetch(`${API_BASE_URL}/api/movimientos/configuracion/filtros-exclusion`).then(handleResponse),
 
     eliminarLote: (ids: number[]): Promise<{ mensaje: string; registros_eliminados: number }> =>
         fetch(`${API_BASE_URL}/api/movimientos/lote`, {

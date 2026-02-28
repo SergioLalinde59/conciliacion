@@ -22,7 +22,6 @@ import { DescargarMovimientosPage } from './pages/DescargarMovimientosPage'
 import { SugerenciasReclasificacionPage } from './pages/SugerenciasReclasificacionPage'
 import { ReporteEgresosTerceroPage } from './pages/ReporteEgresosTerceroPage'
 import { ReporteEgresosCentroCostoPage } from './pages/ReporteEgresosCentroCostoPage'
-import { ConfigFiltrosCentrosCostosPage } from './pages/ConfigFiltrosCentrosCostosPage'
 import { ConfigValoresPendientesPage } from './pages/ConfigValoresPendientesPage'
 import { ConciliacionPage } from './pages/ConciliacionPage'
 import { ConciliacionMatchingPage } from './pages/ConciliacionMatchingPage'
@@ -60,8 +59,7 @@ function App() {
                     <Route path="/maestros/terceros-descripciones" element={<TerceroDescripcionesPage />} />
                     <Route path="/maestros/centros-costos" element={<CentrosCostosPage />} />
                     <Route path="/maestros/conceptos" element={<ConceptosPage />} />
-                    <Route path="/maestros/config-filtros" element={<ConfigFiltrosCentrosCostosPage />} />
-                    <Route path="/maestros/perspectivas" element={<PerspectivasPage />} />
+<Route path="/maestros/perspectivas" element={<PerspectivasPage />} />
                     <Route path="/maestros/config-valores-pendientes" element={<ConfigValoresPendientesPage />} />
                     <Route path="/maestros/reglas" element={<ReglasPage />} />
                     <Route path="/maestros/alias" element={<ReglasNormalizacionPage />} />

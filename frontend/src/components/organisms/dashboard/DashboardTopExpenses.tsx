@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { CurrencyDisplay } from '../../atoms/CurrencyDisplay'
+import { useMemo, useState } from 'react'
+import { useBudgetFormat } from '../../atoms/CurrencyDisplay'
 import type { ClasificacionItem } from '../../../services/dashboard.service'
 
 interface DashboardTopExpensesProps {
@@ -9,9 +9,21 @@ interface DashboardTopExpensesProps {
     compact?: boolean
 }
 
-export const DashboardTopExpenses = ({ data, isLoading, maxItems = 8, compact = false }: DashboardTopExpensesProps) => {
-    const { items, totalEgresos } = useMemo(() => {
-        if (!data?.length) return { items: [], totalEgresos: 0 }
+interface RowData {
+    item: ClasificacionItem
+    pct: number
+    barWidth: number
+    acumulado: number
+    pctAcum: number
+    isPareto: boolean
+}
+
+export const DashboardTopExpenses = ({ data, isLoading, maxItems = 8 }: DashboardTopExpensesProps) => {
+    const fmt = useBudgetFormat()
+    const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+
+    const { rows, totalEgresos } = useMemo(() => {
+        if (!data?.length) return { rows: [] as RowData[], totalEgresos: 0 }
 
         const sorted = [...data]
             .filter(d => d.egresos > 0)
@@ -20,13 +32,25 @@ export const DashboardTopExpenses = ({ data, isLoading, maxItems = 8, compact = 
         const total = sorted.reduce((sum, d) => sum + d.egresos, 0)
         const top = sorted.slice(0, maxItems)
 
-        // Add "Otros" if there are more items
         if (sorted.length > maxItems) {
             const otrosEgresos = sorted.slice(maxItems).reduce((sum, d) => sum + d.egresos, 0)
             top.push({ id: null, nombre: 'Otros', ingresos: 0, egresos: otrosEgresos, saldo: -otrosEgresos })
         }
 
-        return { items: top, totalEgresos: total }
+        const maxEgreso = top.length > 0 ? top[0].egresos : 1
+        let acumulado = 0
+        let prevPctAcum = 0
+        const built: RowData[] = top.map(item => {
+            const pct = total > 0 ? (item.egresos / total) * 100 : 0
+            const barWidth = (item.egresos / maxEgreso) * 100
+            acumulado += item.egresos
+            const pctAcum = total > 0 ? (acumulado / total) * 100 : 0
+            const isPareto = prevPctAcum < 80
+            prevPctAcum = pctAcum
+            return { item, pct, barWidth, acumulado, pctAcum, isPareto }
+        })
+
+        return { rows: built, totalEgresos: total }
     }, [data, maxItems])
 
     if (isLoading) {
@@ -42,62 +66,68 @@ export const DashboardTopExpenses = ({ data, isLoading, maxItems = 8, compact = 
         )
     }
 
-    const maxEgreso = items.length > 0 ? items[0].egresos : 1
-
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <h3 className="font-bold text-slate-800 mb-1">¿A dónde va mi plata?</h3>
             <p className="text-xs text-slate-400 mb-5">Top egresos por centro de costo</p>
 
-            {items.length === 0 ? (
+            {rows.length === 0 ? (
                 <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Sin datos</div>
             ) : (
                 <div className="space-y-3">
-                    {items.reduce<{ acumulado: number; elements: React.ReactNode[] }>((acc, item) => {
-                        const pct = totalEgresos > 0 ? (item.egresos / totalEgresos) * 100 : 0
-                        const barWidth = (item.egresos / maxEgreso) * 100
-                        const acumulado = acc.acumulado + item.egresos
-                        const pctAcum = totalEgresos > 0 ? (acumulado / totalEgresos) * 100 : 0
+                    {rows.map((row, idx) => {
+                        const { item, barWidth, pct, acumulado, pctAcum, isPareto } = row
+                        const acumColor = isPareto ? 'text-purple-500' : 'text-slate-500'
 
-                        acc.acumulado = acumulado
-                        acc.elements.push(
-                            <div key={item.nombre} className="group">
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="text-sm font-medium text-slate-700 truncate max-w-[40%]">
-                                        {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
-                                    </span>
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-[11px] font-mono text-slate-400">
-                                            {pct.toFixed(0)}%
-                                        </span>
-                                        <CurrencyDisplay
-                                            value={item.egresos}
-                                            colorize={false}
-                                            decimals={0}
-                                            className="text-sm font-mono font-bold text-slate-700 w-28 text-right"
-                                            compact={compact}
-                                        />
-                                        <span className="text-[11px] font-mono text-slate-400 w-24 text-right" title="Acumulado">
-                                            {pctAcum.toFixed(0)}% · <CurrencyDisplay
-                                                value={acumulado}
-                                                colorize={false}
-                                                decimals={0}
-                                                className="inline text-[11px] font-mono text-slate-400"
-                                                compact={compact}
-                                            />
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                        return (
+                            <div
+                                key={item.nombre}
+                                className="relative"
+                                onMouseEnter={() => setHoveredIdx(idx)}
+                                onMouseLeave={() => setHoveredIdx(null)}
+                            >
+                                <span className="text-sm font-semibold text-slate-700 truncate block mb-1">
+                                    {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
+                                </span>
+                                <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
                                     <div
                                         className="h-full bg-gradient-to-r from-blue-400 to-indigo-600 rounded-full transition-all duration-700"
                                         style={{ width: `${barWidth}%` }}
                                     />
                                 </div>
+
+                                {/* Tooltip */}
+                                {hoveredIdx === idx && (
+                                    <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3 whitespace-nowrap pointer-events-none">
+                                        <div className="font-semibold text-slate-800 text-sm mb-2">
+                                            {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
+                                        </div>
+                                        <table className="text-[13px]">
+                                            <tbody>
+                                                <tr>
+                                                    <td className="pr-4 text-slate-500">Monto</td>
+                                                    <td className="text-right font-mono font-bold text-slate-700">{fmt(item.egresos)}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="pr-4 text-slate-500">% del total</td>
+                                                    <td className="text-right font-mono text-slate-700">{pct.toFixed(1)}%</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className={`pr-4 ${acumColor}`}>Acumulado</td>
+                                                    <td className={`text-right font-mono font-bold ${acumColor}`}>{fmt(acumulado)}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className={`pr-4 ${acumColor}`}>% acumulado</td>
+                                                    <td className={`text-right font-mono ${acumColor}`}>{pctAcum.toFixed(1)}%</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-white" />
+                                    </div>
+                                )}
                             </div>
                         )
-                        return acc
-                    }, { acumulado: 0, elements: [] }).elements}
+                    })}
                 </div>
             )}
 
@@ -105,13 +135,7 @@ export const DashboardTopExpenses = ({ data, isLoading, maxItems = 8, compact = 
             {totalEgresos > 0 && (
                 <div className="flex justify-between items-center mt-5 pt-4 border-t border-gray-100">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Egresos</span>
-                    <CurrencyDisplay
-                        value={totalEgresos}
-                        colorize={false}
-                        decimals={0}
-                        className="text-sm font-mono font-black text-slate-800"
-                        compact={compact}
-                    />
+                    <span className="text-sm font-mono font-black text-slate-800">{fmt(totalEgresos)}</span>
                 </div>
             )}
         </div>

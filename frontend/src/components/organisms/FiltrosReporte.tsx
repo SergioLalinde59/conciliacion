@@ -1,4 +1,4 @@
-import { RotateCcw, Filter, Eye } from 'lucide-react'
+import { RotateCcw, Eye } from 'lucide-react'
 import { SelectorCuenta } from '../molecules/SelectorCuenta'
 import { Button } from '../atoms/Button'
 import { DateRangeButtons, DateRangeInputs } from '../molecules/DateRangeSelector'
@@ -6,7 +6,6 @@ import { ClassificationFilters } from '../molecules/ClassificationFilters'
 import { FilterToggles } from '../molecules/FilterToggles'
 import PerspectiveSelector from '../molecules/PerspectiveSelector'
 import type { Tercero, CentroCosto, Concepto, Perspectiva } from '../../types'
-import type { ConfigFiltroExclusion } from '../../types/filters'
 import { useCatalogo } from '../../hooks/useCatalogo'
 
 interface FiltrosReporteProps {
@@ -40,10 +39,6 @@ interface FiltrosReporteProps {
     mostrarEgresos?: boolean
     onMostrarEgresosChange?: (val: boolean) => void
     setMostrarEgresos?: (val: boolean) => void
-    configuracionExclusion?: ConfigFiltroExclusion[]
-    centrosCostosExcluidos?: number[]
-    onCentrosCostosExcluidosChange?: (val: number[]) => void
-    setCentrosCostosExcluidos?: (val: number[]) => void
     soloConciliables?: boolean
     extraActions?: React.ReactNode
     showAdvancedFilters?: boolean
@@ -66,8 +61,6 @@ export const FiltrosReporte = ({
     showIngresosEgresos = false,
     mostrarIngresos = true, onMostrarIngresosChange, setMostrarIngresos,
     mostrarEgresos = true, onMostrarEgresosChange, setMostrarEgresos,
-    configuracionExclusion = [],
-    centrosCostosExcluidos = [], onCentrosCostosExcluidosChange, setCentrosCostosExcluidos,
     soloConciliables = true,
     extraActions,
     showAdvancedFilters = true,
@@ -85,7 +78,6 @@ export const FiltrosReporte = ({
     const _onConcepto = setConceptoId || onConceptoChange || (() => { })
     const _onMostrarIngresos = setMostrarIngresos || onMostrarIngresosChange || (() => { })
     const _onMostrarEgresos = setMostrarEgresos || onMostrarEgresosChange || (() => { })
-    const _onExcluidos = setCentrosCostosExcluidos || onCentrosCostosExcluidosChange || (() => { })
 
     const { terceros: catTerceros, centrosCostos: catCentros, conceptos: catConceptos } = useCatalogo()
     const finalTerceros = terceros.length > 0 ? terceros : catTerceros
@@ -157,7 +149,7 @@ export const FiltrosReporte = ({
 
             {/* Fila 4: Perspectiva / Filtros Avanzados */}
             {showAdvancedFilters && <div className="flex items-center gap-6 pt-2 border-t border-slate-100">
-                {perspectivas && selectedSlug && onPerspectivaChange ? (
+                {perspectivas && selectedSlug && onPerspectivaChange && (
                     <>
                         <div className="flex items-center gap-2 text-slate-400">
                             <Eye size={14} className="opacity-50" />
@@ -168,33 +160,16 @@ export const FiltrosReporte = ({
                             selectedSlug={selectedSlug}
                             onChange={onPerspectivaChange}
                         />
-                        {showIngresosEgresos && (
-                            <FilterToggles
-                                mostrarIngresos={mostrarIngresos}
-                                onMostrarIngresosChange={_onMostrarIngresos}
-                                mostrarEgresos={mostrarEgresos}
-                                onMostrarEgresosChange={_onMostrarEgresos}
-                                showIngresosEgresos={true}
-                            />
-                        )}
                     </>
-                ) : (
-                    <>
-                        <div className="flex items-center gap-2 text-slate-400">
-                            <Filter size={14} className="opacity-50" />
-                            <span className="text-[9px] font-black uppercase tracking-[0.2em]">Filtros Avanzados</span>
-                        </div>
-                        <FilterToggles
-                            mostrarIngresos={mostrarIngresos}
-                            onMostrarIngresosChange={_onMostrarIngresos}
-                            mostrarEgresos={mostrarEgresos}
-                            onMostrarEgresosChange={_onMostrarEgresos}
-                            showIngresosEgresos={showIngresosEgresos}
-                            configuracionExclusion={configuracionExclusion}
-                            centrosCostosExcluidos={centrosCostosExcluidos}
-                            onCentrosCostosExcluidosChange={_onExcluidos}
-                        />
-                    </>
+                )}
+                {showIngresosEgresos && (
+                    <FilterToggles
+                        mostrarIngresos={mostrarIngresos}
+                        onMostrarIngresosChange={_onMostrarIngresos}
+                        mostrarEgresos={mostrarEgresos}
+                        onMostrarEgresosChange={_onMostrarEgresos}
+                        showIngresosEgresos={true}
+                    />
                 )}
             </div>}
         </div>

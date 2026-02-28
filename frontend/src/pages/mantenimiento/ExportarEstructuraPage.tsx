@@ -12,7 +12,6 @@ const TABLAS_CON_DATOS = [
     { id: 'centro_costos', label: 'Centros de Costos' },
     { id: 'conceptos', label: 'Conceptos' },
     { id: 'tipo_cuenta', label: 'Tipos de Cuenta' },
-    { id: 'config_filtros_centro_costos', label: 'Filtros CC Excluidos' },
     { id: 'config_valores_pendientes', label: 'Config. Valores Pendientes' },
     { id: 'reglas_clasificacion', label: 'Reglas de Clasificación' },
     { id: 'matching_alias', label: 'Reglas Normalización' },

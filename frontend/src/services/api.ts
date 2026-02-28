@@ -18,7 +18,7 @@ export type { PaginatedResponse } from './httpClient'
 import { movimientosService, clasificacionService } from './movements.service'
 import { catalogosService, centrosCostosService, cuentasService, tercerosService, conceptosService } from './catalogs.service'
 import { archivosService } from './files.service'
-import { reglasService, configFiltrosCentrosCostosService, configValoresPendientesService } from './config.service'
+import { reglasService, configValoresPendientesService } from './config.service'
 import { conciliacionService } from './conciliacionService'
 import { extractoresService } from './extractores.service'
 import { matchingService } from './matching.service'
@@ -51,7 +51,6 @@ export const apiService = {
 
     // Configuración
     reglas: reglasService,
-    configFiltrosCentrosCostos: configFiltrosCentrosCostosService,
     configValoresPendientes: configValoresPendientesService,
 
     // New Terceros methods
@@ -92,7 +91,6 @@ export {
     conceptosService,
     archivosService,
     reglasService,
-    configFiltrosCentrosCostosService,
     configValoresPendientesService,
     conciliacionService,
     extractoresService,

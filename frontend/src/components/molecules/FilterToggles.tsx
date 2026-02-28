@@ -2,59 +2,22 @@
 import { Checkbox } from '../atoms/Checkbox'
 
 interface FilterTogglesProps {
-
-
     mostrarIngresos?: boolean
     onMostrarIngresosChange?: (checked: boolean) => void
     mostrarEgresos?: boolean
     onMostrarEgresosChange?: (checked: boolean) => void
     showIngresosEgresos?: boolean
-
-    // Dynamic Exclusion Filters - ALL exclusion filters come from here
-    configuracionExclusion?: Array<{ centro_costo_id: number; etiqueta: string }>;
-    centrosCostosExcluidos?: number[];
-    onCentrosCostosExcluidosChange?: (ids: number[]) => void;
 }
 
 export const FilterToggles = ({
-
-
     mostrarIngresos = true,
     onMostrarIngresosChange,
     mostrarEgresos = true,
     onMostrarEgresosChange,
-
     showIngresosEgresos = false,
-
-    configuracionExclusion = [],
-    centrosCostosExcluidos = [],
-    onCentrosCostosExcluidosChange
 }: FilterTogglesProps) => {
     return (
         <div className="flex flex-wrap items-center gap-6">
-            {/* Por Clasificar (Solo Pendientes) */}
-
-
-            {/* Dynamic Exclusion Filters - All from config_filtros_grupos */}
-            {configuracionExclusion
-                .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta))
-                .map(config => (
-                    <Checkbox
-                        key={config.centro_costo_id}
-                        label={config.etiqueta}
-                        checked={centrosCostosExcluidos.includes(config.centro_costo_id)}
-                        onChange={(e) => {
-                            const isChecked = e.target.checked
-                            const current = centrosCostosExcluidos || []
-                            if (isChecked) {
-                                onCentrosCostosExcluidosChange?.([...current, config.centro_costo_id])
-                            } else {
-                                onCentrosCostosExcluidosChange?.(current.filter(id => id !== config.centro_costo_id))
-                            }
-                        }}
-                    />
-                ))}
-
             {/* Income/Expense Filters */}
             {showIngresosEgresos && onMostrarIngresosChange && onMostrarEgresosChange && (
                 <>

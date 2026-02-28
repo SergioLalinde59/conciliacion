@@ -20,11 +20,6 @@ class CentroCostoRepository(ABC):
         pass
 
     @abstractmethod
-    def obtener_filtros_exclusion(self) -> List[dict]:
-        """Obtiene la configuración de centros de costos a excluir matriculados"""
-        pass
-
-    @abstractmethod
     def obtener_id_traslados(self) -> Optional[int]:
         """Obtiene el ID del centro de costos de Traslados de forma dinámica"""
         pass

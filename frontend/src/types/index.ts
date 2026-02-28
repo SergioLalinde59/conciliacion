@@ -20,7 +20,6 @@ export type {
     ContextoClasificacionResponse,
     ClasificacionLoteDTO,
     ReglaClasificacion,
-    ConfigFiltroCentroCosto,
 } from '../types'
 
 // Tipos de filtros y parámetros
@@ -36,7 +35,6 @@ export type {
     CentroCostoCreateParams,
     TerceroCreateParams,
     ConceptoCreateParams,
-    ConfigFiltroCentroCostoParams,
     ReglaClasificacionParams,
 } from './filters'
 

@@ -10,7 +10,7 @@ import { usePerspectiva } from '../hooks/usePerspectiva'
 import { getAnioYTD } from '../utils/dateUtils'
 import { useSettings } from '../context/SettingsContext'
 import type { FlujoCajaMes, ClasificacionItem } from '../services/dashboard.service'
-import type { ComparacionPresupuesto, ResumenMensualPresupuesto, PresupuestoWidget } from '../types/Presupuesto'
+import type { ComparacionPresupuesto, ResumenMensualPresupuesto, PresupuestoWidget, GastoSinPresupuesto } from '../types/Presupuesto'
 
 export const DashboardPage = () => {
     // ---- ESTADO: solo fechas ----
@@ -30,6 +30,7 @@ export const DashboardPage = () => {
     const [pptoMensual, setPptoMensual] = useState<ResumenMensualPresupuesto[]>([])
     const [pptoMensualIngresos, setPptoMensualIngresos] = useState<ResumenMensualPresupuesto[]>([])
     const [flujoAnterior, setFlujoAnterior] = useState<FlujoCajaMes[]>([])
+    const [gastosSinPptoItems, setGastosSinPptoItems] = useState<GastoSinPresupuesto[]>([])
     const [anioPresupuesto, setAnioPresupuesto] = useState<number>(new Date().getFullYear())
     const { cifrasEnMillones } = useSettings()
     // ---- LOADING ----
@@ -90,11 +91,38 @@ export const DashboardPage = () => {
 
     // ---- Sin presupuesto por centro (para popover del Hero) ----
     const sinPptoDetalle = useMemo(() => {
+        // Build conceptos map from gastosSinPptoItems grouped by CC name
+        const conceptosPorCC = new Map<string, { nombre: string; monto: number }[]>()
+        for (const g of gastosSinPptoItems) {
+            const ccName = g.centro_costo_nombre
+            if (!conceptosPorCC.has(ccName)) conceptosPorCC.set(ccName, [])
+            conceptosPorCC.get(ccName)!.push({
+                nombre: g.concepto_nombre || '(Sin concepto)',
+                monto: g.monto_acumulado,
+            })
+        }
+        // Sort conceptos within each CC by monto desc
+        for (const items of conceptosPorCC.values()) {
+            items.sort((a, b) => b.monto - a.monto)
+        }
+
         return pptoVsReal
             .filter(d => (d.ejecutado_sin_ppto ?? 0) >= 1000)
-            .map(d => ({ nombre: d.nombre, monto: d.ejecutado_sin_ppto ?? 0 }))
+            .map(d => ({
+                nombre: d.nombre,
+                monto: d.ejecutado_sin_ppto ?? 0,
+                conceptos: conceptosPorCC.get(d.nombre) ?? [],
+            }))
             .sort((a, b) => b.monto - a.monto)
-    }, [pptoVsReal])
+    }, [pptoVsReal, gastosSinPptoItems])
+
+    // ---- Número de barras para Top Egresos (dinámico) ----
+    const topEgresosMaxItems = 8
+    const topEgresosBarCount = useMemo(() => {
+        const withEgresos = topEgresos.filter(d => d.egresos > 0).length
+        const visible = Math.min(withEgresos, topEgresosMaxItems)
+        return withEgresos > topEgresosMaxItems ? visible + 1 : visible // +1 for "Otros"
+    }, [topEgresos])
 
     // ---- Totales año anterior ----
     const totalesAnterior = useMemo(() => {
@@ -174,12 +202,17 @@ export const DashboardPage = () => {
                 setPptoMensual(mensual)
                 setPptoMensualIngresos(mensualIngresos)
                 setAnioPresupuesto(pptoActual.anio)
+                // Fetch sin-ppto detail separately so it doesn't break the main data
+                presupuestoService.gastosSinPresupuesto(widget.presupuesto_id, excluidos, 'egreso', incluidos)
+                    .then(resp => setGastosSinPptoItems(resp.items ?? []))
+                    .catch(err => console.error('Error gastos sin ppto:', err))
                 setLoadingPpto(false)
             } else {
                 setPptoVsReal([])
                 setPptoVsRealIngresos([])
                 setPptoMensual([])
                 setPptoMensualIngresos([])
+                setGastosSinPptoItems([])
                 setLoadingPpto(false)
             }
         } catch (err) {
@@ -237,6 +270,7 @@ export const DashboardPage = () => {
                     data={topEgresos}
                     isLoading={loadingTop}
                     compact={cifrasEnMillones}
+                    maxItems={topEgresosMaxItems}
                 />
                 <DashboardBudgetVsReal
                     dataEgresos={pptoVsReal}
@@ -246,6 +280,7 @@ export const DashboardPage = () => {
                     egresosReales={totales.egresos}
                     ingresosReales={totales.ingresos}
                     isLoading={loadingPpto}
+                    maxItems={topEgresosBarCount}
                 />
             </div>
         </div>

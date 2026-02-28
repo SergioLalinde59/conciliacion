@@ -1,6 +1,6 @@
 # Plan de Implementación por Etapas: Conciliación + Presupuestos en PH360
 
-**Fecha**: 2026-02-22
+**Fecha**: 2026-02-22 (actualizado 2026-02-26)
 **Estado**: Propuesta
 **Referencia**: [Plan_Integracion_PH360.md](Plan_Integracion_PH360.md) — schemas SQL, mapeos campo a campo, payloads de eventos, decisiones de arquitectura
 
@@ -170,6 +170,8 @@ Actualizar `kustomization.yaml` para incluir ambos recursos.
 | `movement/Movement` | `domain/models/movimiento.py` | **Aggregate root**. bankAccountId UUID, date, description, reference, amount, usd, trm, trmProvisional, source |
 | `movement/MovementDetail` | `domain/models/movimiento_detalle.py` | costCenterId, conceptId, thirdPartyId, amount |
 | `movement/MovementStatus` | Nuevo | Enum: PENDING, CLASSIFIED, RECONCILED |
+
+**Patrón de acceso delegado al primer detalle**: En Python, `Movement` expone properties delegadas (`centro_costo_id`, `concepto_id`, `tercero_id`) que leen/escriben el primer `MovementDetail`. En Java, replicar como métodos de conveniencia en el aggregate (`getCostCenterId()`, `getConceptId()`, `getThirdPartyId()`) que delegan a `details.get(0)`, creando un detalle vacío si no existe. Esto simplifica la clasificación y la UI donde se trabaja con un solo detalle por movimiento.
 
 **Regla de negocio crítica**: `AccountType` controla permisos. Solo tipo "Efectivo" (`canCreate=true`) permite crear/editar/eliminar movimientos manualmente. Bancaria/Tarjeta/Inversiones solo permiten clasificar.
 
@@ -531,11 +533,23 @@ Endpoints completos en Plan doc sección 6.4.
 |-----------|-----------|
 | `budget/budget-vs-actual/` | `PresupuestoVsRealPage.tsx` |
 | `budget/budget-config/` | `PresupuestoConfigPage.tsx` |
-| `budget/budget-execution/` | `EjecucionMensualPage.tsx` |
+| `budget/budget-execution/` | `EjecucionMensualPage.tsx` — contiene 2 charts: mensual + acumulado (ver abajo) |
 | `budget/expense-types/` | `TiposGastoPage.tsx` |
 | `budget/economic-indicators/` | `IndicadoresEconomicosPage.tsx` |
 | `budget/budget-rules/` | `ReglasPresupuestoPage.tsx` |
 | `budget/expense-classification/` | `ClasificacionGastosPreviewPage.tsx` |
+
+**Nota arquitectura `budget-execution/`**: La página de ejecución mensual se divide en dos visualizaciones:
+
+1. **EjecucionMensualChart** (barras + línea): Muestra Ppto Ing, Real Ing, Ppto Egr, Real Egr y Flujo Neto por mes. Sin acumulados ni ejes secundarios.
+2. **BudgetAccumulatedChart** (líneas acumuladas): Trayectoria acumulada Presupuesto vs Ejecución a 12 meses. Características:
+   - Líneas punteadas para proyección presupuestal (año completo)
+   - Líneas sólidas para ejecución real (solo hasta último mes con datos, `null` después)
+   - Dots con semáforo (verde/amarillo/rojo) basado en umbrales de consumo
+   - Tooltip con desglose mensual (Ppto, Ejec, Var, Consumo%) + sección acumulada con % del presupuesto anual
+   - Incluye neto (Ing - Egr) tanto en proyección como ejecución
+
+Este segundo chart **reemplaza** la tabla `BudgetExecutionTable` que existía anteriormente.
 
 **Componentes shared nuevos** (no existen en PH360):
 
@@ -544,6 +558,7 @@ Endpoints completos en Plan doc sección 6.4.
 | `shared/budget-bar-row/` | Barra semáforo con progreso visual |
 | `shared/semaphore-badge/` | Badge verde/amarillo/rojo |
 | `shared/drilldown-table/` | Tabla con drill-down CC → Concepto → Tercero |
+| `shared/budget-accumulated-chart/` | Chart de trayectoria acumulada con proyección + semáforo (portar de `BudgetAccumulatedChart.tsx`) |
 
 Servicios: `budget.service.ts`, `expense-type.service.ts`, `economic-indicator.service.ts`, `budget-rule.service.ts`
 
@@ -605,7 +620,7 @@ Servicios: `budget.service.ts`, `expense-type.service.ts`, `economic-indicator.s
 |-----------|--------|
 | `dashboard/conciliation-dashboard/` | `DashboardPage.tsx` — llama AMBAS APIs |
 | `dashboard/components/budget-widget/` | Widget consumo mensual |
-| `dashboard/components/budget-vs-real/` | Gráfico Chart.js (ya incluido en PH360 v4.5.1) |
+| `dashboard/components/budget-vs-real/` | Widget resumen ppto vs real. Para gráfico detallado reutilizar `BudgetAccumulatedChart` de Fase 5.4 (Chart.js ya incluido en PH360 v4.5.1) |
 | `dashboard/components/budget-3-months/` | Resumen 3 meses |
 | `reports/classification-report/` | Reporte de clasificaciones |
 | `reports/cost-center-report/` | Egresos por centro de costo |
@@ -724,4 +739,7 @@ public interface BankStatementExtractor {
 | `conciliacion/Backend/src/domain/services/presupuesto_generacion_service.py` | Fórmula generación (Fase 5) |
 | `conciliacion/Backend/src/application/services/clasificacion_service.py` | 5 niveles clasificación (Fase 4) |
 | `conciliacion/Backend/src/infrastructure/extractors/bancolombia/` | 18 extractores PDF (Fase 7) |
+| `conciliacion/Backend/src/domain/models/movimiento.py` | Patrón de properties delegadas al primer detalle: `centro_costo_id`, `concepto_id`, `tercero_id` (Fase 1) |
+| `conciliacion/frontend/src/components/organisms/BudgetAccumulatedChart.tsx` | Chart acumulado con proyección 12 meses + semáforo (Fase 5) |
+| `conciliacion/frontend/src/components/organisms/EjecucionMensualChart.tsx` | Chart mensual barras simplificado sin acumulados (Fase 5) |
 | `conciliacion/doc/Plan_Integracion_PH360.md` | Schemas SQL completos, payloads eventos, endpoints API, decisiones de arquitectura |

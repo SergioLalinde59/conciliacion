@@ -120,6 +120,27 @@ class Movimiento:
             self.detalles[0].concepto_id = value
         
     @property
+    def tercero_id(self) -> Optional[int]:
+        """Devuelve el tercero del primer detalle (compatibilidad)"""
+        return self.detalles[0].tercero_id if self.detalles else None
+
+    @tercero_id.setter
+    def tercero_id(self, value: Optional[int]):
+        """Asigna tercero al primer detalle (o crea uno)"""
+        if not hasattr(self, 'detalles'):
+            # Durante __init__, detalles aún no fue inicializado; se asignará después
+            return
+        if not self.detalles:
+            self.detalles.append(MovimientoDetalle(
+                valor=self.valor,
+                centro_costo_id=None,
+                concepto_id=None,
+                tercero_id=value
+            ))
+        else:
+            self.detalles[0].tercero_id = value
+
+    @property
     def tercero_nombre(self) -> Optional[str]:
         """Devuelve el nombre del tercero (si se pobló en el join del encabezado o primer detalle)"""
         if self._tercero_nombre:

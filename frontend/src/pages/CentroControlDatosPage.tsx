@@ -38,7 +38,6 @@ const TABLES_CONFIG = {
         description: 'Parámetros del motor de matching y reglas automáticas',
         tables: [
             { id: 'tipo_cuenta', label: 'Tipo de Cuentas', description: 'Clasificación y permisos por tipo de cuenta.' },
-            { id: 'config_filtros_centro_costos', label: 'Filtros de Exclusión CC', description: 'Filtros aplicados por centro de costo.' },
             { id: 'config_valores_pendientes', label: 'Config. Valores Pendientes', description: 'Configuración para ignorar valores pendientes.' },
             { id: 'reglas_clasificacion', label: 'Reglas de Clasificación', description: 'Reglas para auto-clasificar registros contables.' },
             { id: 'matching_alias', label: 'Reglas Normalización', description: 'Alias para limpiar descripciones de extractos.' },

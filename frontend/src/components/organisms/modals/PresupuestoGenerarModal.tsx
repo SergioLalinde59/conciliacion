@@ -6,7 +6,6 @@ import { Input } from '../../atoms/Input'
 import { presupuestoService } from '../../../services/presupuesto.service'
 import { useIndicadores } from '../../../hooks/useIndicadores'
 import { useTiposGasto } from '../../../hooks/useTiposGasto'
-import { useConfiguracionExclusion } from '../../../hooks/useReportes'
 import type { Presupuesto, GeneracionPreview, GeneracionResult } from '../../../types/Presupuesto'
 import type { TipoGasto } from '../../../types/TipoGasto'
 import { useQuery } from '@tanstack/react-query'
@@ -48,17 +47,6 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
 
     const { data: indicadores = [] } = useIndicadores(presupuesto.anio)
     const { data: tiposGasto = [] } = useTiposGasto()
-    const { data: configExclusion = [] } = useConfiguracionExclusion()
-
-    // Precargar CC excluidos desde filtros avanzados
-    useEffect(() => {
-        if (configExclusion.length > 0 && ccExcluidos.length === 0) {
-            const defaults = configExclusion
-                .filter(c => c.activo_por_defecto)
-                .map(c => c.centro_costo_id)
-            if (defaults.length > 0) setCcExcluidos(defaults)
-        }
-    }, [configExclusion])
 
     const { data: centrosCosto = [] } = useQuery({
         queryKey: ['centros-costo-select'],
@@ -81,11 +69,7 @@ export const PresupuestoGenerarModal = ({ isOpen, presupuesto, onClose, onSucces
         setStep(1)
         setPreview(null)
         setResult(null)
-        // Restaurar CC excluidos desde filtros avanzados
-        const defaults = configExclusion
-            .filter(c => c.activo_por_defecto)
-            .map(c => c.centro_costo_id)
-        setCcExcluidos(defaults)
+        setCcExcluidos([])
     }
 
     const handleClose = () => {

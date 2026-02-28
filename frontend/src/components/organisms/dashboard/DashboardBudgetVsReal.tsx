@@ -1,17 +1,16 @@
 import { useMemo, useState } from 'react'
-import { SemaforoBadge } from '../../atoms/SemaforoBadge'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react'
+import { ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
 import { useBudgetFormat } from '../../atoms/CurrencyDisplay'
 import type { ComparacionPresupuesto } from '../../../types/Presupuesto'
 
 interface DashboardBudgetVsRealProps {
     dataEgresos: ComparacionPresupuesto[]
     dataIngresos: ComparacionPresupuesto[]
-    presupuestoEgresos: number
-    presupuestoIngresos: number
-    egresosReales: number
-    ingresosReales: number
+    presupuestoEgresos?: number
+    presupuestoIngresos?: number
+    egresosReales?: number
+    ingresosReales?: number
     isLoading?: boolean
     maxItems?: number
 }
@@ -24,23 +23,47 @@ const semaforoGradient: Record<string, string> = {
 
 export const DashboardBudgetVsReal = ({
     dataEgresos, dataIngresos,
-    presupuestoEgresos, presupuestoIngresos,
-    egresosReales, ingresosReales,
-    isLoading, maxItems = 6
+    isLoading, maxItems = 8
 }: DashboardBudgetVsRealProps) => {
     const navigate = useNavigate()
     const fmt = useBudgetFormat()
     const [direccion, setDireccion] = useState<'egreso' | 'ingreso'>('egreso')
+    const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+    const [titleHovered, setTitleHovered] = useState(false)
 
     const data = direccion === 'egreso' ? dataEgresos : dataIngresos
 
+    // Unified CC order: merge both datasets so the same CC appears at the same row
+    const unifiedOrder = useMemo(() => {
+        const ccMap = new Map<string, { key: string; maxEjecutado: number }>()
+        const merge = (list: ComparacionPresupuesto[]) => {
+            list.filter(d => d.presupuestado > 0 || d.ejecutado > 0).forEach(d => {
+                const key = d.id ? String(d.id) : d.nombre
+                const prev = ccMap.get(key)
+                ccMap.set(key, {
+                    key,
+                    maxEjecutado: Math.max(prev?.maxEjecutado ?? 0, d.ejecutado),
+                })
+            })
+        }
+        merge(dataEgresos ?? [])
+        merge(dataIngresos ?? [])
+        return [...ccMap.values()]
+            .sort((a, b) => b.maxEjecutado - a.maxEjecutado)
+            .slice(0, maxItems)
+            .map(c => c.key)
+    }, [dataEgresos, dataIngresos, maxItems])
+
     const items = useMemo(() => {
         if (!data?.length) return []
-        return [...data]
-            .filter(d => d.presupuestado > 0 || d.ejecutado > 0)
-            .sort((a, b) => b.ejecutado - a.ejecutado)
-            .slice(0, maxItems)
-    }, [data, maxItems])
+        const filtered = data.filter(d => d.presupuestado > 0 || d.ejecutado > 0)
+        // Map CCs by their key for lookup
+        const byKey = new Map(filtered.map(d => [d.id ? String(d.id) : d.nombre, d]))
+        // Return items in unified order, skipping CCs not present in current direction
+        return unifiedOrder
+            .filter(key => byKey.has(key))
+            .map(key => byKey.get(key)!)
+    }, [data, unifiedOrder])
 
     const summary = useMemo(() => {
         if (!data?.length) return null
@@ -59,18 +82,10 @@ export const DashboardBudgetVsReal = ({
         return { totalPpto, totalConPpto, totalSinPpto, variPct, semaforo }
     }, [data, direccion])
 
-    // Net strip calculations
-    const netoReal = ingresosReales - egresosReales
-    const netoPpto = presupuestoIngresos - presupuestoEgresos
-    const diferenciaNeta = netoReal - netoPpto
-    const diferenciaPct = netoPpto !== 0 ? (diferenciaNeta / Math.abs(netoPpto)) * 100 : 0
-    const netoMejor = diferenciaNeta >= 0
-    const hasNetoData = presupuestoEgresos > 0 || presupuestoIngresos > 0
-
     const totalVisible = data
         ? data.filter(d => d.presupuestado > 0 || d.ejecutado > 0).length
         : 0
-    const remaining = totalVisible - Math.min(totalVisible, maxItems)
+    const remaining = totalVisible - items.length
 
     if (isLoading) {
         return (
@@ -94,9 +109,78 @@ export const DashboardBudgetVsReal = ({
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            {/* Header */}
+            {/* Header + Direction tabs */}
             <div className="flex items-center justify-between mb-1">
-                <h3 className="font-bold text-slate-800">Presupuesto vs Real</h3>
+                <div className="flex items-center gap-3">
+                    <div
+                        className="relative"
+                        onMouseEnter={() => setTitleHovered(true)}
+                        onMouseLeave={() => setTitleHovered(false)}
+                    >
+                        <h3 className="font-bold text-slate-800 cursor-default">Presupuesto vs Real</h3>
+                        {titleHovered && summary && summary.totalPpto > 0 && (
+                            <div className="absolute z-50 top-full left-0 mt-2 bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3 whitespace-nowrap pointer-events-none">
+                                <div className="font-semibold text-slate-800 text-sm mb-2">
+                                    Resumen {direccion === 'egreso' ? 'Egresos' : 'Ingresos'}
+                                </div>
+                                <table className="text-[13px]">
+                                    <tbody>
+                                        <tr>
+                                            <td className="pr-4 text-slate-500">Ejecutado</td>
+                                            <td className="text-right font-mono font-bold text-slate-700">{fmt(summary.totalConPpto)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="pr-4 text-slate-500">Presupuesto</td>
+                                            <td className="text-right font-mono text-slate-700">{fmt(summary.totalPpto)}</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="pr-4 text-slate-500">Variación</td>
+                                            <td className={`text-right font-mono font-bold ${
+                                                summary.semaforo === 'verde' ? 'text-emerald-600' :
+                                                summary.semaforo === 'amarillo' ? 'text-amber-600' : 'text-rose-600'
+                                            }`}>
+                                                {summary.variPct > 0 ? '+' : ''}{summary.variPct.toFixed(1)}%
+                                            </td>
+                                        </tr>
+                                        {summary.totalSinPpto > 0 && (
+                                            <tr>
+                                                <td className="pr-4 text-amber-500">Sin presupuesto</td>
+                                                <td className="text-right font-mono font-bold text-amber-500">{fmt(summary.totalSinPpto)}</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                                <div className="absolute left-8 -top-1.5 w-3 h-3 rotate-45 bg-white border-l border-t border-gray-200" />
+                            </div>
+                        )}
+                    </div>
+                    {dataIngresos.length > 0 && (
+                        <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
+                            <button
+                                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-all ${
+                                    direccion === 'egreso'
+                                        ? 'bg-white shadow-sm text-slate-800'
+                                        : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                                onClick={() => setDireccion('egreso')}
+                            >
+                                <TrendingDown size={13} />
+                                Egresos
+                            </button>
+                            <button
+                                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-all ${
+                                    direccion === 'ingreso'
+                                        ? 'bg-white shadow-sm text-slate-800'
+                                        : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                                onClick={() => setDireccion('ingreso')}
+                            >
+                                <TrendingUp size={13} />
+                                Ingresos
+                            </button>
+                        </div>
+                    )}
+                </div>
                 <button
                     onClick={() => navigate('/reportes/presupuesto-vs-real')}
                     className="text-xs text-slate-400 hover:text-blue-600 flex items-center gap-1 font-medium transition-colors"
@@ -106,92 +190,14 @@ export const DashboardBudgetVsReal = ({
             </div>
             <p className="text-xs text-slate-400 mb-4">Por centro de costo</p>
 
-            {/* ── NET STRIP (always visible) ── */}
-            {hasNetoData && (
-                <div className="bg-gradient-to-r from-slate-50 to-indigo-50/50 rounded-lg px-3.5 py-3 mb-4 border border-slate-100">
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Flujo Neto</span>
-                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${netoMejor ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${netoMejor ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                            {fmt(Math.abs(diferenciaNeta))} {netoMejor ? 'mejor' : 'peor'}
-                            <span className="text-[10px] opacity-70">
-                                ({diferenciaPct > 0 ? '+' : ''}{diferenciaPct.toFixed(0)}%)
-                            </span>
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-4 text-[11px]">
-                        <span className="text-slate-600">
-                            Real: <span className={`font-bold font-mono ${netoReal >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                                {fmt(netoReal)}
-                            </span>
-                        </span>
-                        <span className="text-slate-400">
-                            Ppto: <span className="font-mono font-medium text-slate-500">{fmt(netoPpto)}</span>
-                        </span>
-                    </div>
-                </div>
-            )}
-
-            {/* ── DIRECTION TABS ── */}
-            {dataIngresos.length > 0 && (
-                <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5 mb-4">
-                    <button
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-all ${
-                            direccion === 'egreso'
-                                ? 'bg-white shadow-sm text-slate-800'
-                                : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        onClick={() => setDireccion('egreso')}
-                    >
-                        <TrendingDown size={13} />
-                        Egresos
-                    </button>
-                    <button
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-all ${
-                            direccion === 'ingreso'
-                                ? 'bg-white shadow-sm text-slate-800'
-                                : 'text-slate-400 hover:text-slate-600'
-                        }`}
-                        onClick={() => setDireccion('ingreso')}
-                    >
-                        <TrendingUp size={13} />
-                        Ingresos
-                    </button>
-                </div>
-            )}
-
-            {/* Summary strip */}
-            {summary && summary.totalPpto > 0 && (
-                <div className="bg-slate-50 rounded-lg px-3 py-2.5 mb-5">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">
-                                {fmt(summary.totalConPpto)} de {fmt(summary.totalPpto)}
-                            </span>
-                            <SemaforoBadge
-                                valor={summary.semaforo}
-                                variacionPct={summary.variPct}
-                                size="sm"
-                            />
-                        </div>
-                        {summary.totalSinPpto > 0 && (
-                            <span className="flex items-center gap-1 text-[11px] text-amber-600 font-medium">
-                                <AlertTriangle size={12} />
-                                {fmt(summary.totalSinPpto)} sin ppto
-                            </span>
-                        )}
-                    </div>
-                </div>
-            )}
-
             {/* CC rows */}
             {items.length === 0 ? (
                 <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
                     Sin datos de presupuesto
                 </div>
             ) : (
-                <div className="space-y-3.5">
-                    {items.map((item) => {
+                <div className="space-y-3">
+                    {items.map((item, idx) => {
                         const conPpto = item.ejecutado_con_ppto ?? item.ejecutado
                         const sinPpto = item.ejecutado_sin_ppto ?? 0
                         const ppto = item.presupuestado
@@ -200,33 +206,19 @@ export const DashboardBudgetVsReal = ({
                             ? Math.min((conPpto / ppto) * 100, 100)
                             : (conPpto > 0 ? 100 : 0)
                         const gradient = semaforoGradient[item.semaforo] || semaforoGradient.verde
+                        const variPct = item.variacion_pct ?? (ppto > 0 ? ((conPpto - ppto) / ppto) * 100 : 0)
 
                         return (
                             <div
                                 key={item.id ?? item.nombre}
-                                className="group cursor-pointer hover:bg-slate-50 rounded-lg px-2 py-2 -mx-2 transition-all duration-200"
+                                className="relative cursor-pointer"
+                                onMouseEnter={() => setHoveredIdx(idx)}
+                                onMouseLeave={() => setHoveredIdx(null)}
                                 onClick={() => navigate('/reportes/presupuesto-vs-real')}
                             >
-                                {/* Line 1: Name + amounts + badge */}
-                                <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-sm font-medium text-slate-700 truncate max-w-[45%]">
-                                        {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[11px] font-mono text-slate-400">
-                                            {fmt(conPpto)}
-                                            <span className="text-slate-300"> / </span>
-                                            {fmt(ppto)}
-                                        </span>
-                                        <SemaforoBadge
-                                            valor={item.semaforo}
-                                            variacionPct={item.variacion_pct}
-                                            size="sm"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Line 2: Progress bar */}
+                                <span className="text-sm font-semibold text-slate-700 truncate block mb-1">
+                                    {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
+                                </span>
                                 <div className="relative w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
                                     <div
                                         className={`h-full ${gradient} rounded-full transition-all duration-700 ease-out`}
@@ -240,11 +232,40 @@ export const DashboardBudgetVsReal = ({
                                     )}
                                 </div>
 
-                                {/* Line 3 (conditional): Unbudgeted warning */}
-                                {sinPpto > 0 && (
-                                    <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-500">
-                                        <AlertTriangle size={11} className="shrink-0" />
-                                        <span>+{fmt(sinPpto)} sin presupuesto</span>
+                                {/* Tooltip */}
+                                {hoveredIdx === idx && (
+                                    <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3 whitespace-nowrap pointer-events-none">
+                                        <div className="font-semibold text-slate-800 text-sm mb-2">
+                                            {item.id ? `${item.id} - ${item.nombre}` : item.nombre}
+                                        </div>
+                                        <table className="text-[13px]">
+                                            <tbody>
+                                                <tr>
+                                                    <td className="pr-4 text-slate-500">Ejecutado</td>
+                                                    <td className="text-right font-mono font-bold text-slate-700">{fmt(conPpto)}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="pr-4 text-slate-500">Presupuesto</td>
+                                                    <td className="text-right font-mono text-slate-700">{fmt(ppto)}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td className="pr-4 text-slate-500">Variación</td>
+                                                    <td className={`text-right font-mono font-bold ${
+                                                        item.semaforo === 'verde' ? 'text-emerald-600' :
+                                                        item.semaforo === 'amarillo' ? 'text-amber-600' : 'text-rose-600'
+                                                    }`}>
+                                                        {variPct > 0 ? '+' : ''}{variPct.toFixed(1)}%
+                                                    </td>
+                                                </tr>
+                                                {sinPpto > 0 && (
+                                                    <tr>
+                                                        <td className="pr-4 text-amber-500">Sin presupuesto</td>
+                                                        <td className="text-right font-mono font-bold text-amber-500">{fmt(sinPpto)}</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                        <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-white" />
                                     </div>
                                 )}
                             </div>
@@ -262,6 +283,24 @@ export const DashboardBudgetVsReal = ({
                     >
                         y {remaining} más...
                     </button>
+                </div>
+            )}
+
+            {/* Total */}
+            {summary && summary.totalPpto > 0 && (
+                <div className="flex justify-between items-center mt-5 pt-4 border-t border-gray-100">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Total {direccion === 'egreso' ? 'Egresos' : 'Ingresos'}
+                    </span>
+                    <span className="text-sm font-mono font-black text-slate-800">
+                        {fmt(summary.totalConPpto)} / {fmt(summary.totalPpto)}
+                        <span className={`ml-2 text-xs font-bold ${
+                            summary.semaforo === 'verde' ? 'text-emerald-600' :
+                            summary.semaforo === 'amarillo' ? 'text-amber-600' : 'text-rose-600'
+                        }`}>
+                            {summary.variPct > 0 ? '+' : ''}{summary.variPct.toFixed(1)}%
+                        </span>
+                    </span>
                 </div>
             )}
         </div>

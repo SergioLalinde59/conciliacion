@@ -130,15 +130,6 @@ export interface ConceptoCreateParams {
 }
 
 /**
- * DTO para configuración de filtros de centros de costos
- */
-export interface ConfigFiltroCentroCostoParams {
-    centro_costo_id: number
-    etiqueta: string
-    activo_por_defecto: boolean
-}
-
-/**
  * DTO para crear/actualizar regla de clasificación
  */
 export interface ReglaClasificacionParams {
@@ -149,11 +140,3 @@ export interface ReglaClasificacionParams {
     activo?: boolean
 }
 
-/**
- * Respuesta de configuración de filtros de exclusión
- */
-export interface ConfigFiltroExclusion {
-    centro_costo_id: number
-    etiqueta: string
-    activo_por_defecto: boolean
-}

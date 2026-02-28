@@ -724,19 +724,6 @@ def reclasificar_lote(
         logger.error(f"Error reclasificando lote: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error reclasificando movimientos")
 
-@router.get("/configuracion/filtros-exclusion")
-def obtener_configuracion_filtros_exclusion(
-    repo_centro_costo: CentroCostoRepository = Depends(get_centro_costo_repository)
-):
-    """
-    Retorna la configuración de centros de costos que deben aparecer como checkboxes de exclusión.
-    """
-    try:
-        return repo_centro_costo.obtener_filtros_exclusion()
-    except Exception as e:
-        logger.error(f"Error obteniendo configuracion filtros: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error obteniendo configuracion")
-
 
 class DeleteBatchRequest(BaseModel):
     ids: List[int]

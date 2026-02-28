@@ -61,25 +61,6 @@ class PostgresCentroCostoRepository(CentroCostoRepository):
         finally:
             cursor.close()
 
-    def obtener_filtros_exclusion(self) -> List[dict]:
-        cursor = self.conn.cursor()
-        query = """
-            SELECT c.centro_costo_id, c.etiqueta, c.activo_por_defecto
-            FROM config_filtros_centro_costos c
-            ORDER BY c.etiqueta
-        """
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        cursor.close()
-        return [
-            {
-                "centro_costo_id": row[0], 
-                "etiqueta": row[1], 
-                "activo_por_defecto": row[2]
-            }
-            for row in rows
-        ]
-
     def obtener_id_traslados(self) -> Optional[int]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT centro_costo_id FROM config_filtros_centro_costos WHERE etiqueta ILIKE '%traslado%' LIMIT 1")

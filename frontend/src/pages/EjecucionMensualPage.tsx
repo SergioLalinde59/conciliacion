@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { usePresupuestos, usePresupuestoComparacion, usePresupuestoComparacionMensual } from '../hooks/usePresupuesto'
 import { usePerspectiva } from '../hooks/usePerspectiva'
 import PerspectiveSelector from '../components/molecules/PerspectiveSelector'
-import { BudgetExecutionTable } from '../components/organisms/BudgetExecutionTable'
 import { EjecucionMensualChart } from '../components/organisms/EjecucionMensualChart'
+import { BudgetAccumulatedChart } from '../components/organisms/BudgetAccumulatedChart'
 import { EntitySelector } from '../components/molecules/entities/EntitySelector'
 import { DarkStatCard } from '../components/molecules/DarkStatCard'
 import { SemaforoBadge } from '../components/atoms/SemaforoBadge'
@@ -281,13 +281,12 @@ export const EjecucionMensualPage = () => {
                             mensualIngreso={mensualIngreso}
                             compact={compact}
                         />
-                        <BudgetExecutionTable
+                        <BudgetAccumulatedChart
                             dataEgreso={mensualEgreso}
                             dataIngreso={mensualIngreso}
                             semaforoVerde={semaforoVerde}
                             semaforoAmarillo={semaforoAmarillo}
                             compact={compact}
-                            anioAnterior={selectedPresupuesto ? selectedPresupuesto.anio - 1 : undefined}
                         />
                     </>
                 )}

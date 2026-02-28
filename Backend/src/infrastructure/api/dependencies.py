@@ -28,9 +28,6 @@ from src.domain.ports.movimiento_repository import MovimientoRepository
 from src.infrastructure.database.postgres_reglas_repository import PostgresReglasRepository
 from src.domain.ports.reglas_repository import ReglasRepository
 
-from src.infrastructure.database.postgres_config_filtro_centro_costo_repository import PostgresConfigFiltroCentroCostoRepository
-from src.domain.ports.config_filtro_centro_costo_repository import ConfigFiltroCentroCostoRepository
-
 from src.infrastructure.database.postgres_config_valor_pendiente_repository import PostgresConfigValorPendienteRepository
 from src.domain.ports.config_valor_pendiente_repository import ConfigValorPendienteRepository
 
@@ -70,9 +67,6 @@ def get_movimiento_repository(conn=Depends(get_db_connection)) -> MovimientoRepo
 
 def get_reglas_repository(conn=Depends(get_db_connection)) -> ReglasRepository:
     return PostgresReglasRepository(conn)
-
-def get_config_filtro_centro_costo_repository(conn=Depends(get_db_connection)) -> ConfigFiltroCentroCostoRepository:
-    return PostgresConfigFiltroCentroCostoRepository(conn)
 
 def get_config_valor_pendiente_repository(conn=Depends(get_db_connection)) -> ConfigValorPendienteRepository:
     return PostgresConfigValorPendienteRepository(conn)

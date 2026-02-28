@@ -185,13 +185,6 @@ export interface ReglaClasificacion {
     cuenta_id?: number
 }
 
-export interface ConfigFiltroCentroCosto {
-    id: number
-    centro_costo_id: number
-    etiqueta: string
-    activo_por_defecto: boolean
-}
-
 
 
 export interface CuentaExtractor {

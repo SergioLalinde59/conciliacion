@@ -18,9 +18,15 @@ interface RealAnterior {
     saldo: number
 }
 
+export interface SinPptoConceptoItem {
+    nombre: string
+    monto: number
+}
+
 export interface SinPptoItem {
     nombre: string
     monto: number
+    conceptos?: SinPptoConceptoItem[]
 }
 
 interface DashboardHeroProps {
@@ -84,22 +90,23 @@ const ClickPopover = ({ open, onClose, children }: { open: boolean; onClose: () 
     )
 }
 
-/* ── Deviation bar: center = on plan, left = worse, right = better ── */
-const DeviationBar = ({ pct, better }: { pct: number; better: boolean }) => {
-    const clamped = Math.min(Math.abs(pct), 100)
-    const barColor = better ? 'bg-blue-400' : 'bg-orange-400'
+/* ── Zero-centered bar: center = 0, left = negative, right = positive ── */
+const ZeroCenteredBar = ({ value }: { value: number }) => {
+    const scale = Math.max(Math.abs(value), 1) * 1.1
+    const valuePct = (value / scale) * 50  // -50..+50 range mapped from center
+    const positive = value >= 0
     return (
-        <div className="w-full h-1.5 bg-white/10 rounded-full mt-2 relative overflow-hidden">
-            {/* center tick */}
-            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/25" />
-            {/* deviation fill */}
+        <div className="w-full h-1.5 bg-white/10 rounded-full mt-2 relative">
+            {/* fill from center toward value */}
             <div
-                className={`absolute top-0 bottom-0 rounded-full transition-all duration-700 ${barColor}`}
-                style={better
-                    ? { left: '50%', width: `${clamped / 2}%` }
-                    : { right: '50%', width: `${clamped / 2}%` }
+                className={`absolute top-0 bottom-0 rounded-full transition-all duration-700 ${positive ? 'bg-blue-400' : 'bg-orange-400'}`}
+                style={positive
+                    ? { left: '50%', width: `${Math.min(valuePct, 50)}%` }
+                    : { right: '50%', width: `${Math.min(-valuePct, 50)}%` }
                 }
             />
+            {/* zero line (center) */}
+            <div className="absolute left-1/2 top-[-3px] bottom-[-3px] w-0.5 bg-white/70 rounded-full" />
         </div>
     )
 }
@@ -115,6 +122,7 @@ export const DashboardHero = ({
 }: DashboardHeroProps) => {
     const [showSinPpto, setShowSinPpto] = useState(false)
     const [showDesviacion, setShowDesviacion] = useState(false)
+    const [hoveredCC, setHoveredCC] = useState<string | null>(null)
 
     const setRango = (rango: { inicio: string; fin: string }) => {
         onDesdeChange(rango.inicio)
@@ -299,7 +307,7 @@ export const DashboardHero = ({
                                     />
                                     {hasPptoNeto && (
                                         <>
-                                            <DeviationBar pct={diferenciaPct} better={netoMejor} />
+                                            <ZeroCenteredBar value={flujoNeto} />
                                             <div className="flex items-center justify-between mt-2">
                                                 <span className="text-xs text-slate-400">
                                                     Ppto <CurrencyDisplay value={netoPpto} className="inline text-xs text-slate-300" colorize={false} decimals={0} compact={true} showPlusSign={netoPpto > 0} />
@@ -391,21 +399,49 @@ export const DashboardHero = ({
                             <span className="text-xs text-slate-500 font-semibold uppercase">Sin Ppto:</span>
                             <CurrencyDisplay value={gastosSinPpto} className="text-sm font-bold text-amber-400" colorize={false} decimals={0} compact={compact} />
                         </button>
-                        <ClickPopover open={showSinPpto} onClose={() => setShowSinPpto(false)}>
-                            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-3">Sin Presupuesto por Centro</p>
-                            <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                                {sinPptoDetalle.map(item => {
-                                    const pct = gastosSinPpto > 0 ? (item.monto / gastosSinPpto) * 100 : 0
+                        <ClickPopover open={showSinPpto} onClose={() => { setShowSinPpto(false); setHoveredCC(null) }}>
+                            <div className="flex" onMouseLeave={() => setHoveredCC(null)}>
+                                {/* Left: CC list */}
+                                <div className="w-[240px] shrink-0">
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-3">Sin Presupuesto por Centro</p>
+                                    <div className="space-y-1.5 max-h-48 overflow-y-auto overflow-x-hidden">
+                                        {sinPptoDetalle.map(item => {
+                                            const pct = gastosSinPpto > 0 ? (item.monto / gastosSinPpto) * 100 : 0
+                                            const hasConceptos = (item.conceptos?.length ?? 0) > 0
+                                            return (
+                                                <div
+                                                    key={item.nombre}
+                                                    className={`flex items-center justify-between gap-4 rounded px-1 -mx-1 ${hasConceptos ? 'cursor-pointer' : ''} ${hoveredCC === item.nombre ? 'bg-white/5' : ''}`}
+                                                    onMouseEnter={() => hasConceptos && setHoveredCC(item.nombre)}
+                                                >
+                                                    <span className={`text-[11px] truncate max-w-[140px] ${hoveredCC === item.nombre ? 'text-amber-300' : 'text-slate-300'}`}>{item.nombre}</span>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <CurrencyDisplay value={item.monto} className="text-[11px] font-bold font-mono text-amber-400" colorize={false} decimals={0} compact={true} />
+                                                        <span className="text-[9px] text-slate-500 font-mono w-8 text-right">{pct.toFixed(0)}%</span>
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                                {/* Right: Conceptos sub-panel */}
+                                {hoveredCC && (() => {
+                                    const item = sinPptoDetalle.find(d => d.nombre === hoveredCC)
+                                    if (!item?.conceptos?.length) return null
                                     return (
-                                        <div key={item.nombre} className="flex items-center justify-between gap-4">
-                                            <span className="text-[11px] text-slate-300 truncate max-w-[140px]">{item.nombre}</span>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <CurrencyDisplay value={item.monto} className="text-[11px] font-bold font-mono text-amber-400" colorize={false} decimals={0} compact={true} />
-                                                <span className="text-[9px] text-slate-500 font-mono w-8 text-right">{pct.toFixed(0)}%</span>
+                                        <div className="ml-3 pl-3 border-l border-white/10 w-[220px] shrink-0">
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-2">{item.nombre}</p>
+                                            <div className="space-y-1 max-h-48 overflow-y-auto">
+                                                {item.conceptos.map(c => (
+                                                    <div key={c.nombre} className="flex items-center justify-between gap-3">
+                                                        <span className="text-[11px] text-slate-300 truncate max-w-[130px]">{c.nombre}</span>
+                                                        <CurrencyDisplay value={c.monto} className="text-[11px] font-bold font-mono text-amber-400" colorize={false} decimals={0} compact={true} />
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     )
-                                })}
+                                })()}
                             </div>
                         </ClickPopover>
                     </div>

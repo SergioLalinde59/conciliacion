@@ -8,7 +8,6 @@ export const REPORTES_QUERY_KEYS = {
     clasificacion: (params: any) => [...REPORTES_QUERY_KEYS.all, 'clasificacion', params] as const,
     ingresosMes: (params: any) => [...REPORTES_QUERY_KEYS.all, 'ingresosMes', params] as const,
     desglose: (params: any) => [...REPORTES_QUERY_KEYS.all, 'desglose', params] as const,
-    configuracionExclusion: () => [...REPORTES_QUERY_KEYS.all, 'configuracionExclusion'] as const,
 } as const
 
 /**
@@ -54,13 +53,3 @@ export const useReporteDesgloseGastos = (params: any, enabled: boolean = true) =
     })
 }
 
-/**
- * Hook para Configuración de Filtros de Exclusión
- */
-export const useConfiguracionExclusion = () => {
-    return useQuery({
-        queryKey: REPORTES_QUERY_KEYS.configuracionExclusion(),
-        queryFn: apiService.movimientos.obtenerConfiguracionFiltrosExclusion,
-        staleTime: 60 * 60 * 1000, // Configuración muy estática
-    })
-}

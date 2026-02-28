@@ -33,7 +33,6 @@ ALLOWED_TABLES = [
     
     # Configuración
     "tipo_cuenta",
-    "config_filtros_centro_costos",
     "config_valores_pendientes",
     "reglas_clasificacion",
     "matching_alias",

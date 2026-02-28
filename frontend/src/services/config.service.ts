@@ -27,31 +27,6 @@ export const reglasService = {
 }
 
 /**
- * Servicio para configuración de filtros de centros de costos
- */
-export const configFiltrosCentrosCostosService = {
-    listar: (): Promise<any[]> =>
-        fetch(`${API_BASE_URL}/api/config-filtros-centros-costos`).then(handleResponse),
-
-    crear: (dto: { centro_costo_id: number, etiqueta: string, activo_por_defecto: boolean }): Promise<any> =>
-        fetch(`${API_BASE_URL}/api/config-filtros-centros-costos`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dto)
-        }).then(handleResponse),
-
-    actualizar: (id: number, dto: { centro_costo_id: number, etiqueta: string, activo_por_defecto: boolean }): Promise<any> =>
-        fetch(`${API_BASE_URL}/api/config-filtros-centros-costos/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dto)
-        }).then(handleResponse),
-
-    eliminar: (id: number): Promise<void> =>
-        fetch(`${API_BASE_URL}/api/config-filtros-centros-costos/${id}`, { method: 'DELETE' }).then(handleResponse)
-}
-
-/**
  * Servicio para configuración de valores pendientes
  */
 export const configValoresPendientesService = {

@@ -18,7 +18,6 @@ import {
     TrendingUp,
     Sparkles,
     PieChart,
-    Filter,
     FileText,
     FileCog,
     GitCompare,
@@ -68,7 +67,6 @@ export const Sidebar = () => {
         ],
         configuracion: [
             { path: '/maestros/tipos-cuenta' },
-            { path: '/maestros/config-filtros' },
             { path: '/maestros/config-valores-pendientes' },
             { path: '/maestros/reglas' },
             { path: '/maestros/alias' },
@@ -140,7 +138,6 @@ export const Sidebar = () => {
     const menuConfiguracion = [
         { name: 'Tipos de Cuenta', path: '/maestros/tipos-cuenta', icon: Scale },
         { name: 'Perspectivas', path: '/maestros/perspectivas', icon: Eye },
-        { name: 'Config. Filtros', path: '/maestros/config-filtros', icon: Filter },
         { name: 'Config. Valores Pendientes', path: '/maestros/config-valores-pendientes', icon: AlertCircle },
         { name: 'Reglas Auto', path: '/maestros/reglas', icon: Zap },
         { name: 'Reglas Normalización', path: '/maestros/alias', icon: RefreshCw },

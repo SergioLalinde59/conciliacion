@@ -650,7 +650,7 @@ class PostgresPresupuestoComparacionRepository(PresupuestoComparacionRepository)
         cursor = self.conn.cursor()
         valor_filter = self._valor_filter(direccion)
 
-        params = [anio, presupuesto_id, presupuesto_id, direccion, direccion]
+        params = [direccion, anio, presupuesto_id, presupuesto_id, direccion]
         exclusion = self._build_exclusion_clause("md", centros_costos_excluidos, params)
         inclusion = self._build_inclusion_clause("md", centros_costos_incluidos, params)
 

@@ -1,7 +1,8 @@
 # Plan de Integración Conciliación + Presupuestos en PH360
 
 **Fecha**: 2026-02-19
-**Estado**: Propuesta
+**Última actualización**: 2026-02-26
+**Estado**: Revisado
 **Autor**: Análisis Claude Code
 
 ---
@@ -19,7 +20,7 @@ La pregunta original era cómo separar conciliacion/ en dos proyectos independie
 
 ### 1.1 Inventario de Tablas — App Conciliación y Presupuestos
 
-La aplicación actual cuenta con **26 tablas** organizadas en 4 categorías.
+La aplicación actual cuenta con **27 tablas** organizadas en 5 categorías.
 
 > **Nota**: El mapeo campo a campo hacia PH360 se encuentra en la [sección 1.3](#13-mapeo-campo-a-campo). El análisis detallado vs PH360 en la [sección 16](#16-análisis-de-maestros-y-configuración-conciliación-vs-ph360).
 
@@ -69,11 +70,17 @@ La aplicación actual cuenta con **26 tablas** organizadas en 4 categorías.
 | 25 | `movimiento_vinculaciones` | Vinculaciones | Enlaces de conciliación extracto↔sistema con scores de similitud | id, movimiento_extracto_id, movimiento_sistema_id, estado, score_similitud, score_fecha, score_valor, score_descripcion, es_traslado, cuenta_contraparte_id, vinculacion_contraparte_id, confirmado_por_usuario, fecha_confirmacion, created_at, created_by, notas |
 | 26 | `conciliaciones` | Conciliaciones mensuales | Registro mensual por cuenta con saldos de extracto vs sistema | id, cuenta_id, year, month, fecha_corte, extracto_saldo_anterior, extracto_entradas, extracto_salidas, extracto_saldo_final, sistema_entradas, sistema_salidas, sistema_saldo_final, diferencia_saldo, estado, datos_extra, updated_at |
 
+#### Tablas de Visualización (1)
+
+| # | Tabla | Descripción | Uso | Campos |
+|---|-------|-------------|-----|--------|
+| 27 | `perspectivas` | Perspectivas de visualización | Filtros de centros de costo por contexto (SLB, Bosques, Tita, etc.) para dashboards y reportes | id, nombre, slug, tipo (incluir/excluir), centro_costo_ids, siempre_excluir_ids, es_defecto, orden, activa |
+
 ### 1.2 Mapeo de Tablas: Conciliación Actual → PH360
 
 Referencia rápida para codificación. Todas las tablas PH360 incluyen `property_id`.
 
-#### Schema `conciliation` (backend-conciliation) — 19 tablas
+#### Schema `conciliation` (backend-conciliation) — 20 tablas
 
 | # | Tabla actual | Tabla PH360 | Tipo | Notas |
 |---|-------------|-------------|------|-------|
@@ -96,25 +103,26 @@ Referencia rápida para codificación. Todas las tablas PH360 incluyen `property
 | 17 | `movimientos_extracto` | `conciliation.bank_statements` | Transaccional | FK lógico `bank_account_id UUID` |
 | 18 | `movimiento_vinculaciones` | `conciliation.movement_matches` | Transaccional | FK a movements + bank_statements + reconciliations |
 | 19 | `conciliaciones` | `conciliation.reconciliations` | Transaccional | FK lógico `bank_account_id UUID` |
+| 20 | `perspectivas` | `conciliation.perspectives` | Config | Filtros de visualización por contexto. Arrays de cost_center_ids |
 
 #### Schema `budget` (backend-budget) — 8 tablas
 
 | # | Tabla actual | Tabla PH360 | Tipo | Notas |
 |---|-------------|-------------|------|-------|
-| 20 | `tipos_gasto` | `budget.expense_types` | Config | keywords JSONB, dirección (egreso/ingreso) |
-| 21 | `indicadores_economicos` | `budget.economic_indicators` | Config | IPC, SMLV por año |
-| 22 | `reglas_presupuesto` | `budget.budget_rules` | Config | CC/concepto como IDs lógicos (no FK cross-schema) |
-| 23 | `presupuestos` | `budget.budgets` | Maestro | Umbrales semáforo, estado, versión actual |
-| 24 | `presupuesto_detalle` | `budget.budget_details` | Transaccional | CC/concepto como IDs lógicos (no FK cross-schema) |
-| 25 | `presupuesto_versiones` | `budget.budget_versions` | Transaccional | FK a budgets ON DELETE CASCADE |
-| 26 | `trm_cache` | `conciliation.trm_cache` | Config | En schema conciliation (no budget). Cache TRM diaria |
+| 21 | `tipos_gasto` | `budget.expense_types` | Config | keywords JSONB, dirección (egreso/ingreso) |
+| 22 | `indicadores_economicos` | `budget.economic_indicators` | Config | IPC, SMLV por año |
+| 23 | `reglas_presupuesto` | `budget.budget_rules` | Config | CC/concepto como IDs lógicos (no FK cross-schema) |
+| 24 | `presupuestos` | `budget.budgets` | Maestro | Umbrales semáforo, estado, versión actual |
+| 25 | `presupuesto_detalle` | `budget.budget_details` | Transaccional | CC/concepto como IDs lógicos (no FK cross-schema) |
+| 26 | `presupuesto_versiones` | `budget.budget_versions` | Transaccional | FK a budgets ON DELETE CASCADE |
+| 27 | `trm_cache` | `conciliation.trm_cache` | Config | En schema conciliation (no budget). Cache TRM diaria |
 
 #### Tablas nuevas en PH360 (sin equivalente en app actual)
 
 | # | Tabla PH360 | Schema | Tipo | Propósito |
 |---|-------------|--------|------|-----------|
-| 27 | `budget.movement_summary` | budget | CQRS Read Model | Agregado de movimientos, alimentado por eventos Kafka |
-| 28 | `budget.processed_events` | budget | Técnica | Idempotencia de eventos Kafka (sin `property_id`) |
+| 28 | `budget.movement_summary` | budget | CQRS Read Model | Agregado de movimientos, alimentado por eventos Kafka |
+| 29 | `budget.processed_events` | budget | Técnica | Idempotencia de eventos Kafka (sin `property_id`) |
 
 #### Tablas PH360 que se consumen (solo lectura)
 
@@ -459,7 +467,7 @@ Se resuelve con `payment.bank_accounts.currency` (VARCHAR(3), ej: 'COP', 'USD').
 | centro_costo_id | cost_center_id | BIGINT, ID lógico (no FK cross-schema) |
 | concepto_id | concept_id | BIGINT, ID lógico (no FK cross-schema) |
 | tipo_gasto | expense_type | VARCHAR(100) |
-| indicador_codigo | indicator_name | VARCHAR(200) |
+| indicador_nombre | indicator_name | VARCHAR(200). Columna actual renombrada de `indicador_codigo` a `indicador_nombre` en v0.0.0007 |
 | factor_ajuste | adjustment_factor | DECIMAL(8,4) DEFAULT 0 |
 | monto_fijo_mensual | fixed_monthly | DECIMAL(18,2) |
 | notas | — | Eliminado |
@@ -535,6 +543,24 @@ Se resuelve con `payment.bank_accounts.currency` (VARCHAR(3), ej: 'COP', 'USD').
 | created_at | created_at | TIMESTAMP DEFAULT NOW() |
 | — | property_id | UUID NOT NULL (nuevo) |
 | — | — | UNIQUE(property_id, date) |
+
+#### 27. `perspectivas` → `conciliation.perspectives`
+
+> Tabla agregada en v0.0.0008 (2026-02-26). Permite al usuario definir "perspectivas" de visualización que filtran centros de costo según contexto (SLB, Bosques, Tita, etc.). Cada perspectiva define si incluye o excluye un conjunto de centros de costo.
+
+| Columna actual | Columna PH360 | Notas |
+|---------------|---------------|-------|
+| id | id | BIGSERIAL PK |
+| nombre | name | VARCHAR(100) NOT NULL |
+| slug | slug | VARCHAR(100) NOT NULL, UNIQUE(property_id, slug) |
+| tipo | type | VARCHAR(10) CHECK ('include', 'exclude') |
+| centro_costo_ids | cost_center_ids | BIGINT[] — IDs de centros de costo incluidos/excluidos |
+| siempre_excluir_ids | always_exclude_ids | BIGINT[] DEFAULT '{}' — IDs excluidos independientemente del tipo |
+| es_defecto | is_default | BOOLEAN DEFAULT false |
+| orden | display_order | INTEGER DEFAULT 0 |
+| activa | active | BOOLEAN DEFAULT true |
+| — | property_id | UUID NOT NULL (nuevo) |
+| — | created_at | TIMESTAMP DEFAULT NOW() (nuevo) |
 
 ---
 
@@ -1812,6 +1838,26 @@ CREATE TABLE conciliation.pending_value_config (
     created_at      TIMESTAMP DEFAULT NOW()
 );
 
+-- ═══════════════════════════════════════════════
+-- PERSPECTIVAS DE VISUALIZACIÓN (perspectivas)
+-- Agregada v0.0.0008 (2026-02-26)
+-- ═══════════════════════════════════════════════
+
+CREATE TABLE conciliation.perspectives (
+    id                  BIGSERIAL PRIMARY KEY,
+    property_id         UUID NOT NULL,
+    name                VARCHAR(100) NOT NULL,             -- Ej: "SLB", "Bosques", "Tita"
+    slug                VARCHAR(100) NOT NULL,             -- Identificador URL-safe
+    type                VARCHAR(10) NOT NULL CHECK (type IN ('include', 'exclude')),
+    cost_center_ids     BIGINT[] DEFAULT '{}',             -- IDs de centros de costo incluidos o excluidos
+    always_exclude_ids  BIGINT[] DEFAULT '{}',             -- IDs siempre excluidos (independiente del tipo)
+    is_default          BOOLEAN DEFAULT false,             -- Solo una perspectiva es default por property_id
+    display_order       INTEGER DEFAULT 0,
+    active              BOOLEAN DEFAULT true,
+    created_at          TIMESTAMP DEFAULT NOW(),
+    UNIQUE(property_id, slug)
+);
+
 ```
 
 #### Schema `budget` (backend-budget)
@@ -2124,7 +2170,7 @@ POST   /api/budget/internal/read-model-rebuild        ← Trigger reconstrucció
 | `cargar_extracto_bancario_service.py` | `LoadBankStatementUseCaseImpl.java` | Alta (coordina extractores) |
 | `trm_application_service.py` | `TrmService.java` | Baja (API externa) |
 
-### 7.2 Backend: 26 routers → ~12 controllers
+### 7.2 Backend: 27 routers → ~13 controllers
 
 | Routers Python | Controller Java | Notas |
 |---------------|-----------------|-------|
@@ -2140,6 +2186,7 @@ POST   /api/budget/internal/read-model-rebuild        ← Trigger reconstrucció
 | `cuentas.py` + `tipos_cuenta.py` | `AccountConfigController` | Maestro cuentas |
 | `centros_costos.py` + `conceptos.py` + `terceros.py` | `CatalogController` | Maestros bulk |
 | `config_filtros_centros_costos.py` + `config_valores_pendientes.py` | Dentro de BudgetController o ConfigController | Config avanzada |
+| `perspectivas.py` | `PerspectiveController` | CRUD perspectivas de visualización |
 
 ### 7.3 Backend: 28 repos → JPA repos + adapters
 
@@ -2167,7 +2214,7 @@ Las queries complejas (CTEs, FULL OUTER JOINs en comparación y generación) se 
 | `mastercard_movimientos_excel.py` | `MasterCardExcelAdapter` |
 | `bancolombia_adapter.py` | `BancolombiaExtractorOrchestrator` (coordina todos) |
 
-### 7.5 Frontend: ~43 React pages → ~30 Angular components
+### 7.5 Frontend: ~44 React pages → ~31 Angular components
 
 Algunas pages se consolidan (ej: maestros en un módulo con tabs en lugar de 7 páginas separadas).
 
@@ -2194,6 +2241,7 @@ Algunas pages se consolidan (ej: maestros en un módulo con tabs en lugar de 7 p
 | `MonedasPage.tsx` | `master-data/currencies` tab | Consolidar con maestros |
 | `TiposMovimientoPage.tsx` | `master-data/movement-types` tab | Consolidar con maestros |
 | `MatchingConfigPage.tsx` | `matching-config.component` | |
+| `PerspectivasPage.tsx` | `perspectives.component` | CRUD de perspectivas de visualización (v0.0.0008) |
 | Páginas mantenimiento | `admin/` o excluir | Evaluar si aplican en PH360 |
 | ~8 pages maestros | `master-data/` con tabs | Consolidar |
 | 5 pages reportes | `reports/` | |
@@ -2210,6 +2258,14 @@ Algunas pages se consolidan (ej: maestros en un módulo con tabs en lugar de 7 p
 | `DrilldownTable` | Crear nuevo: `drilldown-table.component` | No existe |
 | `BudgetComparisonBars` | Crear nuevo con Chart.js (ya incluido en PH360) | Chart.js existe |
 | `DashboardBudgetWidget` | Crear nuevo: `budget-widget.component` | No existe |
+| `PerspectiveSelector` | Crear nuevo: `perspective-selector.component` | No existe. Dropdown global de perspectiva (v0.0.0008) |
+| `EjecucionMensualChart` | Crear nuevo: `budget-execution-chart.component` | Chart.js (v0.0.0007) |
+| `PresupuestoActionToolbar` | Crear nuevo: `budget-action-toolbar.component` | Toolbar de acciones de presupuesto (v0.0.0007) |
+| `SemaphoreProgressBar` | Crear nuevo: `semaphore-progress-bar.component` | Barra de progreso con semáforo (v0.0.0007) |
+| `ReglaPresupuestoModal` | Crear nuevo: `budget-rule-modal.component` | Modal CRUD reglas (v0.0.0007) |
+| `PresupuestoFormModal` | Crear nuevo: `budget-form-modal.component` | Modal crear/editar presupuesto (v0.0.0007) |
+| `PresupuestoDrilldownModal` | Crear nuevo: `budget-drilldown-modal.component` | Modal drill-down detalle (v0.0.0007) |
+| `FechaDisplay` | Crear pipe: `date-format.pipe` | Formateo de fechas (v0.0.0008) |
 
 ### 7.7 Estrategia de Exports (Excel/PDF)
 
@@ -2937,7 +2993,7 @@ budget.admin.readmodel
 |---|--------|
 | **Omisión** | El schema `conciliation` (sección 6.2) solo definía 12 tablas. Faltaban 7 tablas maestras/configuración de la app original |
 | **Tablas faltantes** | `tercero_descripciones`, `tipo_mov`, `trm_cache`, `configuracion_matching`, `cuenta_extractores`, `config_filtro_centro_costo`, `config_valor_pendiente` |
-| **Corrección** | Agregadas al schema `conciliation` (sección 6.2) como: `third_party_aliases`, `movement_types`, `trm_cache`, `matching_config`, `account_extractors`, `cost_center_filters`, `pending_value_config`. Todas incluyen `property_id`. Schema conciliation pasa de 12 a **19 tablas** |
+| **Corrección** | Agregadas al schema `conciliation` (sección 6.2) como: `third_party_aliases`, `movement_types`, `trm_cache`, `matching_config`, `account_extractors`, `cost_center_filters`, `pending_value_config`. Todas incluyen `property_id`. Schema conciliation pasa de 12 a **20 tablas** (19 + `perspectives` agregada en revisión 2026-02-26) |
 
 #### E16. `conceptos` listaba equivalente PH360 incorrecto
 
@@ -2990,6 +3046,46 @@ budget.admin.readmodel
 
 **Estado**: Todos corregidos en este documento.
 
+### 14.10 Correcciones Revisión 2026-02-26 (Alineación con v0.0.0007-v0.0.0010)
+
+**Método**: Comparación del plan contra los cambios del codebase entre v0.0.0006 (2026-02-16) y v0.0.0010 (2026-02-26). Commits: 586dca7, a6e3cfa, a45cfb5, 94ce79a.
+
+#### O6. Tabla `perspectivas` no incluida en el plan
+
+| | Detalle |
+|---|--------|
+| **Omisión** | La app agregó una tabla `perspectivas` (v0.0.0008) con sistema completo: modelo de dominio, repositorio, API router (`perspectivas.py`), servicio frontend (`perspectiva.service.ts`), hook (`usePerspectiva.ts`), componente selector (`PerspectiveSelector.tsx`) y página CRUD (`PerspectivasPage.tsx`). El plan no la incluía |
+| **Impacto** | La tabla `perspectivas` permite definir "vistas" de centros de costo (tipo incluir/excluir) para filtrar dashboards y reportes. Es usada transversalmente en dashboard, presupuesto vs real, reportes de egresos, etc. |
+| **Corrección** | Tabla #27 agregada al inventario (sección 1.1), mapeo a `conciliation.perspectives` (sección 1.2, fila #20), mapeo campo a campo (sección 1.3, tabla 27), schema SQL (sección 6.2), inventario 16.1/16.3/16.7, migración frontend 7.5/7.6, conteo de routers 7.2. Schema conciliation pasa de 19 a **20 tablas** |
+
+#### E20. Campo `indicador_codigo` renombrado a `indicador_nombre`
+
+| | Detalle |
+|---|--------|
+| **Error** | El plan referenciaba `indicador_codigo` como columna de `reglas_presupuesto` (sección 1.3, tabla 22) |
+| **Realidad** | La migración `migration_direccion_presupuesto.sql` (v0.0.0007) cambió la columna a `indicador_nombre`. La BD actual confirma: `indicador_nombre character varying` |
+| **Corrección** | Mapeo actualizado en sección 1.3: `indicador_nombre → indicator_name` |
+
+#### O7. Nuevos componentes frontend no reflejados en inventario de migración
+
+| | Detalle |
+|---|--------|
+| **Omisión** | Entre v0.0.0007 y v0.0.0008 se agregaron ~12 nuevos componentes React no incluidos en las secciones 7.5 y 7.6: `EjecucionMensualChart`, `PresupuestoActionToolbar`, `SemaphoreProgressBar`, `ReglaPresupuestoModal`, `PresupuestoFormModal`, `PresupuestoDrilldownModal`, `NuevaLineaPresupuestoModal`, `MesesDrilldownModal`, `PerspectiveSelector`, `FechaDisplay`, `DarkStatCard`, `BudgetAccumulatedChart` |
+| **Corrección** | Componentes clave agregados a secciones 7.5 y 7.6 |
+
+### 14.11 Resumen Actualizado
+
+| Severidad | Rev. 2026-02-20 | Rev. 2026-02-21 | Rev. 2026-02-22 | Rev. 2026-02-26 | Total |
+|-----------|-----------------|-----------------|-----------------|-----------------|-------|
+| Crítico | 3 (E1-E3) | 0 | 0 | 0 | 3 |
+| Medio | 3 (E4-E6) | 5 (E12-E13, E16-E18) | 1 (E19) | 1 (E20) | 10 |
+| Menor | 4 (E7-E10) | 3 (E11, E14, E15) | 0 | 0 | 7 |
+| Omisiones | 0 | 5 (O1-O5) | 0 | 2 (O6, O7) | 7 |
+| Decisiones | 0 | 1 (D1) | 0 | 0 | 1 |
+| **Total** | **10** | **14** | **1** | **3** | **28** |
+
+**Estado**: Todos corregidos en este documento.
+
 ---
 
 ## 15. Decisiones Pendientes
@@ -3032,6 +3128,7 @@ budget.admin.readmodel
 | 14 | `config_valor_pendiente` | Conciliación | Config | id, tipo, valor_id, descripcion |
 | 15 | `config_filtro_centro_costo` | Conciliación | Config | id, centro_costo_id, etiqueta, activo_por_defecto |
 | 16 | `reglas_presupuesto` | Presupuesto | Config | id, centro_costo_id, concepto_id, tipo_gasto, indicador_nombre, monto_fijo_mensual, factor_ajuste, direccion |
+| 17 | `perspectivas` | Conciliación | Config | id, nombre, slug, tipo (incluir/excluir), centro_costo_ids, siempre_excluir_ids, es_defecto, orden, activa |
 
 ### 16.2 Inventario: Maestros/Config relevantes en PH360
 
@@ -3067,6 +3164,7 @@ budget.admin.readmodel
 | 14 | `config_valor_pendiente` | — | **Nuevo** | Marca valores como pendientes de clasificación |
 | 15 | `config_filtro_centro_costo` | — | **Nuevo** | Filtros de exclusión para dashboards |
 | 16 | `reglas_presupuesto` | — | **Nuevo** | Reglas de generación por CC/concepto |
+| 17 | `perspectivas` | — | **Nuevo** | Filtros de visualización por contexto. Sin equivalente en PH360 (concepto específico de conciliación personal) |
 
 ### 16.4 Detalle: Extensión `cuentas` → `account_config`
 
@@ -3126,7 +3224,7 @@ CREATE INDEX idx_account_config_bank ON conciliation.account_config(bank_account
 
 | Categoría | Cantidad | Detalle |
 |-----------|----------|---------|
-| **Nuevo** (crear en conciliation/budget) | 14 | tipo_cuenta, centro_costos, conceptos, terceros, tercero_descripciones, monedas, tipo_mov, tipos_gasto, indicadores_economicos, configuracion_matching, matching_alias, cuenta_extractores, config_valor_pendiente, config_filtro_centro_costo, reglas_presupuesto |
+| **Nuevo** (crear en conciliation/budget) | 15 | tipo_cuenta, centro_costos, conceptos, terceros, tercero_descripciones, monedas, tipo_mov, tipos_gasto, indicadores_economicos, configuracion_matching, matching_alias, cuenta_extractores, config_valor_pendiente, config_filtro_centro_costo, reglas_presupuesto, perspectivas |
 | **Extensión** de PH360 | 1 | account_config (extiende payment.bank_accounts) |
 | **Reusar** de PH360 (lectura) | 4 | properties, bank_accounts, tenants, permissions |
 | **Integración futura** | 1 | bank_transactions (fase posterior) |
